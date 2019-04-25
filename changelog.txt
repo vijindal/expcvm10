@@ -1,0 +1,10 @@
+170131- from phasedata input file paramater isVibOn removed, in file DateReader.readPhaseDataFile() isVibOn is set to 'true'
+170331-	npmax paramter and all realted uses and methods have been removed from PhaseData file. This has become redundant paramter after setting isVibOn value to 'true'
+170331-	isVibOn paramter and all realted uses and methods have been removed from PhaseData file.
+170914- Linked PID removed, It was desired for handelling Ordered phases having same ECI set (such as A1, L10, L12) for a calculation. These type of calculations (including optimization) will be handelled through separate calculations methods now.
+170914- Moved readPhaseDataInputFile() method from DataReader file to PhaseData Class. Also copied required methods such as getNumData(), readPhaseDataParamters(), readEmatInputFile()
+170914- Moved readExptDataFile() method from DataReader file to ExptData Class. Also copied required methods such as getNumData(), patternList()...
+170914- DataReader file to be removed eventually
+170914- getNumData() is used by many methods and hence made a separate class.
+ 
+  
