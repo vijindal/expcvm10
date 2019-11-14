@@ -4,7 +4,7 @@ import binutils.io.Print;
 import binutils.jama.LUDecomposition;
 import binutils.jama.Mat;
 import binutils.jama.Matrix;
-import binutils.stat.Utils;
+import binutils.io.Utils;
 import java.io.IOException;
 import java.text.DecimalFormat;
 import phase.PHASEBINCE;

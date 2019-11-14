@@ -2,7 +2,7 @@
  * To change this template, choose Tools | Templates
  * and open the template i the editor.
  */
-package binutils.stat;
+package binutils.io;
 
 import binutils.io.Print;
 import java.io.IOException;

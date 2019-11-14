@@ -3,7 +3,7 @@ package phase.solution.cecvm;
 import binutils.jama.Mat;
 import binutils.jama.CholeskyDecomposition;
 import binutils.jama.Matrix;
-import binutils.stat.Utils;
+import binutils.io.Utils;
 import binutils.io.DataReader;
 import binutils.io.Print;
 import binutils.jama.LUDecomposition;

@@ -1,4 +1,4 @@
-package binutils.stat;
+package binutils.io;
 
 import binutils.io.Print;
 import java.io.*;
