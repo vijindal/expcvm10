@@ -1,4 +1,4 @@
-package binutils.jama;
+package utils.jama;
 
 public class Maths {
 

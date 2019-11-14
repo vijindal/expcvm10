@@ -1,12 +1,12 @@
 package phase.solution.cecvm;
 
-import binutils.jama.Mat;
-import binutils.jama.CholeskyDecomposition;
-import binutils.jama.Matrix;
-import binutils.io.Utils;
-import binutils.io.DataReader;
-import binutils.io.Print;
-import binutils.jama.LUDecomposition;
+import utils.jama.Mat;
+import utils.jama.CholeskyDecomposition;
+import utils.jama.Matrix;
+import utils.io.Utils;
+import utils.io.DataReader;
+import utils.io.Print;
+import utils.jama.LUDecomposition;
 import database.stdst;
 import java.io.*;
 import java.util.StringTokenizer;

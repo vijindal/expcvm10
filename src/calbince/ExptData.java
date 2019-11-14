@@ -4,9 +4,9 @@
  */
 package calbince;
 
-import binutils.io.DataReader;
-import binutils.io.Print;
-import binutils.io.Utils;
+import utils.io.DataReader;
+import utils.io.Print;
+import utils.io.Utils;
 import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.FileInputStream;

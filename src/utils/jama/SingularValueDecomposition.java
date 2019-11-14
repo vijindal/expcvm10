@@ -1,4 +1,4 @@
-package binutils.jama;
+package utils.jama;
 
    /** Singular Value Decomposition.
    For an m-by-n matrix A with m &gt;= n, the singular value decomposition is

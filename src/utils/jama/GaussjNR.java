@@ -2,7 +2,7 @@
  * To change this template, choose Tools | Templates
  * and open the template in the editor.
  */
-package binutils.jama;
+package utils.jama;
 
 /*
  * Linear equation solution by Gauss-Jordan elimination, equation (2.1.1) from

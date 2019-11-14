@@ -2,7 +2,7 @@
  * To change this template, choose Tools | Templates
  * and open the template in the editor.
  */
-package binutils.jama;
+package utils.jama;
 
 /**
  * Given a matrix a[0..n-1][0..n-1], this routine replaces it by the LU

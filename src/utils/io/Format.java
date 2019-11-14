@@ -1,4 +1,4 @@
-package binutils.io;
+package utils.io;
 
 /*
  * Cay S. Horstmann & Gary Cornell, Core Java

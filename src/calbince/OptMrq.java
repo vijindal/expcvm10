@@ -1,8 +1,8 @@
 package calbince;
 
-import binutils.io.Print;
-import binutils.jama.GaussjNR;
-import binutils.jama.Mat;
+import utils.io.Print;
+import utils.jama.GaussjNR;
+import utils.jama.Mat;
 import java.io.IOException;
 /*
  * 22.10.11 (SU) : New class for mrqmin

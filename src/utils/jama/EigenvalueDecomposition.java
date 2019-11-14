@@ -1,4 +1,4 @@
-package binutils.jama;
+package utils.jama;
 
 /** Eigenvalues and eigenvectors of a real matrix. 
 <P>

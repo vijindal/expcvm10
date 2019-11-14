@@ -5,8 +5,8 @@
  */
 package debug;
 
-import binutils.io.DataPrinter;
-import binutils.io.Print;
+import utils.io.DataPrinter;
+import utils.io.Print;
 import calbince.*;
 import java.io.FileNotFoundException;
 import java.io.IOException;

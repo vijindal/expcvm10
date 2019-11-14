@@ -2,7 +2,7 @@
  * To change this template, choose Tools | Templates
  * and open the template in the editor.
  */
-package binutils.jama;
+package utils.jama;
 
 /**
  * <p>Title: </p>

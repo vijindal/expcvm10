@@ -1,4 +1,4 @@
-package binutils.jama;
+package utils.jama;
 
 import java.io.IOException;
 

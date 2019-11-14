@@ -2,9 +2,8 @@
  * To change this template, choose Tools | Templates
  * and open the template i the editor.
  */
-package binutils.io;
+package utils.io;
 
-import binutils.io.Print;
 import java.io.IOException;
 
 /**
