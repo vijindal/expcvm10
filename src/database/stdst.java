@@ -31,10 +31,6 @@ public class stdst {
                 value = sgte.get(E, phase, T, typ, "sgte");
                 break;
             }
-            case ("nk"): {
-                value = nk.get(E, phase, T, typ);
-                break;
-            }
             case ("model"): {
                 value = sgte.get(E, phase, T, typ, "model");
                 break;
