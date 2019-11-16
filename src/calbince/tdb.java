@@ -22,22 +22,32 @@ import utils.io.Print;
  *
  * @author admin
  */
-public class readtdb {
+public class tdb {
 
     private int nel; // no of elements
     private int keww;   //keywords
     String tdbFileName;
-    List<phase> phaseList;
-    List<element> elementList;
+    List<Element> elementList;
+    List<Species> speciesList;
+    List<Phase> phaseList;
 
-    public readtdb(String tdbFileName) {
-        System.out.println("readtdb called with " + tdbFileName);
-        this.phaseList = new ArrayList<>();
+    public tdb() {//Constructor for initiating datbase structure
+        System.out.println("readtdb called");
         this.elementList = new ArrayList<>();
-        this.tdbFileName = tdbFileName;
+        this.speciesList = new ArrayList<>();
+        this.phaseList = new ArrayList<>();
     }
 
-    public void read() throws FileNotFoundException {
+    public tdb(String tdbFileName) throws FileNotFoundException {//Constructor for initiating datbase structure and filled with tdbFileName file
+        System.out.println("readtdb called with " + tdbFileName);
+        this.elementList = new ArrayList<>();
+        this.speciesList = new ArrayList<>();
+        this.phaseList = new ArrayList<>();
+        this.tdbFileName = tdbFileName;
+        readFile();
+    }
+
+    private void readFile() throws FileNotFoundException {
         try {
             FileInputStream fin = new FileInputStream(tdbFileName);//vj-15-03-12
             DataInputStream in = new DataInputStream(fin);
@@ -47,31 +57,30 @@ public class readtdb {
             String[] keywordStringList;
             String temp = "";
             String keyword;
-            List<String> KeywordList = new ArrayList<>();
             while ((str = br.readLine()) != null) { //reading each line of the file
                 if (!str.startsWith("$")) { //ignore line strating with "$" sign
-                    //System.out.println();
+                    System.out.println();
                     //Print.f(str, 1);
                     if (str.endsWith("!")) { // check if keyword string is complete
                         keywordString = temp + str;
                         keywordString = keywordString.trim().replaceAll(" +", " ");// remove extra spces, needs to be checked !
                         Print.f("keyword:" + keywordString, 1);
-                        KeywordList.add(keywordString);//may be removed later
-                        keywordStringList = keywordString.split(" "); //splitting keywordString using space " " into words
+                        keywordStringList = keywordString.split(" "); //splitting keywordString using space " " into words, needs to be checked for "!" as well
                         //Print.f("keywordStringList", keywordStringList, 0);
                         keyword = keywordStringList[0]; //fisrt word should be a keyword
                         Print.f(keyword, 0);
                         switch (keyword) {//code need to be modified for partial matches cases! one possible way is to trim both kewwords to be matched with minimum possible characters and then match
                             case "ELEMENT":
-                                element elementObj = new element();
-                                elementObj.enter(keywordStringList);
+                                Element elementObj = new Element(keywordStringList);
                                 elementList.add(elementObj);
                                 break;
                             case "SPECIES":
+                                Species speciesObj = new Species(keywordStringList);
+                                speciesList.add(speciesObj);
                                 break;
                             case "PHASE":
-                                phase phaseObj = new phase();
-                                phaseObj.enter(keywordStringList);
+                                Phase phaseObj = new Phase();
+                                phaseObj.Phase(keywordStringList);
                                 phaseList.add(phaseObj);
                                 break;
                             case "CONSTITUENT":
@@ -142,22 +151,22 @@ public class readtdb {
         } catch (FileNotFoundException e) {
             System.err.println("File Not Found");
         } catch (IOException ex) {
-            Logger.getLogger(readtdb.class.getName()).log(Level.SEVERE, null, ex);
+            Logger.getLogger(tdb.class.getName()).log(Level.SEVERE, null, ex);
         }
 
         //System.out.println(phaseList.size());
         System.out.println(elementList.size());
     }
 
-    class phase {//better name for this class!
+    class Phase {//better speciesName for this class!
 
         String phaseName;
         String dataTypeCode;
         int numSubLat; //Number of sublattices
         List<Float> numSites = new ArrayList<Float>(); //Number of sites of each of the sublattices 
 
-        void enter(String[] keywordStringList) throws IOException {
-            this.phaseName = keywordStringList[1]; //some checks to be added for the phase name
+        void Phase(String[] keywordStringList) throws IOException {
+            this.phaseName = keywordStringList[1]; //some checks to be added for the Phase speciesName
             this.dataTypeCode = keywordStringList[2]; //some checks to be added for the dataTypeCode
             numSubLat = Integer.parseInt(keywordStringList[3]);
             for (int i = 0; i < numSubLat; i++) {
@@ -170,27 +179,119 @@ public class readtdb {
         }
     }
 
-    class element {//better name for this class!
+    class Element {//better speciesName for this class!
 
         String elementName;
-        String refState;
+        String ref_state;
         double mass;
         double H298;
         double S298;
 
-        void enter(String[] keywordStringList) throws IOException {
-            this.elementName = keywordStringList[1]; //some checks to be added for the phase name
-            this.refState = keywordStringList[2]; //some checks to be added for the dataTypeCode
+        private Element(String[] keywordStringList) throws IOException {
+            this.elementName = keywordStringList[1]; //some checks to be added for the Phase speciesName
+            this.ref_state = keywordStringList[2]; //some checks to be added for the dataTypeCode
             this.mass = Double.parseDouble(keywordStringList[3]);
             this.H298 = Double.parseDouble(keywordStringList[4]);
             this.S298 = Double.parseDouble(keywordStringList[5]);
             Print.f("elementName:" + elementName, 0);
-            Print.f("refState:" + refState, 0);
+            Print.f("refState:" + ref_state, 0);
             Print.f("mass:", mass, 0);
             Print.f("H298:", H298, 0);
             Print.f("S298:", S298, 0);
         }
     }
+
+    private class Species {//better speciesName for this class!
+
+        String speciesName;			//
+        String formula;			//
+        //double charge;			//
+
+        private Species() {//Generic constructor method
+
+        }
+
+        private Species(String[] keywordStringList) throws IOException {
+            this.speciesName = keywordStringList[1]; //some checks to be added for the Phase speciesName
+            this.formula = keywordStringList[2]; //some checks to be added for the dataTypeCode
+            //this.charge = Double.parseDouble(keywordStringList[3]);
+            Print.f("name:" + speciesName, 0);
+            Print.f("formula:" + formula, 0);
+            //Print.f("charge:", charge, 0);
+        }
+    }
+
+    private class Function {//better speciesName for this class!
+
+        String name;			//
+        List<Double> T;		//
+        List<String> express;		//
+
+        private void Function() {//Generic constructor method
+
+        }
+
+        private void Function(String[] keywordStringList) throws IOException {
+            T = new ArrayList<Double>();
+            express = new ArrayList<String>();
+            this.name = keywordStringList[1]; //some checks to be added for the Phase speciesName
+            //this.T = Double.parseDouble(keywordStringList[2]); //some checks to be added for the dataTypeCode
+            //this.express = keywordStringList[3];
+            Print.f("name:" + name, 0);
+            //Print.f("formula:" + formula, 0);
+            //Print.f("charge:", charge, 0);
+        }
+    }
+
+    private class Parameter {
+
+        /* para types
+		1 end member;2 binary interaction parameters; 
+		3 ternary interaction parameters
+		4 reciprocal interaction parameter;
+         */
+        int MDim;
+        int order;
+        int kind;
+        int nsub2 = 0;  // binary para
+        int nsub3 = 0;  // ternary para
+        int[] idsub2 = new int[2];  // interaction ele id in binary para
+        int[] idsub3 = new int[3];  // interaction ele id in ternary para
+        int[] vidsub2 = new int[2];
+        int[] vidsub3 = new int[3];
+        String phasename;
+        String type;
+        String[] con = new String[10];// 10 sublattices, element in each sublattice is a vector
+        // ele id in Phase constitution£¬eg, constituent :Al,Mg,Zn:Zn,Va:
+        // para G(BCC,Al:Zn,0),become G(BCC,1:4,0)
+        int yn = 0;		// constituent number
+        int yidc[] = new int[MDim * 3];	// constituent id
+        int yids[] = new int[MDim * 3];// sublattice id
+        int vyn = 0;	 // varible y number
+        int vyidc[] = new int[MDim * 3]; // constituent id
+        int vyids[] = new int[MDim * 3]; // sublattice id
+        int vyidv[] = new int[MDim * 3];// para's vy in Phase's vy id
+        double[] T;		//
+        double[] express;			//
+        //express_digit express_digit[10]; // 10 T segment, terms in each segment is a vector 
+
+        void paramter() {
+
+        }
+
+    }
+
+    private class TypeDefinition {
+
+        String label;			//
+        String model;			//
+        String command;			//
+        String phasename;		//
+        String property;		//
+        String disname;
+        double value1;			//
+        double value2;			//
+    };
 
 //    try {
 //    
