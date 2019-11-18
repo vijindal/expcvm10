@@ -113,6 +113,15 @@ public class Print {
         }
         Print.f(var[i] + "}", loglevel);
     }
+
+    public static void f(String[] var, int loglevel) throws IOException {//vj-2013-03-24-modified
+        int i;
+        Print.write("{", loglevel);
+        for (i = 0; i < var.length - 1; i++) {
+            Print.write(var[i] + ",", loglevel);
+        }
+        Print.write(var[i] + "}", loglevel);
+    }
 // 2D f Printing Starts
 
     public static void f(String varName, boolean[][] var, int loglevel) throws IOException {
@@ -146,13 +155,19 @@ public class Print {
     }
 
     public static void f(String varName, String[][] var, int loglevel) throws IOException {
-        Print.f("(2D) (String) " + varName + " : ", loglevel);
-        for (String[] var2 : var) {
-            for (String var1 : var2) {
-                Print.write("  " + var1, loglevel);
-            }
-            Print.f("", loglevel);
+//        Print.f("(2D) (String) " + varName + " : ", loglevel);
+//        for (String[] var2 : var) {
+//            for (String var1 : var2) {
+//                Print.write("  " + var1, loglevel);
+//            }
+//            Print.f("", loglevel);
+//        }
+        int i, j;
+        Print.write(varName + ": {", loglevel);
+        for (j = 0; j < var.length; j++) {
+            Print.f(var[j], loglevel);
         }
+        Print.f("}", loglevel);
     }
 
 // 3D f Printing Starts

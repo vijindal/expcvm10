@@ -51,7 +51,9 @@ public class Main {
 //        } catch (IOException e) {
 //            System.out.println(e.getMessage());
 //        }
-        tdb rtbd = new tdb(currentDirectory + "/data/cost507.tdb");
+        //tdb rtbd = new tdb(currentDirectory + "/data/cost507.tdb");
+        //tdb rtbd = new tdb(currentDirectory + "/data/steel7.TDB");
+        tdb rtbd = new tdb(currentDirectory + "/data/agcu.TDB");
     }
 
     private static void calModule(String exptDataFileName, String phaseDataFileName, String filePrefix) throws IOException {
