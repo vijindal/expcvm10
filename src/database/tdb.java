@@ -12,8 +12,6 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Stack;
@@ -30,11 +28,11 @@ import utils.io.Print;
 public class tdb {
 
     private String tdbFileName;
-    private List<Element> elementList;
-    private List<Species> speciesList;
-    private List<Phase> phaseList;
-    private List<Function> functionList;
-    private List< TypeDefinition> typeDefinitionList;
+    private ArrayList<Element> elementList;
+    private ArrayList<Species> speciesList;
+    private ArrayList<Phase> phaseList;
+    private ArrayList<Function> functionList;
+    private ArrayList< TypeDefinition> typeDefinitionList;
     private Reference reference;
     private int numElement;
     private int numSpecies;
@@ -43,7 +41,7 @@ public class tdb {
     private int numTypeDef;
 
     public tdb() {//Constructor for initiating datbase structure
-        System.out.println("readtdb called");
+        System.out.println("tdb method is called");
         this.elementList = new ArrayList<>();
         this.speciesList = new ArrayList<>();
         this.phaseList = new ArrayList<>();
@@ -52,7 +50,7 @@ public class tdb {
     }
 
     public tdb(String tdbFileName) throws FileNotFoundException, IOException {//Constructor for initiating datbase structure and filled with tdbFileName file
-        System.out.println("readtdb called with " + tdbFileName);
+        System.out.println("tdb method is called with: " + tdbFileName);
         this.tdbFileName = tdbFileName;
         this.elementList = new ArrayList<>();
         this.speciesList = new ArrayList<>();
@@ -69,39 +67,39 @@ public class tdb {
     * @since             10.0
      */
     public tdb gettdb(String[] inputElementList) throws IOException {
+        printSepLine();
+        Print.f("gettdb method is called with:", inputElementList, 0);
         tdb systdb = new tdb();
         boolean found;
         systdb.tdbFileName = tdbFileName;
-        Phase sysPhase = new Phase();
-        String[][] sysConstList;
-
-        //Element sysElement;
-        int i = 0;
-        for (String elementName : inputElementList) {
-            found = false;
-            for (Element sysElement : elementList) {
-                if (sysElement.elementName.equals(elementName)) {
-                    systdb.elementList.add(sysElement);
-                    found = true;
-                    i = i + 1;
-                    break;
+        int sysNumElement = inputElementList.length;
+        systdb.numElement = sysNumElement;
+        for (String s : inputElementList) {
+            for (Element e : elementList) {
+                if (s.equals(e.elementName)) {
+                    systdb.elementList.add(e);
+                } else {
+                    //Print.f("Element: " + s + " is not found in the database file: " + tdbFileName, 0);
                 }
             }
-            if (!found) {
-                Print.f("Element: " + elementName + " is not found in the database file: " + tdbFileName, 0);
-            }
+        }
+
+        for (String elementName : inputElementList) {
             for (Species sysSpecies : speciesList) {
                 if (sysSpecies.elmntCount.containsKey(elementName)) {
                     systdb.speciesList.add(sysSpecies);
                 }
             }
         }
-        systdb.numElement = i;
+        systdb.numSpecies = systdb.speciesList.size();
+
         for (Phase p : phaseList) {//search phases that contains element(s) of inputElementList
+            Phase sysPhase = new Phase();
             // On all the sublattices of the phase one of the element of inputElementList or "VA" should be found 
-            Print.f("Phase: " + p.phaseName + " is called", 0);
+            //Print.f("Phase: " + p.phaseName + " is called", 0);
+            //p.print();
             ArrayList<ArrayList<String>> tempList = p.getConstituentList();//to hold a copy of constituent list
-            Print.f(tempList.toString(), 0);
+            //Print.f(tempList.toString(), 0);
             found = true;
             ArrayList<ArrayList<String>> sysList = new ArrayList<>();
             for (ArrayList<String> list1 : tempList) {
@@ -111,7 +109,7 @@ public class tdb {
                         systemp.add(e);
                     }
                 }
-                Print.f(systemp.toString(), 0);
+                //Print.f(systemp.toString(), 0);
                 if (systemp.isEmpty()) {
                     found = false;
                     break;
@@ -120,25 +118,36 @@ public class tdb {
                 }
             }
             if (found) {
-                sysPhase.constituentList = sysList;
-            }
-
-            ArrayList<Parameter> sysParamList = p.getParam(inputElementList);
-            if (!sysParamList.isEmpty()) {
-                sysPhase.phaseName = p.phaseName;
-                sysPhase.phaseType = p.phaseType;
-                sysPhase.numSubLat = p.numSubLat;
-                sysPhase.numSites = p.numSites;
-                systdb.phaseList.add(sysPhase);
+                ArrayList<Parameter> sysParamList = p.getParam(inputElementList);
+                if (!sysParamList.isEmpty()) {
+                    //System.out.println("matched and added");
+                    sysPhase.phaseName = p.phaseName;
+                    sysPhase.phaseType = p.phaseType;
+                    sysPhase.numSubLat = p.numSubLat;
+                    sysPhase.numSites = p.numSites;
+                    sysPhase.dataTypeCode = p.dataTypeCode;
+                    sysPhase.constituentList = sysList;
+                    sysPhase.paramList = sysParamList;
+                    systdb.phaseList.add(sysPhase);
+                }
             }
             //System.out.println(sysParamList.toString());
         }
-
+        systdb.numPhases = systdb.phaseList.size();
+        systdb.functionList = functionList;// to be improved !
+        systdb.numFunction = numFunction;
+        systdb.typeDefinitionList = typeDefinitionList;// to be improved !
+        systdb.numTypeDef = numTypeDef;
+        systdb.reference = reference;// to be improved !
+        Print.f("end of gettdb method", 0);
+        printSepLine();
         return (systdb);
     }
 
     private void readFile() throws FileNotFoundException {
         try {
+            printSepLine();
+            Print.f("Reading tdb file: " + tdbFileName, 0);
             FileInputStream fin = new FileInputStream(tdbFileName);//vj-15-03-12
             DataInputStream in = new DataInputStream(fin);
             BufferedReader br = new BufferedReader(new InputStreamReader(in));
@@ -211,6 +220,9 @@ public class tdb {
                                 break;
                             case "PARAMETER":
                                 Parameter paramObj = new Parameter(keywordStringList[1]);
+                                if (paramObj.phaseId != -1) {
+                                    phaseList.get(paramObj.phaseId).paramList.add(paramObj);
+                                }
                                 break;
                             case "PARA":
                             case "PARAM":
@@ -252,14 +264,13 @@ public class tdb {
                     }
                 }
             }
+            Print.f("End of reading tdb file", 0);
+            printSepLine();
         } catch (FileNotFoundException e) {
             System.err.println("File Not Found");
         } catch (IOException ex) {
             Logger.getLogger(tdb.class.getName()).log(Level.SEVERE, null, ex);
         }
-
-        //System.out.println(phaseList.size());
-        System.out.println(elementList.size());
     }
 
     class Phase {//better speciesName for this class!
@@ -341,13 +352,13 @@ public class tdb {
         public ArrayList<Parameter> getParam(String[] elementList) throws IOException {
             //Print.f("getParam method is called with:" + Arrays.toString(elementList), 0);
             ArrayList<Parameter> sysparamList = new ArrayList<>();//for storing parameter having constituent List consist of elementList only
-            String[][] tempList;
+            ArrayList<ArrayList<String>> tempList;
             boolean isOtherElement;
             for (Parameter p : paramList) {
                 isOtherElement = false;
                 tempList = p.constituentList;
                 //Print.f("tempList:", tempList, 0);
-                for (String[] tempList1 : tempList) {//loop over row
+                for (ArrayList<String> tempList1 : tempList) {//loop over row
                     for (String item : tempList1) {
                         //Print.f(" item: " + item, 0);//loop over column
                         if (!"VA".equals(item)) {
@@ -371,13 +382,12 @@ public class tdb {
 
         public void print() throws IOException {
             Print.f("----------------------------", 0);
-            Print.f("phase:" + phaseName, 0);
-            Print.f("phaseType:" + phaseType, 0);
-            Print.f("numSubLat:" + numSubLat, 0);
-            Print.f("numSites:", numSites, 0);
-            //Print.f("constituentList", constituentList, 0);
+            Print.f("phase:" + phaseName + '\t' + phaseType, 0);
+            System.out.print("Subl: " + numSubLat + '\t');
+            Print.f("", numSites, 0);
+            System.out.println("Constituents: " + constituentList);
             paramList.forEach((p) -> {
-                System.out.println("" + p.type + '\t' + Arrays.deepToString(p.constituentList) + '\t' + p.order + '\t' + p.T + '\t' + p.express);
+                System.out.println("" + p.type + '\t' + p.constituentList.toString() + '\t' + p.order + '\t' + p.T + '\t' + p.express);
             });
         }
     }
@@ -418,7 +428,10 @@ public class tdb {
         for (int i = 0; i < numSubLat; i++) {
             //Print.f("lists:", keywordString2[i + 1], 0);
             String[] temp = keywordString2[i + 1].trim().split(",");
-            ArrayList<String> arrayList = new ArrayList<>(Arrays.asList(temp));
+            ArrayList<String> arrayList = new ArrayList<>();
+            for (String temp1 : temp) {//trim % after element name, if present
+                arrayList.add(temp1.split("%")[0]);
+            }
             constituentList.add(arrayList);
             //Print.f("consList[i]:", consList[i], 0);
         }
@@ -524,9 +537,9 @@ public class tdb {
         String type;
         String phasename;
         int phaseId;
-        String[][] constituentList;// 10 sublattices, e in each sublattice is a vector// ele id in Phase constitution£¬eg, constituent :Al,Mg,Zn:Zn,Va:
-        List<Double> T;		//
-        List<String> express;		//	//
+        ArrayList<ArrayList<String>> constituentList;// 10 sublattices, e in each sublattice is a vector// ele id in Phase constitution£¬eg, constituent :Al,Mg,Zn:Zn,Va:
+        ArrayList<Double> T;		//
+        ArrayList<String> express;		//	//
 
         Parameter(String keywordLine) throws IOException {
             //Print.f("Parameter is called with:" + keywordLine, 0);
@@ -534,12 +547,12 @@ public class tdb {
 //          PARAMETER G(HCP_A3,AG,CU:VA;0) 298.15 +35000-8*T; 6000     N REF135 !
             T = new ArrayList<>();
             express = new ArrayList<>();
+            constituentList = new ArrayList<>();
             String endmarkSpace = " ";
             String endMarkSemiColon = ";";
             String[] tempList;
             String templineL;
             String templineR;
-            ArrayList<ArrayList<String>> consList = new ArrayList<>();
             int numSubLat;
             //                 0   1    2    3    4   5 
             String endmark[] = {" ", ":", ",", "\\(", "\\)", ";"};
@@ -560,9 +573,9 @@ public class tdb {
             this.phaseId = findPhase(phasename);
             //Print.f("phaseId: " + phaseId, 0);
             if (phaseId != -1) {
-                consList = phaseList.get(phaseId).constituentList;//Read consList
+                //consList = phaseList.get(phaseId).constituentList;//Read consList
                 numSubLat = phaseList.get(phaseId).getNumSubLat();//read numSubLat
-                constituentList = new String[numSubLat][];
+                //constituentList = new String[numSubLat][];
                 //Print.f("numSubLat:" + numSubLat, 0);
                 tempList = splitString(templineR, endmark[5]); //split with ";" to get order
                 templineL = tempList[0];//AG,CU:VA
@@ -573,7 +586,12 @@ public class tdb {
                 }
                 tempList = templineL.split(endmark[1]); //split with ":" 
                 for (int i = 0; i < numSubLat; i++) { // loop sub
-                    constituentList[i] = tempList[i].split(endmark[2]); //split with ","
+                    String[] temp = tempList[i].split(endmark[2]); //split with ","
+                    ArrayList<String> cons = new ArrayList<>();
+                    for (String temp1 : temp) { //To remove "%" sign after element name
+                        cons.add(temp1.split("%")[0]);
+                    }
+                    constituentList.add(cons);
                 }
                 //Print.f("constituentList: ", constituentList, 0);
             }
@@ -598,17 +616,10 @@ public class tdb {
             //Print.f("expressLine:" + splitKeywordLine[numRange - 1], 0);
             splitExpressLine = splitString(tempList[numRange - 1].trim(), endmarkSpace);// get T
             this.T.add(Double.parseDouble(splitExpressLine[0].trim()));//Add T
-            //Print.f("type: " + type, 0);
-            //Print.f("phasename: " + phasename, 0);
-            //Print.f("phaseId: " + phaseId, 0);
-            //Print.f("order: " + order, 0);
-            //Print.f("constituentList: ", constituentList, 0);
-            //System.out.println(T);
-            //System.out.println(express);
-            if (phaseId == -1) {
-            } else {
-                phaseList.get(phaseId).paramList.add(this);
-            }
+        }
+
+        public void print() throws IOException {
+            System.out.println("" + phaseId + '\t' + type + '\t' + phasename + '\t' + order + '\t' + constituentList.toString() + '\t' + T.toString() + '\t' + express.toString());
         }
 
     }
@@ -640,8 +651,8 @@ public class tdb {
 
     class Reference {
 
-        List<String> number;				//
-        List<String> source;				//
+        ArrayList<String> number;				//
+        ArrayList<String> source;				//
 
         Reference(String keywordLine) throws IOException {
             number = new ArrayList<>();
@@ -664,8 +675,10 @@ public class tdb {
                 keywordLine = tempList[1];
                 //Print.f("keywordLine: ", keywordLine, 0);
             }
-            System.out.println(number);
-            System.out.println(source);
+        }
+
+        public void print() {
+            System.out.println(number.toString() + '\t' + source.toString());
         }
 
     };
@@ -684,7 +697,8 @@ public class tdb {
     }
 
     public void printtdb() throws IOException {
-        Print.f("Listing data:-------------------------------------------------", 0);
+        printSepLine();
+        Print.f("Listing data", 0);
         Print.f("List of " + numElement + " elements", 0);
         System.out.format("%16s%16s%16s%16s%16s%16s%n", "No", "Name", "Reference state", "Mass", "H298-H0", "S298");
         int i = 0;
@@ -712,11 +726,13 @@ public class tdb {
             p.print();
             i = i + 1;
         }
+        Print.f("End of Listing data", 0);
+        printSepLine();
     }
 
     public HashMap countElements(String formula) {
-        HashMap<String, Integer> elements = new HashMap<String, Integer>();
-        Stack<Integer> mults = new Stack<Integer>();
+        HashMap<String, Integer> elements = new HashMap<>();
+        Stack<Integer> mults = new Stack<>();
 
         StringBuilder element = new StringBuilder("");
         StringBuilder digits = new StringBuilder("");
@@ -781,6 +797,10 @@ public class tdb {
         // Print the result 
         //System.out.println("Is " + toCheckValue + " present in the array: " + test);
         return test;
+    }
+
+    void printSepLine() {
+        System.out.println("----------------------------------------------------");
     }
 
 }

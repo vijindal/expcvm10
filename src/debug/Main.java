@@ -54,13 +54,13 @@ public class Main {
 //        }
         tdb rtbd = new tdb(currentDirectory + "/data/cost507R.TDB");
         //tdb rtbd = new tdb(currentDirectory + "/data/cost507.tdb");
+        //tdb rtbd = new tdb(currentDirectory + "/data/agcu.TDB");
         //tdb rtbd = new tdb(currentDirectory + "/data/steel1.TDB");
         //rtbd.printtdb();
         String[] elementList = {"V", "TI"};
-        tdb systdb;
-        systdb = rtbd.gettdb(elementList);
+        tdb systdb = rtbd.gettdb(elementList);
         systdb.printtdb();
-        //tdb rtbd = new tdb(currentDirectory + "/data/agcu.TDB");
+
     }
 
     private static void calModule(String exptDataFileName, String phaseDataFileName, String filePrefix) throws IOException {
