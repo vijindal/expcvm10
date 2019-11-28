@@ -15,7 +15,7 @@ import phase.solution.cecvm.CVMBINCE;
  */
 public abstract class FCCQTBINCE extends CVMBINCE {
 
-    private int tcdis_local = 82;
+    private final int tcdis_local = 82;
     private int nxcdis_local = 1;
     private int ncdis_local = 81;
     private double mgdis_local[] = {6, 6, 24, 24, 12, 24, 24, 12, 48, 24, 24, 48, 12, 24, 24, 24, 12, 48,

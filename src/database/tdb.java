@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Stack;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import utils.io.Print;
 
 /**
@@ -386,9 +388,9 @@ public class tdb {
             System.out.print("Subl: " + numSubLat + '\t');
             Print.f("", numSites, 0);
             System.out.println("Constituents: " + constituentList);
-            paramList.forEach((p) -> {
-                System.out.println("" + p.type + '\t' + p.constituentList.toString() + '\t' + p.order + '\t' + p.T + '\t' + p.express);
-            });
+            for (Parameter p : this.paramList) {
+                p.print();
+            }
         }
     }
 
@@ -488,18 +490,19 @@ public class tdb {
     class Function {//better speciesName for this class!
 
         String name;			//
-        List<Double> T;		//
-        List<String> express;		//
+        ArrayList<Double> T;		//
+        ArrayList<Exp> expList;
 
         Function() {//Generic constructor method
             T = new ArrayList<>();
-            express = new ArrayList<>();
+            expList = new ArrayList<>();
         }
 
         Function(String keywordLine) throws IOException {
             //Print.f("Function is called with:" + keywordLine, 0);
             T = new ArrayList<>();
-            express = new ArrayList<>();
+            expList = new ArrayList<>();
+            Exp exp;
             String endmarkSpace = " ";
             String endMarkSemiColon = ";";
             int numRange;//number of temperature ranges
@@ -515,19 +518,37 @@ public class tdb {
             //Print.f("splitKeywordLine:", splitKeywordLine, 0);
             numRange = splitKeywordLine.length;
             //Print.f("numRange:", numRange, 0);
-            express.add(splitKeywordLine[0].trim());
+            exp = new Exp(splitKeywordLine[0].trim());
+            this.expList.add(exp);
             for (int i = 1; i < numRange - 1; i++) {
                 splitExpressLine = splitString(splitKeywordLine[i].trim(), endmarkSpace);// get T
                 this.T.add(Double.parseDouble(splitExpressLine[0].trim()));//Add T
                 splitKeywordLine[i] = splitExpressLine[1].trim();//remaining ExpressLine
                 splitExpressLine = splitString(splitKeywordLine[i].trim(), endmarkSpace);// split to get word "Y/N" and expression
-                this.express.add(splitExpressLine[1].trim());//add expression
+                exp = new Exp(splitExpressLine[1].trim());
+                this.expList.add(exp);//add expression
             }
             splitExpressLine = splitString(splitKeywordLine[numRange - 1].trim(), endmarkSpace);// get T
             this.T.add(Double.parseDouble(splitExpressLine[0].trim()));//Add T
-            //Print.f("name:" + name, 0);
-            //System.out.println(T);
-            //System.out.println(express);
+        }
+    }
+
+    /*
+    This class handles expression 
+     */
+    class Exp {
+
+        String expStr;//expression String
+        ArrayList<Double> coeffList;//contains coefficients of the terms in expStr
+        ArrayList<String> funcList; //contains terms of the expStr
+        ArrayList<Double> funcCoeffList;
+
+        Exp(String inputExp) throws IOException {
+            this.expStr = inputExp;
+            this.funcList = new ArrayList<>();
+            this.coeffList = new ArrayList<>();
+            this.funcCoeffList = new ArrayList<>();
+            //readExpress(inputExp, coeffList, funcList, funcCoeffList);
         }
     }
 
@@ -539,7 +560,7 @@ public class tdb {
         int phaseId;
         ArrayList<ArrayList<String>> constituentList;// 10 sublattices, e in each sublattice is a vector// ele id in Phase constitution£¬eg, constituent :Al,Mg,Zn:Zn,Va:
         ArrayList<Double> T;		//
-        ArrayList<String> express;		//	//
+        ArrayList<Exp> express;		//	//
 
         Parameter(String keywordLine) throws IOException {
             //Print.f("Parameter is called with:" + keywordLine, 0);
@@ -548,6 +569,7 @@ public class tdb {
             T = new ArrayList<>();
             express = new ArrayList<>();
             constituentList = new ArrayList<>();
+            Exp exp;
             String endmarkSpace = " ";
             String endMarkSemiColon = ";";
             String[] tempList;
@@ -604,14 +626,16 @@ public class tdb {
             //Print.f("splitKeywordLine:", splitKeywordLine, 0);
             int numRange = tempList.length;
             //Print.f("numRange:", numRange, 0);
-            express.add(tempList[0].trim());
+            exp = new Exp(tempList[0].trim());
+            this.express.add(exp);
             for (int i = 1; i < numRange - 1; i++) {
                 //Print.f("expressLine:" + splitKeywordLine[i], 0);
                 splitExpressLine = splitString(tempList[i].trim(), endmarkSpace);// get T
                 this.T.add(Double.parseDouble(splitExpressLine[0].trim()));//Add T
                 tempList[i] = splitExpressLine[1].trim();//remaining ExpressLine
                 splitExpressLine = splitString(tempList[i].trim(), endmarkSpace);// split to get word "Y/N" and expression
-                this.express.add(splitExpressLine[1].trim());//add expression
+                exp = new Exp(splitExpressLine[1].trim());
+                this.express.add(exp);//add expression
             }
             //Print.f("expressLine:" + splitKeywordLine[numRange - 1], 0);
             splitExpressLine = splitString(tempList[numRange - 1].trim(), endmarkSpace);// get T
@@ -619,7 +643,11 @@ public class tdb {
         }
 
         public void print() throws IOException {
-            System.out.println("" + phaseId + '\t' + type + '\t' + phasename + '\t' + order + '\t' + constituentList.toString() + '\t' + T.toString() + '\t' + express.toString());
+            System.out.print("Paramter" + '\t' + phaseId + '\t' + type + '\t' + phasename + '\t' + order + '\t' + constituentList.toString() + '\t' + T.toString() + '\t');
+            for (Exp exp : express) {
+                System.out.print(exp.expStr + '\t');
+            }
+            System.out.println();
         }
 
     }
@@ -717,7 +745,7 @@ public class tdb {
         i = 0;
         Print.f("List of all symbols used in phase parameters:", 0);
         for (Function f : functionList) {
-            System.out.println("" + i + '\t' + f.name + '\t' + f.T + '\t' + f.express);
+            System.out.println("" + i + '\t' + f.name + '\t' + f.T + '\t' + f.expList);
             i = i + 1;
         }
         i = 0;
@@ -794,7 +822,7 @@ public class tdb {
                 break;
             }
         }
-        // Print the result 
+        // Print the temStrList 
         //System.out.println("Is " + toCheckValue + " present in the array: " + test);
         return test;
     }
@@ -803,4 +831,418 @@ public class tdb {
         System.out.println("----------------------------------------------------");
     }
 
+    /*
+    * This method process an expression in the .tdb file. It read coefficiens of
+    the following terms and store them in the cmat array:
+        Constant, T, T*Log(T), T^2, T^3, T^4, T^7, T^-1, T^-2, T^-3, T-9
+    @param  expression
+    @return coefficints of the terms
+    @since 10.0
+     */
+    private double[] getCoeff(String str) throws IOException {
+        Print.f("sgte.getCmat method called", 7);
+        int cmatMaxLength = 11;
+        double[] cmat_local = new double[cmatMaxLength];
+        //prnt.f("////" + str + "////");
+        if (str.endsWith(";")) {
+            str = str.substring(0, str.length() - 1);
+        }
+        String delims = "[+]";
+        String temp[] = str.split(delims);
+        Print.f("temp", temp, 0);
+        delims = "[-]";
+        int k = 0;
+        String store[] = new String[25];
+        for (String temp1 : temp) {
+            String[] temp2 = temp1.split(delims);
+            for (int j = 0; j < temp2.length; j++) {
+                if (j == 0) {
+                    store[k] = temp2[j];
+                } else {
+                    store[k] = "-" + temp2[j];
+                }
+                k++;
+            }
+        }
+        Print.f("Store", store, 0);
+        for (int i = 1; i < store.length; i++) {
+            if (store[i] == null) {
+                break;
+            }
+            if (store[i - 1].endsWith("E")) {
+                //Print.f("E\ti\t" + store[i] + "\ti-1\t" + store[i - 1], 0);
+                store[i - 1] = store[i - 1] + store[i];
+                for (int j = i; j < store.length; j++) {
+                    if (store[j] == null) {
+                        break;
+                    }
+                    store[j] = store[j + 1];
+                }
+            }
+            if (store[i - 1].endsWith("(")) {
+                //Print.f("E\ti\t" + store[i] + "\ti-1\t" + store[i - 1], 0);
+                store[i - 1] = store[i - 1] + store[i];
+                for (int j = i; j < store.length; j++) {
+                    if (store[j] == null) {
+                        break;
+                    }
+                    store[j] = store[j + 1];
+                }
+            }
+        }
+        //prnt.f("FLAG//"+ store[0]+"//");
+//        Print.f(store[0]);
+//        Print.f(store[1]);
+        for (int i = 0; i < 2; i++) {
+            if (store[0].equalsIgnoreCase("-") || store[0].isEmpty()) {
+                //prnt.f("FLAG");
+                for (int j = 0; j < store.length; j++) {
+                    if (store[j] == null) {
+                        break;
+                    }
+                    store[j] = store[j + 1];
+                }
+            }
+        }
+        Print.f("Store", store, 0);
+        //prnt.f(store[0]);
+        //prnt.f(store[1]);
+        cmat_local[0] = Double.parseDouble(store[0]);
+        for (int i = 1; i < store.length; i++) {
+            if (store[i] == null) {
+                break;
+            }
+            delims = "[*]+";
+            temp = store[i].split(delims);
+
+            if (temp[1].equalsIgnoreCase("T")) {
+                if (temp.length == 2) {
+                    cmat_local[1] = Double.parseDouble(temp[0]);
+                } else {
+                    if (temp[2].endsWith(")")) {
+                        temp[2] = temp[2].substring(0, temp[2].length() - 1);
+                    }
+                    if (temp[2].startsWith("(")) {
+                        temp[2] = temp[2].substring(1, temp[2].length());
+                    }
+                    if (isInt(temp[2])) {
+                        double value = Double.parseDouble(temp[0]);
+                        //Print.f("value: " + value, 0);
+                        int index = Integer.parseInt(temp[2]);
+                        //cmat[11] = {Constant, T, T*Log(T), T^2, T^3, T^4, T^7, T^-1, T^-2, T^-3, T-9}
+                        switch (index) {
+                            case 2:
+                                cmat_local[3] = value;
+                                break;
+                            case 3:
+                                cmat_local[4] = value;
+                                break;
+                            case 4:
+                                cmat_local[5] = value;
+                                break;
+                            case 7:
+                                cmat_local[6] = value;
+                                break;
+                            case -1:
+                                cmat_local[7] = value;
+                                break;
+                            case -2:
+                                cmat_local[8] = value;
+                                break;
+                            case -3:
+                                cmat_local[9] = value;
+                                break;
+                            case -9:
+                                cmat_local[10] = value;
+                                break;
+                            default:
+                                Print.f("NO case for No. " + index, 0);
+                        }
+                    } else {
+                        cmat_local[2] = Double.parseDouble(temp[0]);
+                    }
+                }
+            }
+        }
+        //prnt.f(cmat_local, "cmat_local", 0);
+        //System.exit(1);
+        Print.f("sgte.getCmat method ended", 7);
+        return (cmat_local);
+    }// Closed Method getCoeff()
+
+    /*
+    *This method simplify string for parsing
+    @param  s input string
+    @return ss simplified string
+    @since 10.0
+     */
+    public String sympifyString(String s) {//convert to private method !
+        //System.out.println("s: " + s);
+        String ss;
+        //make string upper case;
+        ss = s.toUpperCase();
+        //remove all white spaces
+        ss = ss.replace(" ", "");
+        //drop pound symbols ('#') since they denote function names
+        ss = ss.replace("#", "");
+        //Replace LN as lOG
+        ss = ss.replace("LN", "LOG");
+        //System.out.println("ss: " + ss);
+        return (ss);
+    }
+
+    /*
+        this method reads coefficient at the end of input str 
+     */
+    private double readCoeff(String[] str, int index) {
+        int k = 0;
+        double temp;
+        String numStr;
+        String tempStr = str[index];
+        //System.out.println("(before)tempStr : " + tempStr);
+        for (k = (tempStr.length() - 1); k > 0; k--) {
+            if ((tempStr.charAt(k) == '+') || (tempStr.charAt(k) == '-')) {
+                if ((tempStr.charAt(k - 1) == 'E')) {
+                    if (k == 1) {
+                        break;
+                    }
+                    if (k > 1) {
+                        char c = tempStr.charAt(k - 2);
+                        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+                            break;
+                        }
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+        //System.out.println("Length of the String: " + tempStr.length() + ", k:" + k);
+        numStr = tempStr.substring(k).trim();
+        //System.out.println("numStr: " + numStr);
+        if ("+".equals(numStr)) {
+            temp = 1.0;
+        } else if ("-".equals(numStr)) {
+            temp = -1.0;
+        } else {
+            temp = Double.parseDouble(numStr.split("\\*")[0]);
+        }
+        tempStr = tempStr.substring(0, k);
+        str[index] = tempStr;
+        //System.out.println("(after)str: " + str[index]);
+        //System.out.println("temp: " + temp);
+        return (temp);
+    }
+
+    /*
+    
+     */
+    private boolean isContained(String str, String pattern) {
+        System.out.println("isContained is called with str: " + str + " and pattern: " + pattern);
+        boolean flag = false;
+        int firstIndex = str.indexOf(pattern);
+        if (firstIndex != -1) {
+            int lastIndex = firstIndex + pattern.length() - 1;
+            System.out.println("firstIndex: " + firstIndex + ", lastIndex:" + lastIndex + ", strlen:" + str.length());
+            if (firstIndex == 0) {
+                if (lastIndex == str.length() - 1) {
+                    flag = true;
+                } else {
+                    flag = (str.charAt(lastIndex + 1) == '+') | (str.charAt(lastIndex + 1) == '-') | (str.charAt(lastIndex + 1) == '*');
+                }
+            } else {
+                if (((str.charAt(firstIndex - 1) == '+') | (str.charAt(firstIndex - 1) == '-') | (str.charAt(firstIndex - 1) == '*'))) {
+                    if (lastIndex == str.length() - 1) {
+                        flag = true;
+                    } else {
+                        flag = (str.charAt(lastIndex + 1) == '+') | (str.charAt(lastIndex + 1) == '-') | (str.charAt(lastIndex + 1) == '*');
+                    }
+                } else {
+                    flag = false;
+                }
+            }
+        }
+        System.out.println("flag: " + flag);
+        return (flag);
+    }
+
+    /*
+    This method read functions from a expression based on functionList and returns 
+    a list of functions and thier coefficients.
+    This method searches first Function name and split the string based on function name.
+    Now string other than last one carries coeffient of the function hance it keep last part of the string intact and
+    take out coeffient from the first (n-1) strings. And lastly add them all.
+     //+117369-24.63*T+GHSERCC#+GPCLIQ#
+        GHSERCC found will results in {+117369-24.63*T+, +GPCLIQ}
+        +117369-24.63*T+ carries coefficient + > 1.0
+     */
+    private String readFunc(String inputExp, ArrayList<String> funcList, ArrayList<Double> funcCoeffList) throws IOException {
+        inputExp = this.sympifyString(inputExp);
+        System.out.println("readFunc is called with: " + inputExp);
+        String[] tempList;
+        int k = 0;
+        double temp, tempSum;
+        String numStr, tempStr;
+        String[] tmpStrList;
+        boolean found;
+        //Reading functions in the inputExp
+        tempStr = inputExp.trim();
+        for (Function f : functionList) {
+            tempSum = 0.0;
+            if (isContained(inputExp, f.name)) {
+                System.out.println("found the the function:" + f.name + ", inputExp before process: " + tempStr);//split inputExp based on function name
+                tempList = tempStr.trim().split(f.name);
+                System.out.println("tempList.length: " + tempList.length);
+                switch (tempList.length) {
+                    case 0://input string is function name itself
+                        tempSum = 1; //for loop should be broken here
+                        tempStr = "";
+                        break;
+                    case 1://function name is in the last position only first term to be searched
+                    {//function name is in the last position
+                        System.out.println("case 1 before readCoeff, tempList[0]:" + tempList[0]);
+                        tempSum = readCoeff(tempList, 0);
+                        System.out.println("case 1 after readCoeff,tempList[0]:" + tempList[0]);
+                        tempStr = tempList[0];
+                    }   break;
+                    default:
+                        //function name is in the first or middle positions, only (n-1) terms to be searched
+                        if (tempList[0].isEmpty()) {//function name is in the first position
+                            tempSum = 1;
+                            tempStr = tempList[1];
+                        } else {//middle positions, only (n-1) terms to be searched
+                            tempStr = "";
+                            for (int i = 0; i < tempList.length - 1; i++) {
+                                System.out.println("case 22 before readCoeff, tempList[i]:" + tempList[i]);
+                                tempSum = tempSum + readCoeff(tempList, i);
+                                System.out.println("case 22 after readCoeff,tempList[i]:" + tempList[i]);
+                                tempStr = tempStr + tempList[i];
+                            }
+                            tempStr=tempStr+tempList[tempList.length - 1];
+                        }   break;
+                }
+                funcList.add(f.name);
+                funcCoeffList.add(tempSum);
+                System.out.println("found the the function ended with inputExp after process: " + tempStr);
+            }//end of if loop
+        }//end of function loop
+        //System.out.println(funcList);
+        //System.out.println(funcCoeffList);
+        //System.out.println("readFunc is ended");
+        return (tempStr);
+    }//end of readfunc function
+
+    /*
+    This method reads coefficiens of the following terms from the input String and store them in the array:
+        Constant, *T, *T*Log(T), *T**2, *T**3, *T**4, *T**7, *T**(-1), *T**(-2), *T**(-3), *T**(-9)
+     */
+    private void readTerms(String inputExp, ArrayList<Double> coeffList) {
+        System.out.println("readTerms is called with inputExp : " + inputExp);
+        String[] terms = {"1", "*T", "*T*LOG(T)",
+            "*T**2", "*T**3", "*T**4", "*T**7", "*T**(-1)", "*T**(-2)",
+            "*T**(-3)", "*T**(-9)"};
+        String[] temStrList;
+        Pattern pattern;
+        Matcher m;
+        double[] coeffArr = new double[11];
+        int k;
+        for (int i = 10; i > 0; i--) {
+            pattern = Pattern.compile(Pattern.quote(terms[i]));
+            m = pattern.matcher(inputExp);
+            if (m.find()) {
+                //System.out.println("Found a match for " + terms[i]);
+                temStrList = pattern.split(inputExp);
+                //System.out.println("result[0]: " + temStrList[0]);
+                for (k = (temStrList[0].length() - 1); k > 0; k--) {
+                    if ((temStrList[0].charAt(k) == '+') || (temStrList[0].charAt(k) == '-')) {
+                        if (temStrList[0].charAt(k - 1) != 'E') {
+                            break;
+                        }
+                    }
+                }
+                String numStr = temStrList[0].substring(k).trim();
+                //System.out.println("numStr: " + numStr);
+                if (numStr.length() > 0) {
+                    coeffArr[i] = Double.parseDouble(numStr);
+                } else {
+                    coeffArr[i] = 1.0;
+                }
+                //System.out.println(coeffArr[i]);
+                temStrList[0] = temStrList[0].substring(0, k);
+                if (temStrList.length > 1) {
+                    inputExp = temStrList[0] + temStrList[1];
+                } else {
+                    inputExp = temStrList[0];
+                }
+                //System.out.println("remaining express: " + inputExp);
+            } else {
+                coeffArr[i] = 0.0;
+            }
+
+        }
+        for (double d : coeffArr) {
+            coeffList.add(d);
+        }
+        //System.out.println("express: " + inputExp);
+        if (inputExp.length() > 0) {//remaining expList is Constant
+            coeffList.set(0, Double.parseDouble(inputExp));
+        }
+        System.out.println("coeffList: " + coeffList);
+    }
+
+    /*
+    * This method process an expression in the .tdb file. It read coefficiens of
+    the following terms and store them in the cmat array:
+        Constant, *T, *T*Log(T), *T**2, *T**3, *T**4, *T**7, *T**(-1), *T**(-2), *T**(-3), *T**(-9)
+    @param  expression
+    @return coefficints of the terms
+    @since 10.0
+     */
+    private void readExpress(String inputExp, ArrayList<Double> coeffList, ArrayList<String> funcList, ArrayList<Double> funcCoeffList) throws IOException {
+        //+20764.117-9.455552*T-5.19136E-22*T**7+GHSERVV#
+        //-16635.628+62.699624*T-18.9536*T*LN(T)-0.425243E-3*T**2+0.010721E-6*T**3+4383200*T**(-1)
+        // +GHSERCR#+3*GHSERCC#+GPCRBCC#+3*GPCGRA#+416000
+        //3100.00-2.1*T+GHSERMG
+        //+11005.553-11.840873*T+7.9401E-20*T**7+GHSERAL#
+        //+117369-24.63*T+GHSERCC#+GPCLIQ#
+        inputExp = this.sympifyString(inputExp);
+        System.out.println();
+        System.out.println("readExpress is called with: " + inputExp);
+        //called readFunc method
+        inputExp = readFunc(inputExp, funcList, funcCoeffList);
+        readTerms(inputExp, coeffList);
+        System.out.println("funcList: " + funcList);
+        System.out.println("funcCoeffList: " + funcCoeffList);
+        System.out.println("coeffList: " + coeffList);
+
+    }
+
+    private boolean isInt(String in) {
+        try {
+            Integer.parseInt(in);
+            //Double.parseDouble(in);
+        } catch (NumberFormatException ex) {
+            return false;
+        }
+        return true;
+    }// Closed Method isInt()
+
+    int findendmarkforward(String express, String endmark, String endmark_array[], int n) {
+        int i;
+        for (i = express.indexOf(endmark); i >= 0; i--) {
+            for (int j = 0; j < n; j++) {
+                if (express.charAt(i) == endmark_array[j].charAt(0)) {
+                    if (i > 0) {
+                        if (express.charAt(i - 1) != 'E' && express.charAt(i - 1) != '(') {
+                            return i;
+                        }
+                    } else {
+                        return i;
+                    }
+
+                }
+            }
+        }
+        return -1;
+    }
 }

@@ -52,15 +52,21 @@ public class Main {
 //        } catch (IOException e) {
 //            System.out.println(e.getMessage());
 //        }
+        //tdb rtbd = new tdb(currentDirectory + "/data/Unary.TDB");
         tdb rtbd = new tdb(currentDirectory + "/data/cost507R.TDB");
         //tdb rtbd = new tdb(currentDirectory + "/data/cost507.tdb");
         //tdb rtbd = new tdb(currentDirectory + "/data/agcu.TDB");
         //tdb rtbd = new tdb(currentDirectory + "/data/steel1.TDB");
-        //rtbd.printtdb();
-        String[] elementList = {"V", "TI"};
-        tdb systdb = rtbd.gettdb(elementList);
-        systdb.printtdb();
-
+        rtbd.printtdb();
+//        tdb rtbd = new tdb();
+//        rtbd.sympifyString(s1);
+//        String[] elementList = {"V", "TI"};
+//        tdb systdb = rtbd.gettdb(elementList);
+//        systdb.printtdb();
+//        String s= "GHCPAL+3.0*GHCPCR";
+//        String[] temp = s.split("GHCPAL");
+//        System.out.println(temp[0]);
+//        System.out.println(temp[1]);
     }
 
     private static void calModule(String exptDataFileName, String phaseDataFileName, String filePrefix) throws IOException {
