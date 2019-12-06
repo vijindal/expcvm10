@@ -4,7 +4,6 @@
  */
 package calbince;
 
-import utils.io.DataReader;
 import utils.io.Print;
 import utils.io.Utils;
 import java.io.BufferedReader;
@@ -310,15 +309,15 @@ public class ExptData {
     }
 
     private void countPhases() throws IOException {
-        List<String[]> p = new ArrayList<String[]>();
+        List<String[]> p = new ArrayList<>();
         for (int i = 0; i < ndat; i++) {
-            for (int j = 0; j < pList[i].length; j++) {
-                Print.f("pList[" + i + "][item]", pList[i][j], 1);
+            for (String[] item : pList[i]) {
+                Print.f("pList[" + i + "][item]", item, 1);
                 System.out.println(p.size());
-                System.out.println((p.contains(pList[i][j])));
-                if (!(p.contains(pList[i][j]))) {
-                    p.add(pList[i][j]);
-                };
+                System.out.println(p.contains(item));
+                if (!(p.contains(item))) {
+                    p.add(item);
+                }
             }
         }
         System.out.println(Arrays.toString(p.get(0)));
@@ -343,7 +342,7 @@ public class ExptData {
     returns number of data in an input file (such as number of phases in phasesData file and  number of experimental data points in exptData file
      */
     private int getNumData(String infile) throws FileNotFoundException, IOException {
-        int ndat;
+        int ndat_local;
         //Print.f(cname + ".getNumData called with Input File:" + infile, 7);
         LineNumberReader lineCounter = new LineNumberReader(new InputStreamReader(new FileInputStream(infile)));
         String nextLine = null;
@@ -364,9 +363,9 @@ public class ExptData {
         } catch (IOException done) {
             System.err.println("Exception in Reading ndata in getNData()");
         }
-        ndat = lineCounter.getLineNumber() - commentLines;
+        ndat_local = lineCounter.getLineNumber() - commentLines;
         //Print.f(cname + ".getNumData ended with ndat:" + ndat, 7);
-        return (ndat);
+        return (ndat_local);
     }// Close getNumData() Method
 
     public void readExptDataFile() throws IOException {
@@ -376,7 +375,7 @@ public class ExptData {
         //Prnt.f("No. of data points (ndata)= " + nDataPoints, 4);
         // Local arrays to store Data from file
         double[][] arrayIn = new double[8][ndat];
-        String[] dataType = new String[ndat];
+        String[] dataType_local = new String[ndat];
         String[] reference = new String[ndat];
         FileInputStream fin = null;
         try {
@@ -411,7 +410,7 @@ public class ExptData {
                 } else {
                     StringTokenizer st = new StringTokenizer(str);
                     arrayIn[0][index] = Double.parseDouble(st.nextToken()); //Index
-                    dataType[index] = st.nextToken(); //data Type
+                    dataType_local[index] = st.nextToken(); //data Type
                     arrayIn[1][index] = Double.parseDouble(st.nextToken()); //y
                     arrayIn[2][index] = Double.parseDouble(st.nextToken()); //ymod
                     arrayIn[3][index] = Double.parseDouble(st.nextToken()); //sigy
@@ -430,7 +429,7 @@ public class ExptData {
         //dataReader.exptdata.init(dataReader.dataInputFileName, nDataPoints); //vj-2012-04-18:Initialize exptdatas array with size nUsedDataPoints
         for (int idata = 0; idata < ndat; idata++) {
             setdataIndex(arrayIn[0][idata], idata);
-            setDataType(dataType[idata], idata);
+            setDataType(dataType_local[idata], idata);
             setY(arrayIn[1][idata], idata);
             setYmod(arrayIn[2][idata], idata);
             setSig(arrayIn[3][idata], idata);
@@ -441,7 +440,7 @@ public class ExptData {
             setRefList(reference[idata], idata);
         }
         //exptdatas.printGlobalData();
-        patternList(dataType, ndat); // It sets bList & pid on case basis.
+        patternList(dataType_local, ndat); // It sets bList & pid on case basis.
         Print.f(cname + ".readExptDataFile() ended", 7);
     } //  Method  Closed
 

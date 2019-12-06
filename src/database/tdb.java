@@ -277,9 +277,11 @@ public class tdb {
 
     class Phase {//better speciesName for this class!
         //PHASE LIQUID:L %  1  1.0  !
+        //PHASE ALMNSI_ALPHA  %  4 16   4   1   2 !
 
         private String phaseName;
         private String phaseType = "";
+        private String model;
         private String dataTypeCode;
         private int numSubLat; //Number of sublattices
         private int[] numSites; //Number of sites of each of the sublattices 
@@ -294,16 +296,35 @@ public class tdb {
         Phase(String keywordStringLine) throws IOException {
             constituentList = new ArrayList<>();
             paramList = new ArrayList<>();//Initialize paramList
-            String[] keywordStringList = keywordStringLine.trim().split("\\s+");
+            String[] keywordStringList = keywordStringLine.trim().split("\\s+");//{ALMNSI_ALPHA,  %,  4, 16,   4,   1,   2, !}
             //Print.f("keywordStringList:", keywordStringList, 0);
-            String[] tempList = splitString(keywordStringList[0], ":");
+            String[] tempList = splitString(keywordStringList[0], ":");//{ALMNSI_ALPHA},{LIQUID,L}
             //Print.f("tempList:", tempList, 0);
-            this.phaseName = tempList[0]; //some checks to be added for the Phase speciesName
+            this.phaseName = tempList[0]; //ALMNSI_ALPHA or 
             //Print.f("phaseName:" + phaseName, 0);
             //Print.f("tempList.length:" + tempList.length, 0);
             if (tempList.length > 1) {
                 this.phaseType = tempList[1];
                 //Print.f("phaseType:" + phaseType, 0);
+            } else {
+                switch (phaseName) {
+                    case "GAS":
+                        phaseType="G";
+                        model="IDEAL";
+                        break;
+                    case "LIQUID":
+                        phaseType="L";
+                        model="RKM";
+                        break;
+                    case "IONIC_LIQ":
+                        phaseType="L";
+                        model="IONIC_LIQUID";
+                        break;
+                    default:
+                        phaseType="S";
+                        model="CEF"; 
+                        break;
+                }
             }
             //Print.f("dataTypeCode:", 0);
             this.dataTypeCode = keywordStringList[1]; //some checks to be added for the dataTypeCode
@@ -552,7 +573,10 @@ public class tdb {
         }
     }
 
-    class Parameter {
+    /*
+    This class handle Paramters, contructor method reads keywords line and fill values 
+     */
+    public class Parameter {
 
         int order;
         String type;
@@ -1104,7 +1128,8 @@ public class tdb {
                         tempSum = readCoeff(tempList, 0);
                         System.out.println("case 1 after readCoeff,tempList[0]:" + tempList[0]);
                         tempStr = tempList[0];
-                    }   break;
+                    }
+                    break;
                     default:
                         //function name is in the first or middle positions, only (n-1) terms to be searched
                         if (tempList[0].isEmpty()) {//function name is in the first position
@@ -1118,8 +1143,9 @@ public class tdb {
                                 System.out.println("case 22 after readCoeff,tempList[i]:" + tempList[i]);
                                 tempStr = tempStr + tempList[i];
                             }
-                            tempStr=tempStr+tempList[tempList.length - 1];
-                        }   break;
+                            tempStr = tempStr + tempList[tempList.length - 1];
+                        }
+                        break;
                 }
                 funcList.add(f.name);
                 funcCoeffList.add(tempSum);

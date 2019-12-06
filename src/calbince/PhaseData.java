@@ -936,5 +936,4 @@ public class PhaseData {
         //eMat = eTransMat_local;
         Print.f(cname + ".setEmat ended", 7);
     }// Closed Method setEcMat()
-     
 }

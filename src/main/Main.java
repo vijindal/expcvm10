@@ -3,7 +3,7 @@
  * To change this template, choose Tools | Templates
  * and open the template in the editor.
  */
-package debug;
+package main;
 
 import database.tdb;
 import utils.io.DataPrinter;
@@ -12,6 +12,8 @@ import calbince.*;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.InetAddress;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 
 public class Main {
@@ -57,12 +59,28 @@ public class Main {
         //tdb rtbd = new tdb(currentDirectory + "/data/cost507.tdb");
         //tdb rtbd = new tdb(currentDirectory + "/data/agcu.TDB");
         //tdb rtbd = new tdb(currentDirectory + "/data/steel1.TDB");
-        rtbd.printtdb();
-//        tdb rtbd = new tdb();
-//        rtbd.sympifyString(s1);
-//        String[] elementList = {"V", "TI"};
-//        tdb systdb = rtbd.gettdb(elementList);
+        //rtbd.printtdb();
+        String[] elementList = {"V", "TI"};
+        tdb systdb = rtbd.gettdb(elementList);
 //        systdb.printtdb();
+        CalVars calculate = new CalVars(systdb);
+        CalVars.CalcSet calcSet = calculate.new CalcSet();
+        ArrayList<String> elements = new ArrayList<>(Arrays.asList(elementList));
+        calcSet.setElementNames(elements);
+        CalVars.CalcSet.CalcType calcType = calcSet.new CalcType();
+        calcType.setMethod("HM"); //Enthalpy
+        ArrayList<String> phases = new ArrayList<>();
+        phases.add("LIQUID");
+        calcType.setPhases(phases);
+        double condT = 2000.0;
+        double condP = 10000.0;
+        double[] condX = {0.5, 0.5};
+        CalVars.CalcSet.CalcType.Calculation calculation = calcType.new Calculation(condT, condP, condX);
+        calcType.addCalculation(calculation);
+        calcSet.addCalcType(calcType);
+        calculate.addcalcSet(calcSet);
+        calculate.printCalcSetList();
+
 //        String s= "GHCPAL+3.0*GHCPCR";
 //        String[] temp = s.split("GHCPAL");
 //        System.out.println(temp[0]);
