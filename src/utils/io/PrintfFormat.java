@@ -33,7 +33,7 @@ import java.util.Vector;
 import java.util.Locale;
 import java.text.DecimalFormatSymbols;
 
-/**
+/*
  * PrintfFormat allows the formatting of an array of
  * objects embedded within a string.  Primitive types
  * must be passed using wrapper types.  The formatting
@@ -98,11 +98,12 @@ import java.text.DecimalFormatSymbols;
  * The following table lists escape sequences and
  * associated actions on display devices capable of
  * the action.
- *<table summary="">
+ 
+ *  <table summary="">
  *<tr><th align=left>Sequence</th>
  *    <th align=left>Name</th>
  *    <th align=left>Description</th></tr>
- *<tr><td>\\</td><td>backlash</td><td>None.
+ * <tr><td>\\</td><td>backlash</td><td>None.
  *</td></tr>
  *<tr><td>\a</td><td>alert</td><td>Attempts to alert
  *          the user through audible or visible

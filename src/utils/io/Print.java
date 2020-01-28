@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.text.DecimalFormat;
 
 /**
- * @author: Shivam Updated: SU: 11.02.2012 : added method f() for printing 2D
+ * @author : Shivam Updated: SU: 11.02.2012 : added method f() for printing 2D
  * boolean array
  *
  */

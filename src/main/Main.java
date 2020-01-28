@@ -63,8 +63,8 @@ public class Main {
         String[] elementList = {"V", "TI"};
         tdb systdb = rtbd.gettdb(elementList);
 //        systdb.printtdb();
-        CalVars calculate = new CalVars(systdb);
-        CalVars.CalcSet calcSet = calculate.new CalcSet();
+        CalVars calvars = new CalVars(systdb);
+        CalVars.CalcSet calcSet = calvars.new CalcSet();
         ArrayList<String> elements = new ArrayList<>(Arrays.asList(elementList));
         calcSet.setElementNames(elements);
         CalVars.CalcSet.CalcType calcType = calcSet.new CalcType();
@@ -75,12 +75,13 @@ public class Main {
         double condT = 2000.0;
         double condP = 10000.0;
         double[] condX = {0.5, 0.5};
-        CalVars.CalcSet.CalcType.Calculation calculation = calcType.new Calculation(condT, condP, condX);
-        calcType.addCalculation(calculation);
+        CalVars.CalcSet.CalcType.Conditions calculation = calcType.new Conditions(condT, condP, condX);
+        calcType.addConditions(calculation);
         calcSet.addCalcType(calcType);
-        calculate.addcalcSet(calcSet);
-        calculate.printCalcSetList();
-
+        calvars.addcalcSet(calcSet);
+        //calculate.printCalcSetList();
+        Calculate calculate = new Calculate(calvars);
+        calculate.run();
 //        String s= "GHCPAL+3.0*GHCPCR";
 //        String[] temp = s.split("GHCPAL");
 //        System.out.println(temp[0]);

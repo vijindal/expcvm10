@@ -15,7 +15,7 @@ import java.util.logging.Logger;
 import phase.PHASEBINCE;
 
 /**
- * @author: metallurgy setEcMat() on new format !
+ * @author : metallurgy setEcMat() on new format !
  *
  */
 public abstract class CVMBINCE implements PHASEBINCE {

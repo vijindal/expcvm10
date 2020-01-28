@@ -6,7 +6,6 @@
 package calbince;
 
 import database.tdb;
-import java.util.ArrayList;
 
 /**
  *
@@ -33,17 +32,18 @@ public class GibbsModel {
     private double Gu[];//First derivative of G w.r.t. u
     private double Guu[][];//Second derivative of G w.r.t. u
     tdb systdb;
+    String phase;
+    CalVars.CalcSet.CalcType.Conditions condition;
     String[] compList;
 
     //Gibbs energy expressiona consists of following parts:
     //(i) structure or model, (this part will be addressed in this file, model to be specified)
     //(ii) system specific parameters (to be read from database for a given phase, model and component(s) combination) and
     //(iii) condition parameters (like T, P, composition) (to be supplied by user)
-    
-    GibbsModel(tdb systdb, String[] compList, String phaseList, ArrayList<tdb.Parameter> sysparamList) {
+    GibbsModel(tdb systdb, String phase, CalVars.CalcSet.CalcType.Conditions condition) {
         this.systdb = systdb;
-        this.compList = compList;
-
+        this.phase = phase;
+        this.condition = condition;
     }
 
     public double calG() {//vj-2012-03-16
