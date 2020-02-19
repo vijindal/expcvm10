@@ -1,5 +1,6 @@
-package phase.solution.cecvm.fcc;
+package phase.solution.cecvm;
 
+import phase.solution.cecvm.FCCTOBINCE;
 import utils.io.Print;
 import java.io.FileNotFoundException;
 import java.io.IOException;

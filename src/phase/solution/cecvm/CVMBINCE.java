@@ -10,8 +10,6 @@ import utils.jama.LUDecomposition;
 import database.stdst;
 import java.io.*;
 import java.util.StringTokenizer;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import phase.PHASEBINCE;
 
 /**

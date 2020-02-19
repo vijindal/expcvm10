@@ -275,7 +275,11 @@ public class tdb {
         }
     }
 
-    class Phase {//better speciesName for this class!
+    /**
+     * This class contains record for a phase such as phaseName, phaseType,
+     * model, constituentList, paramList. Methods include various getter methods
+     */
+    public class Phase {//better speciesName for this class!
         //PHASE LIQUID:L %  1  1.0  !
         //PHASE ALMNSI_ALPHA  %  4 16   4   1   2 !
 
@@ -309,20 +313,24 @@ public class tdb {
             } else {
                 switch (phaseName) {
                     case "GAS":
-                        phaseType="G";
-                        model="IDEAL";
+                        phaseType = "G";
+                        model = "IDEAL";
                         break;
                     case "LIQUID":
-                        phaseType="L";
-                        model="RKM";
+                        phaseType = "L";
+                        model = "RKM";
                         break;
                     case "IONIC_LIQ":
-                        phaseType="L";
-                        model="IONIC_LIQUID";
+                        phaseType = "L";
+                        model = "IONIC_LIQUID";
+                        break;
+                    case "SRO":
+                        phaseType = "S";
+                        model = "CVM";
                         break;
                     default:
-                        phaseType="S";
-                        model="CEF"; 
+                        phaseType = "S";
+                        model = "CEF";
                         break;
                 }
             }
@@ -403,11 +411,11 @@ public class tdb {
             this.constituentList = constList;
         }
 
-        public void print() throws IOException {
-            Print.f("----------------------------", 0);
-            Print.f("phase:" + phaseName + '\t' + phaseType, 0);
+        public void print() {
+            System.out.print("----------------------------");
+            System.out.print("phase:" + phaseName + '\t' + phaseType);
             System.out.print("Subl: " + numSubLat + '\t');
-            Print.f("", numSites, 0);
+            System.out.println(numSites);
             System.out.println("Constituents: " + constituentList);
             for (Parameter p : this.paramList) {
                 p.print();
@@ -415,7 +423,21 @@ public class tdb {
         }
     }
 
-    // find phase in phaseList based on phase name, and return the id;
+    public Phase getPhase(String phasename) {
+        Phase phase = null;
+        for (Phase x : phaseList) // find in phaseList
+        {
+            if (x.phaseName == null ? phasename == null : x.phaseName.equals(phasename)) {
+                phase = x;
+            }
+        }
+        if (phase == null) {
+            System.out.println("phaseName: " + phasename + " not found !");
+        }
+        return phase;
+    }
+// find phase in phaseList based on phase name, and return the id;
+
     private int findPhase(String phasename) throws IOException {
         int i = 0;
         int phaseid = -1;
@@ -666,7 +688,7 @@ public class tdb {
             this.T.add(Double.parseDouble(splitExpressLine[0].trim()));//Add T
         }
 
-        public void print() throws IOException {
+        public void print() {
             System.out.print("Paramter" + '\t' + phaseId + '\t' + type + '\t' + phasename + '\t' + order + '\t' + constituentList.toString() + '\t' + T.toString() + '\t');
             for (Exp exp : express) {
                 System.out.print(exp.expStr + '\t');
@@ -742,7 +764,7 @@ public class tdb {
         return splitLine;
     }
 
-    private void printPhaseList() throws IOException {
+    public void printPhaseList() throws IOException {
         for (Phase phase : phaseList) {
             phase.print();
         }

@@ -18,16 +18,16 @@ import java.util.StringTokenizer;
 import phase.*;
 import phase.solution.calphad.RK;
 import phase.solution.calphad.STCOMP;
-import phase.solution.cecvm.bcc.A2ORCBINCE;
-import phase.solution.cecvm.bcc.A2TBINCE;
-import phase.solution.cecvm.bcc.B2TBINCE;
-import phase.solution.cecvm.cph.A3TOBINCE;
-import phase.solution.cecvm.cph.B19TOBINCE;
-import phase.solution.cecvm.cph.D019TOBINCE;
-import phase.solution.cecvm.fcc.A1QTBINCE;
-import phase.solution.cecvm.fcc.A1TOBINCE;
-import phase.solution.cecvm.fcc.L10TOBINCE;
-import phase.solution.cecvm.fcc.L12TOBINCE;
+import phase.solution.cecvm.A2ORCBINCE;
+import phase.solution.cecvm.A2TBINCE;
+import phase.solution.cecvm.B2TBINCE;
+import phase.solution.cecvm.A3TOBINCE;
+import phase.solution.cecvm.B19TOBINCE;
+import phase.solution.cecvm.D019TOBINCE;
+import phase.solution.cecvm.A1QTBINCE;
+import phase.solution.cecvm.A1TOBINCE;
+import phase.solution.cecvm.L10TOBINCE;
+import phase.solution.cecvm.L12TOBINCE;
 
 /**
  *

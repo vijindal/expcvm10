@@ -135,11 +135,7 @@ public class sgte {
         } catch (IOException e) {
             System.err.println("IOException");
         }
-        try {
-            Print.f(element + ":" + phase + " not found in SGTE Database, pls check element and phase name", 0);
-        } catch (IOException e) {
-            System.err.println("IOException");
-        }
+        Print.f(element + ":" + phase + " not found in SGTE Database, pls check element and phase name", 0);
         Print.f("sgte.sgteReader method ended with error", 7);
         System.exit(0);
         return -1;

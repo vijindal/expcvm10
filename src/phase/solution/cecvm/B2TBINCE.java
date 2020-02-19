@@ -1,4 +1,4 @@
-package phase.solution.cecvm.bcc;
+package phase.solution.cecvm;
 
 import utils.io.Print;
 import java.io.FileNotFoundException;

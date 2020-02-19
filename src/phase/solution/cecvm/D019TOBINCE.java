@@ -3,8 +3,9 @@
  * To change this template, choose Tools | Templates
  * and open the template in the editor.
  */
-package phase.solution.cecvm.cph;
+package phase.solution.cecvm;
 
+import phase.solution.cecvm.CPHTOBINCE;
 import utils.io.Print;
 import java.io.FileNotFoundException;
 import java.io.IOException;

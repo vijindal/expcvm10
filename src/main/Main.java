@@ -15,6 +15,7 @@ import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import phase.cecvm.A2TTERN;
 
 public class Main {
 
@@ -55,37 +56,56 @@ public class Main {
 //            System.out.println(e.getMessage());
 //        }
         //tdb rtbd = new tdb(currentDirectory + "/data/Unary.TDB");
-        tdb rtbd = new tdb(currentDirectory + "/data/cost507R.TDB");
         //tdb rtbd = new tdb(currentDirectory + "/data/cost507.tdb");
         //tdb rtbd = new tdb(currentDirectory + "/data/agcu.TDB");
         //tdb rtbd = new tdb(currentDirectory + "/data/steel1.TDB");
-        //rtbd.printtdb();
-        String[] elementList = {"V", "TI"};
-        tdb systdb = rtbd.gettdb(elementList);
+
+//        tdb rtbd = new tdb(currentDirectory + "/data/cost507R.TDB");
+//        //rtbd.printtdb();
+//        String[] elementList = {"V", "TI"};
+//        tdb systdb = rtbd.gettdb(elementList);
 //        systdb.printtdb();
-        CalVars calvars = new CalVars(systdb);
-        CalVars.CalcSet calcSet = calvars.new CalcSet();
-        ArrayList<String> elements = new ArrayList<>(Arrays.asList(elementList));
-        calcSet.setElementNames(elements);
-        CalVars.CalcSet.CalcType calcType = calcSet.new CalcType();
-        calcType.setMethod("HM"); //Enthalpy
-        ArrayList<String> phases = new ArrayList<>();
-        phases.add("LIQUID");
-        calcType.setPhases(phases);
-        double condT = 2000.0;
+//        CalVars calvars = new CalVars(systdb);
+//        CalcSet calcSet = new CalcSet();
+//        ArrayList<String> elements = new ArrayList<>(Arrays.asList(elementList));
+//        calcSet.setElementNames(elements);
+//        CalcType calcType = new CalcType();
+//        calcType.setMethod("HM"); //Enthalpy
+//        ArrayList<String> phases = new ArrayList<>();
+//        phases.add("LIQUID");
+//        calcType.setPhases(phases);
+        double condT = 500.0;
         double condP = 10000.0;
-        double[] condX = {0.5, 0.5};
-        CalVars.CalcSet.CalcType.Conditions calculation = calcType.new Conditions(condT, condP, condX);
-        calcType.addConditions(calculation);
-        calcSet.addCalcType(calcType);
-        calvars.addcalcSet(calcSet);
-        //calculate.printCalcSetList();
-        Calculate calculate = new Calculate(calvars);
-        calculate.run();
+        ArrayList<ArrayList<Double>> condX = new ArrayList<>();
+        ArrayList<Double> x = new ArrayList<>();
+        double temp = 1.0 / 3;
+        x.add(temp);
+        x.add(temp);
+        x.add(temp);
+        condX.add(x);
+        //System.out.println("condX:" + condX);
+//        Conditions calculation = new Conditions(condT, condP, condX);
+//        calcType.addConditions(calculation);
+//        calcSet.addCalcType(calcType);
+//        calvars.addcalcSet(calcSet);
+//        calvars.printCalcSetList();
+//        //calculate.printCalcSetList();
+//        Calculate calculate = new Calculate(calvars);
+//        calculate.cal();
 //        String s= "GHCPAL+3.0*GHCPCR";
 //        String[] temp = s.split("GHCPAL");
 //        System.out.println(temp[0]);
 //        System.out.println(temp[1]);
+        String[] stdst = {""};
+        double[] ecdis = {0, 0, 0, 0, 0, 0, 0., 0., -1500., 0., 0., 0., 2966.67, 3026.67, 4666.67, 5933.33, 6053.33, 9333.33};
+        double[] evdis = {0, 0, 0, 0, 0, 0, 0., 0., 0., 0., 0., 0., 0, 0, 0, 0, 0, 0};
+        A2TTERN a2ttern1 = new A2TTERN();
+        ArrayList<Double> X = a2ttern1.genInitialValues(x);
+        //System.out.println(X);
+        A2TTERN a2ttern = new A2TTERN(stdst, ecdis, evdis, condT, X);
+        a2ttern.calGderivatives();
+        a2ttern.printPhaseInfo();
+        a2ttern.printGE();
     }
 
     private static void calModule(String exptDataFileName, String phaseDataFileName, String filePrefix) throws IOException {

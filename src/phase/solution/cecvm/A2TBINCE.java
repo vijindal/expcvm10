@@ -2,7 +2,7 @@
  * To change this template, choose Tools | Templates
  * and open the template in the editor.
  */
-package phase.solution.cecvm.bcc;
+package phase.solution.cecvm;
 
 import utils.io.Print;
 import java.io.FileNotFoundException;
@@ -92,17 +92,6 @@ public class A2TBINCE extends BCCTBINCE {
     private void genInitialValues(double x) throws IOException {//Phase specific method
         double[] u_In = new double[(tcf_local)];
         for (int icf = 0; icf < (tcf_local - 1); icf++) {
-            u_In[icf] = Math.pow((2 * x - 1), rcf_local[icf][0]);
-            //System.out.print(u_In[icf] + " g ");
-        }
-        u_In[tcf_local - 1] = x;
-        setU(u_In);
-    }
-
-    public void randInit() throws IOException {//Phase specific method
-        double x = getXB();
-        double[] u_In = new double[(tcf_local)];
-        for (int icf = 0; icf < (tcf_local - nxcf_local); icf++) {
             u_In[icf] = Math.pow((2 * x - 1), rcf_local[icf][0]);
             //System.out.print(u_In[icf] + " g ");
         }
