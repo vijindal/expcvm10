@@ -23,7 +23,10 @@ public abstract class GibbsModel {
     private double R; //= 8.3144;
     //Following information will be filled during object creation of a specific phase such as A2TTERN
     String phaseTag; // Phase Name
+    private double n;//number of moles of the phase
     private int numComp;//Number of components
+    private int ncf;//number of internal parameters
+    private int tcf;//number of total parameters
     private double T; //Temperature
     private double P; //Pressure
     private ArrayList<Double> x;// composition of the components
@@ -68,8 +71,20 @@ public abstract class GibbsModel {
         this.R = R_input; //To change body of generated methods, choose Tools | Templates.
     }
 
+    public void setN(double n) {
+        this.n = n;
+    }
+
     public void setNumComp(int numComp) {
         this.numComp = numComp; //To change body of generated methods, choose Tools | Templates.
+    }
+
+    public void setNcf(int ncf) {
+        this.ncf = ncf;
+    }
+
+    public void setTcf(int tcf) {
+        this.tcf = tcf;
     }
 
     public void setT(double T_input) {
@@ -82,8 +97,7 @@ public abstract class GibbsModel {
     }
 
     public void setX(ArrayList<Double> x_input) {
-        this.x = x_input; //To change body of generated methods, choose Tools | Templates.
-        //isGMinimized = false;
+        this.x = x_input;
     }
 
     public void updateGE(double GN, double GTN, double GPN, double[] GxN, double[] GTxN, double[] GPxN, double[][] GxxN, double[][] eMatN, double[] cGN, double[] cTN, double[] cPN, double[][] cABN) {
@@ -118,8 +132,20 @@ public abstract class GibbsModel {
         return (this.R);
     }
 
+    public double getN() {
+        return (this.n);
+    }
+
     public int getNumComp() {
         return (this.numComp);
+    }
+
+    public int getNcf() {
+        return (this.ncf);
+    }
+
+    public int getTcf() {
+        return (this.tcf);
     }
 
     public double getT() {
@@ -146,6 +172,56 @@ public abstract class GibbsModel {
         return (this.G0PList);
     }
 
+    public double getG() {
+        return (this.G);
+    }
+
+    public double getGT() {
+        return (this.GT);
+    }
+
+    public double getGP() {
+        return (this.GP);
+    }
+
+    public double[] getGx() {
+        return (this.Gx);
+    }
+
+    public double[] getGTx() {
+        return (this.GTx);
+    }
+
+    public double[] getGPx() {
+        return (this.GPx);
+    }
+
+    public double[][] getGxx() {
+        return (this.Gxx);
+    }
+
+    public double[][] getEMat() {
+        return (this.eMat);
+    }
+
+    public double[] getCG() {
+        return (this.cG);
+    }
+
+    public double[] getCT() {
+        return (this.cT);
+    }
+
+    public double[] getCP() {
+        return (this.cP);
+    }
+
+    public double[][] getCAB() {
+        return (this.cAB);
+    }
+
+    abstract public ArrayList<Double> getInitlIntVarValues(ArrayList<Double> x);
+
     //Thermodynamic Calculations
     abstract public double calG();
 
@@ -164,6 +240,8 @@ public abstract class GibbsModel {
     abstract public double[] calDGPx();
 
     abstract public double[][] calDGxx();
+
+    abstract public void calGderivatives();
 
     abstract public void printPhaseInfo();
 

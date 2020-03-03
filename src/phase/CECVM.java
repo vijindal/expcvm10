@@ -3,10 +3,9 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-package phase.cecvm;
+package phase;
 
 import java.util.ArrayList;
-import phase.GibbsModel;
 import utils.io.Print;
 import utils.io.Utils;
 import utils.jama.Matrix;
@@ -18,11 +17,11 @@ import utils.jama.Matrix;
 public abstract class CECVM extends GibbsModel {
 
     //Following information to be read from GibbsModel
-    String phaseTag; // Phase Name
+    //private String phaseTag; // Phase Name
     private int numComp;//Number of components
     private double T; //Temperature
     private double P; //Pressure
-    private ArrayList<Double> x;// correlation functions 
+    private ArrayList<Double> x_local;// correlation functions 
     private double[] ec; //to be chnaged
     private double[] ev; //   Eci for each correlation function
 
@@ -200,18 +199,16 @@ public abstract class CECVM extends GibbsModel {
         this.lcf = lcf_In;
     }
 
-    public void setTcf(int tcf_In) {
-        this.tcf = tcf_In;
-    }
-
+//    public void setTcf(int tcf_In) {
+//        this.tcf = tcf_In;
+//    }
     public void setNxcf(int nxcf_In) {
         this.nxcf = nxcf_In;
     }
 
-    public void setNcf(int ncf_In) {
-        this.ncf = ncf_In;
-    }
-
+//    public void setNcf(int ncf_In) {
+//        this.ncf = ncf_In;
+//    }
     public void setRcf(int[][][][] rcf_In) {
         this.rcf = rcf_In;
     }
@@ -253,7 +250,7 @@ public abstract class CECVM extends GibbsModel {
 //        updateCV();
 //    }
     public void updateCV() {
-        //System.out.print("x:" + x);
+        //System.out.print("x_local:" + x_local);
         double CVN[][][] = new double[tcdis][][];
         for (int i = 0; i < tcdis; i++) {
             CVN[i] = new double[lc[i]][];
@@ -267,7 +264,7 @@ public abstract class CECVM extends GibbsModel {
                 for (int incv = 0; incv < lcv[itc][inc]; incv++) {
                     CVN[itc][inc][incv] = 0;
                     for (int itcf = 0; itcf < (tcf); itcf++) {
-                        CVN[itc][inc][incv] = CVN[itc][inc][incv] + cMat[itc][inc][incv][itcf] * x.get(itcf);
+                        CVN[itc][inc][incv] = CVN[itc][inc][incv] + cMat[itc][inc][incv][itcf] * x_local.get(itcf);
                     }
                     //CVN[itc][inc][incv] = CVN[itc][inc][incv] + cMat[itc][inc][incv][tcf] * (1);//for empty cluster
                     //System.out.print("CVN[" + itc + "][" + inc + "][" + incv + "]:" + CVN[itc][inc][incv] + ",");
@@ -295,7 +292,7 @@ public abstract class CECVM extends GibbsModel {
         G0List = getG0List();
         double G0N = 0.0;
         for (int iComp = ncf; iComp < tcf; iComp++) {
-            G0N = G0N + (x.get(iComp) * G0List[iComp - ncf]);
+            G0N = G0N + (x_local.get(iComp) * G0List[iComp - ncf]);
         }
         return (G0N);
     }
@@ -319,7 +316,7 @@ public abstract class CECVM extends GibbsModel {
     public double calHmc() {//vj-2012-03-28//Enthalpy of mixing
         double HmcN = 0;
         for (int icf = 0; icf < ncf; icf++) {
-            HmcN = HmcN + ec[icf] * x.get(icf);
+            HmcN = HmcN + ec[icf] * x_local.get(icf);
         }
         Hmc = HmcN;
         return (HmcN);
@@ -357,7 +354,7 @@ public abstract class CECVM extends GibbsModel {
     private double calSmv() {
         double SvN = 0;
         for (int icf = 0; icf < ncf; icf++) {
-            SvN = SvN + ev[icf] * x.get(icf);
+            SvN = SvN + ev[icf] * x_local.get(icf);
         }
         SvN = -SvN;
         return (SvN);
@@ -426,10 +423,10 @@ public abstract class CECVM extends GibbsModel {
     private double calG0T() {
         double[] G0TList = getG0TList();
         //Print.f("getG0TList:", G0TList, 0);
-        //System.out.println("x:" + x);
+        //System.out.println("x_local:" + x_local);
         double G0TN = 0.0;
         for (int iComp = ncf; iComp < tcf; iComp++) {
-            G0TN = G0TN + (x.get(iComp) * G0TList[iComp - ncf]);
+            G0TN = G0TN + (x_local.get(iComp) * G0TList[iComp - ncf]);
         }
         return (G0TN);
     }
@@ -451,7 +448,7 @@ public abstract class CECVM extends GibbsModel {
     private double calGmvT() {
         double GmvTN = 0;
         for (int icf = 0; icf < ncf; icf++) {
-            GmvTN = GmvTN + ev[icf] * x.get(icf);
+            GmvTN = GmvTN + ev[icf] * x_local.get(icf);
         }
         GmvTN = T * GmvTN;
         return (GmvTN);
@@ -475,7 +472,7 @@ public abstract class CECVM extends GibbsModel {
         double[] G0PList = getG0PList();
         double G0PN = 0.0;
         for (int iComp = 0; iComp < numComp; iComp++) {
-            G0PN = G0PN + (x.get(iComp) * G0PList[iComp]);
+            G0PN = G0PN + (x_local.get(iComp) * G0PList[iComp]);
         }
         return (G0PN);
     }
@@ -753,10 +750,12 @@ public abstract class CECVM extends GibbsModel {
     public void setPhaseParam() {
         phaseTag = getPhaseTag();
         numComp = getNumComp();
+        ncf = getNcf();
+        tcf = getTcf();
         R = getR();
         T = getT();
         P = getP();
-        x = getX();
+        x_local = getX();
     }
 
     /**
@@ -779,6 +778,8 @@ public abstract class CECVM extends GibbsModel {
      */
     private double[][] calPhaseMat() {
         double[][] phaseMatN = new double[tcf + 1][tcf + 1];
+        //Print.f("phaseMatN", phaseMatN, 0);
+        //Print.f("Gxx", Gxx, 0);
         for (int i = 0; i < tcf; i++) {
             System.arraycopy(Gxx[i], 0, phaseMatN[i], 0, tcf);
         }
@@ -830,12 +831,26 @@ public abstract class CECVM extends GibbsModel {
         return (cGN);
     }
 
+    /**
+     * This method returns portion of the eMat corresponding to compositional
+     * variables
+     *
+     * @return
+     */
     private double[][] calCAB() {
-        double[][] cABN = eMat;
+        double[][] cABN = new double[numComp][numComp];
+        for (int i = 0; i < numComp; i++) {
+            for (int j = 0; j < numComp; j++) {
+                cABN[i][j] = eMat[i + ncf][j + ncf];
+            }
+        }
         return (cABN);
     }
 
+    @Override
     public void calGderivatives() {
+        updateCV();
+        //printPhaseInfo();
         G = calG();
         GT = calDGT();
         GP = calDGP();
@@ -870,7 +885,7 @@ public abstract class CECVM extends GibbsModel {
         Print.f("R:", R, 0);
         Print.f("T:", T, 0);
         Print.f("P:", P, 0);
-        Print.f("x:", x.toString(), 0);
+        Print.f("x:", x_local.toString(), 0);
 
         Print.f("tcdis:" + tcdis + ", nxcdis:" + nxcdis + ", ncdis:" + ncdis, 0);
         Print.f("mhdis:", mhdis, 0);
@@ -901,7 +916,7 @@ public abstract class CECVM extends GibbsModel {
         //Print.f("rcf:", rcf, 0);
         Print.f("wcv:", wcv, 0);
         Print.f("lcv:", lcv, 0);
-        //Print.f("x:" + x, 0);
+        //Print.f("x_local:" + x_local, 0);
         Print.f("cv:", cv, 0);
 
 //        System.out.print("Cluster Variables:");
@@ -919,16 +934,17 @@ public abstract class CECVM extends GibbsModel {
         Utils.drawLine();
         //System.out.println("Smc:"+calSmc());
         //System.out.println(calHmc());
-        System.out.println("G:" + calG());
+        //System.out.println("G:" + calG());
         //System.out.println("Gm:" + calGm());
         // System.out.println("Gmc:" + calGmc());
         //System.out.println("Smc:" + calSmc());
-        System.out.println("GT:" + calDGT());
-        System.out.println("GP:" + calDGP());
-        Print.f("Gx:", calDGx(), 0);
-        Print.f("Gxx:", calDGxx(), 0);
-        Print.f("GTx:", calDGTx(), 0);
-        Print.f("GPx:", calDGPx(), 0);
-        Print.f("EMat:", calEmat(), 0);
+        //System.out.println("GT:" + calDGT());
+        //System.out.println("GP:" + calDGP());
+        //Print.f("Gx:", calDGx(), 0);
+        //Print.f("Gxx:", calDGxx(), 0);
+        //Print.f("GTx:", calDGTx(), 0);
+        //Print.f("GPx:", calDGPx(), 0);
+        //Print.f("EMat:", calEmat(), 0);
     }
+
 }

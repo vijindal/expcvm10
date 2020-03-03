@@ -3,7 +3,7 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-package phase.cecvm;
+package phase;
 
 import java.util.ArrayList;
 
@@ -27,6 +27,7 @@ public class A2TTERN extends CECVM {
             {0, 0, 0, 0, 0, 1}};
 
     //Phase specific information
+    private final int n_local = 1;//default value of number of moles
     private final int numComp = 3;
     //cluster information
     private final String phaseTag_local = "A2TTERN";
@@ -37,9 +38,9 @@ public class A2TTERN extends CECVM {
     private final int rc_local[][][] = {{{4}}, {{3}}, {{2}}, {{2}}, {{1}}, {{0}}};
     private final int mh_local[][] = {{1}, {1}, {1}, {1}, {1}, {1}};
     //CF information
-    private final int tcfdis = 20;
-    private final int mcfdis[] = {6, 24, 12, 24, 24, 6, 12, 12, 24, 24, 12, 12, 3, 6, 3, 4, 8, 4, 1, 1};
-    private final int rcfdis[][] = {{4}, {4}, {4}, {4}, {4}, {4}, {3}, {3}, {3}, {3}, {3}, {3}, {2}, {2}, {2}, {2}, {2}, {2}, {1}, {1}, {0}};
+    private final int tcfdis_local = 20;
+    private final int[] mcfdis_local = {6, 24, 12, 24, 24, 6, 12, 12, 24, 24, 12, 12, 3, 6, 3, 4, 8, 4, 1, 1};
+    private final int[][] rcfdis_local = {{4}, {4}, {4}, {4}, {4}, {4}, {3}, {3}, {3}, {3}, {3}, {3}, {2}, {2}, {2}, {2}, {2}, {2}, {1}, {1}, {0}};
     private final int lcf_local[][] = {{1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1}, {1, 1, 1}, {1, 1, 1}, {1, 1}, {1}};
     private final int tcf_local = 21;
     private final int nxcf_local = 3;
@@ -126,8 +127,7 @@ public class A2TTERN extends CECVM {
         0., 0., 0., 0., 0., 1., 0.}, {0., 0., 0., 0., 0., 0., 0., 0., 0.,
         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1.}}}};
 
-    public A2TTERN() {//Constructor Method to access genInitialValues method
-
+    public A2TTERN() {//Constructor Method to access getInitlIntVarValues method
     }
 
     public A2TTERN(String stdst[], double ecdis[], double evdis[], double T_in, ArrayList<Double> x) { // Constructor Method
@@ -148,9 +148,9 @@ public class A2TTERN extends CECVM {
         setNc(nc_local);
         setRc(rc_local);
         setMh(mh_local);
-        setTcfdis(tcfdis);
-        setMcfdis(mcfdis);
-        setRcfdis(rcfdis);
+        setTcfdis(tcfdis_local);
+        setMcfdis(mcfdis_local);
+        setRcfdis(rcfdis_local);
         setLcf(lcf_local);
         setTcf(tcf_local);
         setNxcf(nxcf_local);
@@ -162,9 +162,11 @@ public class A2TTERN extends CECVM {
         setCMat(cmat_local);//vj-15-03-12 
 // Parameters
         setPhaseTag(phaseTag_local);
+        setN(n_local);
         setNumComp(this.numComp);
         setR(8.3144598); //  Universal gas constant
         setT(T_in);
+        //setX(getInitlIntVarValues(x));
         setX(x);
         setPhaseParam();
         setEcdis(ecdis);
@@ -188,7 +190,8 @@ public class A2TTERN extends CECVM {
         //Print.f("****A2mTBINc constructor ended", 6);
     }
 
-    public ArrayList<Double> genInitialValues(ArrayList<Double> x) {//Phase specific method
+    @Override
+    public ArrayList<Double> getInitlIntVarValues(ArrayList<Double> x) {//Phase specific method
         ArrayList<Double> x_out = new ArrayList<>();
         double XA = x.get(0);
         double XB = x.get(1);
@@ -217,4 +220,5 @@ public class A2TTERN extends CECVM {
         //setU(x_out);
         return (x_out);
     }
+    
 }

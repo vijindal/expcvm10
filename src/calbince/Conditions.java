@@ -21,6 +21,8 @@ public class Conditions {
 
     private double T;
     private double P;
+    private int p; //number of phases
+    private int c;  //number of components
     private ArrayList<ArrayList<Double>> x; //List of phase compositions such as {{0.1,0.1,0.8},{0.1,0.8,0.1}}
 
 //    public Conditions(double[] condT, double[] condP, double[][] condX) {
@@ -60,6 +62,8 @@ public class Conditions {
         this.T = condT;
         this.P = condP;
         this.x = condX;
+        this.p = x.size(); //reading size of composition array as p
+        this.c = x.get(0).size(); //size of the first element of x as c 
     }
 
 //    public ArrayList<Double> getT() {
@@ -83,5 +87,13 @@ public class Conditions {
 
     public ArrayList<ArrayList<Double>> getX() {
         return (this.x);
+    }
+
+    /**
+     *
+     * @return degree of freedom using phaserule
+     */
+    public int dof() {
+        return (c + 2 - p);
     }
 }
