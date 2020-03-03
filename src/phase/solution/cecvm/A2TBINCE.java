@@ -99,6 +99,10 @@ public class A2TBINCE extends BCCTBINCE {
         setU(u_In);
     }
 
+    /**
+     *
+     * @return
+     */
     @Override
     public double[] getURand() {//Phase specific method
         double x = getXB();

@@ -40,10 +40,10 @@ public class Mat {
         }
         return (vec_local);
     }
+
     /*
      * Return scalar producs of the two vectors vecA and vecB 
      */
-
 //    public static double mul(double[] vecA, double[] vecB) throws IOException {//2012-03-13(VJ):Added
 //        int ivecA = vecA.length;
 //        int ivecB = vecB.length;
@@ -104,6 +104,26 @@ public class Mat {
             p[icf] = X.getArray()[icf][0];
         }
         return (p);
+    }
+    // This method Solve equation [A].{X}={B}; A is an augmented matrix
+
+    public static double[] LDsolve(double[][] A_In) {//2012-02-23(VJ):Added
+        int n = A_In.length;//number of rows
+        double[][] A = new double[n][n];
+        double[] B = new double[n];
+        double[] x = new double[n];
+        for (int i = 0; i < n; i++) {
+            System.arraycopy(A_In[i], 0, A[i], 0, n);
+            B[i] = A_In[i][n];
+        }
+        Matrix a = new Matrix(A);
+        Matrix b = new Matrix(B);
+        LUDecomposition LU = new LUDecomposition(a);
+        Matrix X = LU.solve(b);
+        for (int icf = 0; icf < (n); icf++) {
+            x[icf] = X.getArray()[icf][0];
+        }
+        return (x);
     }
 
     // This method Solve equation [A].{X}={B}

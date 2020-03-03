@@ -1,0 +1,6 @@
+1. Maintaining composition list inside a phase: Many model may have internal parameters, then composition list will differ from combined list of parameters. 
+If two separate composition lists are maintained, these lists should always be updated simultanously. One can have a single list, then location of the 
+composition variable in the combined list should be maintained separately. One more posibility is to have a two-dimenational list containing only internal paramters
+and compositions.  
+2. Maintaining phase status 
+3. issues related to the number of moles of phases, n, to be fixed: values to be taken from the phases or from conditions or from the method itself.

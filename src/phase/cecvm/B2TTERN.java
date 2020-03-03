@@ -5,6 +5,9 @@
  */
 package phase.cecvm;
 
+import java.util.ArrayList;
+import phase.CECVM;
+
 /**
  *
  * @author admin
@@ -66,4 +69,8 @@ public class B2TTERN extends CECVM {
         0., 0., 0., 0., 0., -0.5, 1., 0.}}, {{0., 0., 0., 0., 0.,
         0., -0.5, -1., 1.}, {0., 0., 0., 0., 0., 0., 0.5, 1., 0.}}}};
     private final int np_local = 8;
+
+    public ArrayList<Double> getInitlIntVarValues(ArrayList<Double> x) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
 }
