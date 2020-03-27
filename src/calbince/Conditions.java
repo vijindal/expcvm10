@@ -15,7 +15,18 @@ import java.util.ArrayList;
  * phase-equilibria bcc-liquid type data, several possible conditions are:
  * conditions P = 1 atm, T=1200K, getX(Ti)=0.9
  *
- * This gives information
+ * A complete list of unknown variables will consist of chemical potentials of
+ * the elements or number of moles of the elements. Normally number of moles of
+ * a element is fixed and it results in one equation in the equilibria matrix.
+ * Other variables are changes in temperature and pressure. If T and P are
+ * fixed, changes in these variables will become zero. One can specify values of
+ * Volume, Entropy and any other extensive properties instead of Pressure and
+ * temperature. Each of these fixed value will result in a equation and can be
+ * solved for P & T also.
+ *
+ * Condition class to be modified later on to include more conditions such as
+ * chemical potentials of the elements, number of moles of a phase(??), fixed
+ * volume, entropy etc
  */
 public class Conditions {
 
