@@ -31,7 +31,7 @@ import static utils.jama.Mat.LDsolve;
  */
 public class calculate {
 
-    private CalVars calvars;
+    private final CalVars calvars;
     private tdb systdb; // to store database defined a particular element set such as (Ti-Nb-V-Zr)
     private ArrayList<CalcSet> calcSets; // to store lists of Conditions sets 
     private ArrayList<String> elementNames;
@@ -86,22 +86,25 @@ public class calculate {
     public void cal() {
         System.out.println("Calculate.cal methed called");
         int i = 0;
-        systdb = calvars.gettdb();
-        calcSets = calvars.getcalcSet();
-        for (CalcSet calcSet : calcSets) {
-            elementNames = calcSet.elementNames;//element specific tdb database to be obtained 
-            calcTypes = calcSet.calcTypes;
+        systdb = calvars.gettdb();// Reading Database
+        calcSets = calvars.getcalcSet();//Reading Calculation Sets
+        for (CalcSet calcSet : calcSets) {//Loop over each calculation set
+            elementNames = calcSet.elementNames;// reading element name  
+            c = elementNames.size();//raeding number of elements
+            calcTypes = calcSet.calcTypes; //reading calculation type such as phase equilibria calculations
             System.out.println("calcSet:" + i + ", element List: " + elementNames);
-            for (CalcType calcType : calcTypes) {
-                method = calcType.getMethod();
-                phases = calcType.getPhases();
-                conditions = calcType.getConditions();
+            for (CalcType calcType : calcTypes) { //loop over each calculation type
+                method = calcType.getMethod(); //reading method such as phase equilibria calculations
+                phases = calcType.getPhases();// reading phases involved
+                p = phases.size();//reading number of phases
+                phaseList = genPhaseList();//Creating phaseList  
+                conditions = calcType.getConditions();// reading values of the unknown variables 
                 System.out.println("Method:" + method);
                 System.out.println("Phases:" + phases);
                 for (Conditions condition : conditions) {
-                    //T = condition.getT();
-                    //P = condition.getP();
-                    //X = condition.getX();
+                    T = condition.getT();
+                    P = condition.getP();
+                    X = condition.getX();
                     //System.out.println("dof:" + condition.dof());
                     //System.out.println("T:" + T);
                     //System.out.println("P:" + P);
@@ -112,7 +115,7 @@ public class calculate {
 //                            break;
 //                        }
                         case "HM": {
-                            calHm(systdb, elementNames, phases, condition);
+                            //calHm();
                             break;
                         }
 //                        case "H": {
@@ -203,21 +206,44 @@ public class calculate {
     }
 
     /**
-     * Returns the enthalpy of mixing
+     * This method will generate list of phase objects based on Gibbs energy
+     * parameters extracted from the database (systdb) for the given elements
+     * (elementNames) and phases name (phases).
      *
      * @param systdb
      * @param elementNames
      * @param phases
-     * @param condition
+     * @return
      */
-    public void calHm(tdb systdb, ArrayList<String> elementNames, ArrayList<String> phases, Conditions condition) {
+    private GibbsModel[] genPhaseList() {
+        GibbsModel[] phaselist = new GibbsModel[p];
+        ArrayList<tdb.Parameter> paramList;
+        for (String phase : phases) {//loop over phases
+            //1. Extract phenomenological parameters from the database
+            paramList = systdb.getPhaseParam(elementNames, phase);
+            for (tdb.Parameter param : paramList) {
+
+                param.print();
+            }
+            //2. Generate phase object
+            //3. Append to phase list
+        }
+        return phaselist;
+    }
+
+    /**
+     * Returns the enthalpy of mixing
+     *
+     *
+     */
+    public void calHm() {
         System.out.println(".calHm() method called");
         //Initialization
         double H_local;//y:Enthalpy
         X = new ArrayList<>();
-        T = condition.getT();
-        P = condition.getP();
-        ArrayList<ArrayList<Double>> x = condition.getX();
+        //T = condition.getT();
+        //P = condition.getP();
+        //ArrayList<ArrayList<Double>> x = condition.getX();
         //Double T_local;//param:Temperature
         String phase_local = phases.get(0); //Only one phase will be passed in case of enthalpy of mixing calculation
         //RK phaseModel = new RK(systdb, elementNames, phase_local, condition);
@@ -228,7 +254,7 @@ public class calculate {
         phaseList = new GibbsModel[1];
         GibbsModel a2ttern0 = new A2TTERN();
         //System.out.println(a2ttern0.getInitlIntVarValues(x.get(0)));
-        X.add(a2ttern0.getInitlIntVarValues(x.get(0)));
+        //X.add(a2ttern0.getInitlIntVarValues(x.get(0)));
         GibbsModel a2ttern = new A2TTERN(stdst, ecdis, evdis, T, X.get(0));
         phaseList[0] = a2ttern;
         //a2ttern.printPhaseInfo();

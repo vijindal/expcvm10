@@ -4,3 +4,4 @@ composition variable in the combined list should be maintained separately. One m
 and compositions.  
 2. Maintaining phase status 
 3. issues related to the number of moles of phases, n, to be fixed: values to be taken from the phases or from conditions or from the method itself.
+4, Read parameter list from the database: issues of handleing pure elements parameter, paramteres are functions of tempaerture only
