@@ -19,7 +19,7 @@ import utils.jama.Matrix;
 public class CalVars {
 
     private tdb systdb; // to store database defined a particular element set such as (Ti-Nb-V-Zr)
-    private ArrayList<CalcSet> calcSets; // to store lists of Conditions sets 
+    private ArrayList<CalcSet> calcSets; // to store lists of Condition sets 
 
     /**
      *
@@ -119,7 +119,7 @@ public class CalVars {
 //        }
 //
 //        /**
-//         * This class is for handling Conditions-type data and defined by a
+//         * This class is for handling Condition-type data and defined by a
 //         * combination of (i) method and (ii) phases information. Each CalcType
 //         * may consists of several types of external conditions such as T,P,
 //         * compositions. for example for elementNames Ti-Nb-V, different
@@ -143,7 +143,7 @@ public class CalVars {
 //         * in the steps of 0.1
 //         *
 //         * It contains three datatype (i) ArrayList phases of String type and
-//         * (ii) a ArrayList conditions of the type Conditions and (iii) method
+//         * (ii) a ArrayList conditions of the type Condition and (iii) method
 //         */
 ////        public class CalcType {
 ////
@@ -180,7 +180,7 @@ public class CalVars {
 ////                return (this.conditions);
 ////            }
 ////
-////            public void addConditions(Conditions calculations) {
+////            public void addConditions(Condition calculations) {
 ////                this.conditions.add(calculations);
 ////            }
 ////
@@ -189,13 +189,13 @@ public class CalVars {
 ////            }
 //
 //           
-////            public class Conditions {
+////            public class Condition {
 ////
 ////                ArrayList<Double> T;
 ////                ArrayList<Double> P;
 ////                ArrayList<ArrayList<Double>> getX;
 ////
-////                public Conditions(double[] condT, double[] condP, double[][] condX) {
+////                public Condition(double[] condT, double[] condP, double[][] condX) {
 ////                    T = new ArrayList<>();
 ////                    P = new ArrayList<>();
 ////                    getX = new ArrayList<>();
@@ -214,7 +214,7 @@ public class CalVars {
 ////                    }
 ////                }
 ////
-////                public Conditions(double condT, double condP, double[] condX) {
+////                public Condition(double condT, double condP, double[] condX) {
 ////                    T = new ArrayList<>();
 ////                    P = new ArrayList<>();
 ////                    getX = new ArrayList<>();
@@ -251,7 +251,7 @@ public class CalVars {
             for (CalcType calcType : calcSet.calcTypes) {
                 System.out.println("Method:" + calcType.getMethod());
                 System.out.println("Phases:" + calcType.getPhases());
-                for (Conditions calculation : calcType.getConditions()) {
+                for (Condition calculation : calcType.getConditions()) {
                     System.out.println("T:" + calculation.getT());
                     System.out.println("P:" + calculation.getP());
                     System.out.println("x:" + calculation.getX());

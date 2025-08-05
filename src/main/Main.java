@@ -59,10 +59,12 @@ public class Main {
         //tdb rtbd = new tdb(currentDirectory + "/data/cost507.tdb");
         //tdb rtbd = new tdb(currentDirectory + "/data/agcu.TDB");
         //tdb rtbd = new tdb(currentDirectory + "/data/steel1.TDB");
+         tdb rtbd = new tdb(currentDirectory + "/data/tizr_kum_cvm.tdb");
 
-        tdb rtbd = new tdb(currentDirectory + "/data/cost507R.TDB");
+        //tdb rtbd = new tdb(currentDirectory + "/data/cost507.TDB");
         //rtbd.printtdb();
-        String[] elementList = {"V", "TI"};
+        //String[] elementList = {"V", "TI"};
+        String[] elementList = {"TI", "ZR"};
         tdb systdb = rtbd.gettdb(elementList);
         //systdb.printtdb();
         CalVars calvars = new CalVars(systdb);
@@ -84,11 +86,11 @@ public class Main {
         x.add(temp);
         condX.add(x);
         //System.out.println("condX:" + condX);
-       Conditions calculation = new Conditions(condT, condP, condX);
+       Condition calculation = new Condition(condT, condP, condX);
        calcType.addConditions(calculation);
         calcSet.addCalcType(calcType);
         calvars.addcalcSet(calcSet);
-        calvars.printCalcSetList();
+        //calvars.printCalcSetList();
         //calculate.printCalcSetList();
         calculate cal = new calculate(calvars);
         cal.cal();

@@ -44,15 +44,17 @@ public class tdb {
     private int numTypeDef;
 
     public tdb() {//Constructor for initiating datbase structure
-        System.out.println("tdb method is called");
+        System.out.println("tdb() method is called");
         this.elementList = new ArrayList<>();
         this.speciesList = new ArrayList<>();
         this.phaseList = new ArrayList<>();
         this.functionList = new ArrayList<>();
         this.typeDefinitionList = new ArrayList<>();
+        System.out.println("tdb() method is ended");
     }
 
     public tdb(String tdbFileName) throws FileNotFoundException, IOException {//Constructor for initiating datbase structure and filled with tdbFileName file
+        printSepLine();
         System.out.println("tdb method is called with: " + tdbFileName);
         this.tdbFileName = tdbFileName;
         this.elementList = new ArrayList<>();
@@ -61,8 +63,49 @@ public class tdb {
         this.functionList = new ArrayList<>();
         this.typeDefinitionList = new ArrayList<>();
         readFile();
-        processExpressions();//This method will process expressions and substitute function expressions 
+//        System.out.println("after read file");
+//        for (Function f : functionList) {
+//            f.printFunction();
+//        }
+        processFuncExp();//This method will process expressions 
+//        System.out.println("after processFuncExp");
+//        for (Function f : functionList) {
+//            f.printFunction2();
+//        }
+        subFuncExpInFunc();//This method will substitute function expressions in the Function expressions
+//        System.out.println("after subFuncExpInFunc()");
+//        for (Function f : functionList) {
+//            //f.printFunction2();
+//            f.printFunction();
+//        }
+//        System.out.println("before processParamExp()");
+//        for (Phase p : phaseList) {
+//            p.print();
+//        }
+        processParamExp();//This method will process parameter expressions
+//        System.out.println("after processParamExp()");
+//        for (Phase p : phaseList) {
+//            for (Parameter param : p.getParam()) {
+//                for (Exp exp : param.expList) {
+//                    exp.printExp();
+//                    exp.printExp2();
+//                }
+//            }
+//        }
+        subFuncExpInParam();//This method will substitute function expressions in the Parameter expressions
+//        System.out.println("after subFuncExpInParam()");
+//        for (Phase p : phaseList) {
+//            System.out.println(p.getPhaseName());
+//            for (Parameter param : p.getParam()) {
+//                System.out.println(param.type+", order:"+param.order+", elements:"+param.constituentList);
+//                for (Exp exp : param.expList) {
+//                    exp.printExp();
+//                    //.printExp2();
+//                }
+//            }
+//        }
         System.out.println("tdb method is ended");
+        printSepLine();
     }
 
     /*
@@ -169,10 +212,18 @@ public class tdb {
         return (sysparamList);
     }
 
+    /**
+     * This method read tdb file, process it and store various keywords in the
+     * respective arrays.
+     *
+     * @calledBy tdb()
+     * @throws FileNotFoundException
+     */
     private void readFile() throws FileNotFoundException {
+        Print.f("readfile method is called", 0);
         try {
-            printSepLine();
-            Print.f("readFile is called with tdb file: " + tdbFileName, 0);
+            //printSepLine();
+            //Print.f("readFile is called with tdb file: " + tdbFileName, 0);
             FileInputStream fin = new FileInputStream(tdbFileName);//vj-15-03-12
             DataInputStream in = new DataInputStream(fin);
             BufferedReader br = new BufferedReader(new InputStreamReader(in));
@@ -240,17 +291,18 @@ public class tdb {
                                 break;
                             case "FUNCTION":
                                 Function funcObj = new Function(keywordStringList[1]);
+                                //funcObj.printFunction();
                                 functionList.add(funcObj);
                                 numFunction = numFunction + 1;
                                 break;
+                            case "PARA":
+                            case "PARAM":
+                            case "PAR":
                             case "PARAMETER":
                                 Parameter paramObj = new Parameter(keywordStringList[1]);
                                 if (paramObj.phaseId != -1) {
                                     phaseList.get(paramObj.phaseId).paramList.add(paramObj);
                                 }
-                                break;
-                            case "PARA":
-                            case "PARAM":
                                 break;
                             case "OPTIONS":
                                 break;
@@ -289,8 +341,8 @@ public class tdb {
                     }
                 }
             }
-            Print.f("End of reading tdb file", 0);
-            printSepLine();
+            //Print.f("End of reading tdb file", 0);
+            //printSepLine();
         } catch (FileNotFoundException e) {
             System.err.println("File Not Found");
         } catch (IOException ex) {
@@ -302,52 +354,131 @@ public class tdb {
     /**
      * This method will process expressions stored in Functions and Parameters
      * in the form of strings.It will read all the coefficients and terms and
-     * will also substitute function expressions, if any
+     * will also substitute function expressions, if any.
+     *
      */
-    private void processExpressions() {
-        Print.f("method processExpressions is called", 0);
-
+    private void processFuncExp() {
+        Print.f("method processFuncExp() is called", 0);
         // read list of name of functions
         //using this list process function expressions
-        for (Function f : functionList) {
-            System.out.println("function name:" + f.funcName);
-            for (Exp exp : f.expList) {
+        for (Function f : functionList) {//loop over functions
+            //System.out.println("function name:" + f.funcName);
+            for (Exp exp : f.expList) {//loop over individual expressions in the function
                 ArrayList<Double> coeffList = new ArrayList<>();//contains coefficients of the terms in expStr
                 ArrayList<String> funcList = new ArrayList<>(); //contains function names
                 ArrayList<Double> funcCoeffList = new ArrayList<>(); //contains coefficients of the functions
                 String expStr = exp.getExpStr();
                 //System.out.println("expStr:" + expStr);
-                readExpress(expStr, coeffList, funcList, funcCoeffList);
-                exp.setCoeffList(coeffList);
-                exp.setFuncList(funcList);
-                exp.setFuncCoeffList(funcCoeffList);
+                //process parameters expressions
+                readExpress(expStr, coeffList, funcList, funcCoeffList);// reading coefflist, funcList and funcCoeffList
+                exp.setCoeffList(coeffList);// setting up coeffList
+                exp.setSubCoeffList(coeffList); //setting up subCoeffList
+                exp.setFuncList(funcList);// setting up funcList
+                exp.setFuncCoeffList(funcCoeffList);// setting up funcCoeffList
                 //System.out.println("coeffList:" + coeffList);
                 //System.out.println("funcList:" + funcList);
                 //System.out.println("funcCoeffList:" + funcCoeffList);
             }
+            //f.printFunction();
         }
-        //substitute function expressions if required
+        Print.f("method processFuncExp() is ended", 0);
+    }
+
+    /**
+     * this method will substitute function expressions, if present in the
+     * function expression. In this version, there is an assumption that only
+     * one function is present in an expression. A new version may be required
+     * later to remove this bug.
+     */
+    private void subFuncExpInFunc() {
+        Print.f("method subFuncExpInFunc() is called", 0);
         for (Function f : functionList) {//loop over function expressions
-            System.out.println("function name:" + f.funcName);
-            for (Exp exp : f.expList) {//loop over individual expressions
-                ArrayList<String> funcList = exp.getFuncList(); //contains function names
-                if (!funcList.isEmpty()) {
-                    //System.out.println("FuncList:" + funcList);
-                    ArrayList<Double> coeffList = exp.getCoeffList();//contains coefficients of the terms in expStr
-                    ArrayList<Double> funcCoeffList = exp.getFuncCoeffList(); //contains coefficients of the functions
-                    for (String func : funcList) {//loop over individual function
-                        System.out.println("Func:" + func);
-                        Function function;//searching Function by function name
-                        function = findFuncByName(func);
-                        ArrayList<Exp> expList = function.getExpList();
-                        //Sattle temperature range issue
-                    }
+            //System.out.println("function name:" + f.funcName);
+            for (Exp exp : f.getExpList()) {//loop over individual expressions for diffrent temp ranges
+                ArrayList<String> funcList = exp.getFuncList(); //reading function names in the expressions
+                ArrayList<Double> funcCoeffList = exp.getFuncCoeffList(); //read coefficients of the function
+                //System.out.println("                       num of funcs:" + funcList.size());
+                if (!funcList.isEmpty()) {//run if a function is present in the expression 
+                    Function function = findFuncByName(funcList.get(0));//searching Function by function name
+                    //System.out.println("function: " + f.getFuncName() + "" + " has got a function:" + function.getFuncName());
+                    Function subFunction = substituteFunction(f, function, funcCoeffList.get(0));//reading sunstituted function
+                    //subFunction.printFunction();
+                    //System.out.println("function: " + f.getFuncName());
+                    f.setExpList(subFunction.getExpList());
+                    //f.printFunction();
+                    break;
                 }
             }
         }
-        //process parameters expressions
-        //substitute function expressions if required
-        Print.f("method processExpressions is ended", 0);
+        Print.f("method subFuncExpInFunc() is ended", 0);
+    }
+
+    /**
+     * this method will substitute func2 into func1
+     */
+    private Function substituteFunction(Function func1, Function func2, double funCoeff) {
+        //System.out.println("substituteFunction is called with func1:" + func1.getFuncName() + ", func2:" + func2.getFuncName() + " with coeff:" + funCoeff);
+        Function mergeFunc = new Function();
+        double t1func1, t2func1, t1func2, t2func2, t1func = 0, t2func = 0;
+        ArrayList<Double> tRange1, tRange2;
+        ArrayList<Double> coeffList1, coeffList2;
+        //func1.printFunction2();
+        //func1.printFunction();
+        //func2.printFunction2();
+        //func2.printFunction();
+        for (Exp exp1 : func1.getExpList()) {
+            //System.out.println(exp1.getExpStr());
+            tRange1 = exp1.getTempRange();
+            t1func1 = tRange1.get(0);
+            t2func1 = tRange1.get(1);
+            //System.out.println("t1func1:" + t1func1 + ", t2func1:" + t2func1);
+            //System.out.println("func2:" + func2.getFuncName());
+            for (Exp exp2 : func2.getExpList()) {
+                //System.out.println(exp2.getExpStr());
+                //System.out.println(exp2.getTempRange());
+                tRange2 = exp2.getTempRange();
+                t1func2 = tRange2.get(0);
+                t2func2 = tRange2.get(1);
+                //System.out.println("t1func2:" + t1func2 + ", t2func2:" + t2func2);
+                if ((t1func1 >= t2func2) || (t2func1 <= t1func2)) {
+                    //System.out.println("out of range");
+                } else {
+                    if (t1func1 <= t1func2) {
+                        t1func = t1func2;
+                        if (t2func1 >= t2func2) {
+                            t2func = t2func2;
+                        } else {
+                            t2func = t2func1;
+                        }
+                    } else {
+                        t1func = t1func1;
+                        if (t2func1 >= t2func2) {
+                            t2func = t2func2;
+                        } else {
+                            t2func = t2func1;
+                        }
+                    }
+                    //System.out.println("t1func:" + t1func + ", t2func:" + t2func);
+                    Exp tempExp = new Exp(t1func, t2func);
+                    //tempExp.printExp();
+                    //System.out.println(exp1.coeffList);
+                    coeffList1 = exp1.getSubCoeffList();
+                    //System.out.println(exp2.coeffList);
+                    coeffList2 = exp2.getSubCoeffList();
+                    ArrayList<Double> coeffList;
+                    coeffList = new ArrayList<>();
+                    for (int i = 0; i < 11; i++) {
+                        coeffList.add(coeffList1.get(i) + funCoeff * coeffList2.get(i));
+                    }
+                    //System.out.println("coeffList:" + coeffList);
+                    tempExp.setSubCoeffList(coeffList);
+                    //tempExp.printExp();
+                    mergeFunc.addExp(tempExp);
+                }
+            }
+        }
+        //mergeFunc.printFunction();
+        return mergeFunc;
     }
 
     /**
@@ -361,6 +492,135 @@ public class tdb {
             }
         }
         return function;
+
+    }
+
+    /**
+     * This method will process Parameter expressions stored in the form of
+     * strings.It will read all the coefficients and terms.
+     *
+     */
+    private void processParamExp() {
+        Print.f("method processParamExp() is called", 0);
+        for (Phase p : phaseList) {//loop over Phase
+            //System.out.println("Phase name:" + p.getPhaseName());
+            for (Parameter param : p.getParam()) {
+                for (Exp exp : param.expList) {
+                    //System.out.println(exp.expStr);
+                    ArrayList<Double> coeffList = new ArrayList<>();//contains coefficients of the terms in expStr
+                    ArrayList<String> funcList = new ArrayList<>(); //contains function names
+                    ArrayList<Double> funcCoeffList = new ArrayList<>(); //contains coefficients of the functions
+                    String expStr = exp.getExpStr();
+                    //System.out.println("expStr:" + expStr);
+                    //process parameters expressions
+                    readExpress(expStr, coeffList, funcList, funcCoeffList);// reading coefflist, funcList and funcCoeffList
+                    exp.setCoeffList(coeffList);// setting up coeffList
+                    exp.setSubCoeffList(coeffList); //setting up subCoeffList
+                    exp.setFuncList(funcList);// setting up funcList
+                    exp.setFuncCoeffList(funcCoeffList);// setting up funcCoeffList
+                    //exp.printExp();
+                    //exp.printExp2();
+                }
+            }
+        }
+        Print.f("method processParamExp() is ended", 0);
+    }
+
+    /**
+     * This method will substitute function expressions in the Parameter
+     * expressions.
+     */
+    private void subFuncExpInParam() {
+        Print.f("method subFuncExpInParam() is called", 0);
+        for (Phase phase : phaseList) {//loop over phases
+            //System.out.println("phase name:" + phase.getPhaseName());
+            for (Parameter param : phase.getParam()) {//loop over paramters
+                //param.print();
+                for (Exp exp : param.expList) {
+                    ArrayList<String> funcList = exp.getFuncList(); //reading function names in the expressions
+                    ArrayList<Double> funcCoeffList = exp.getFuncCoeffList(); //read coefficients of the function
+                    if (!funcList.isEmpty()) {//run if a function is present in the expression 
+                        Function function = findFuncByName(funcList.get(0));//searching Function by function name
+                        Function subFunction = substituteFunction(param, function, funcCoeffList.get(0));//reading sunstituted function
+                        //subFunction.printFunction();
+//                    System.out.println("function: " + f.getFuncName());  
+                        //subFunction.getExpList().get(0).printExp2();
+                        param.setExpList(subFunction.getExpList());
+                        //param.print();
+                        break;
+                    }
+                }
+            }
+        }
+        Print.f("method subFuncExpInParam() is ended", 0);
+    }
+
+    /**
+     * this method will substitute func into param
+     */
+    private Function substituteFunction(Parameter param, Function func, double funCoeff) {
+        //System.out.println("substituteFunction is called with param:" + ", func:" + func.getFuncName() + " with coeff:" + funCoeff);
+        Function mergeFunc = new Function();
+        double t1func1, t2func1, t1func2, t2func2, t1func = 0, t2func = 0;
+        ArrayList<Double> tRange1, tRange2;
+        ArrayList<Double> coeffList1, coeffList2;
+        //func1.printFunction2();
+        //func1.printFunction();
+        //func2.printFunction2();
+        //func2.printFunction();
+        for (Exp exp1 : param.getExpList()) {
+            //System.out.println(exp1.getExpStr());
+            tRange1 = exp1.getTempRange();
+            t1func1 = tRange1.get(0);
+            t2func1 = tRange1.get(1);
+            //System.out.println("t1func1:" + t1func1 + ", t2func1:" + t2func1);
+            //System.out.println("func:" + func.getFuncName());
+            for (Exp exp2 : func.getExpList()) {
+                //System.out.println(exp2.getExpStr());
+                //System.out.println(exp2.getTempRange());
+                tRange2 = exp2.getTempRange();
+                t1func2 = tRange2.get(0);
+                t2func2 = tRange2.get(1);
+                //System.out.println("t1func2:" + t1func2 + ", t2func2:" + t2func2);
+                if ((t1func1 >= t2func2) || (t2func1 <= t1func2)) {
+                    //System.out.println("out of range");
+                } else {
+                    if (t1func1 <= t1func2) {
+                        t1func = t1func2;
+                        if (t2func1 >= t2func2) {
+                            t2func = t2func2;
+                        } else {
+                            t2func = t2func1;
+                        }
+                    } else {
+                        t1func = t1func1;
+                        if (t2func1 >= t2func2) {
+                            t2func = t2func2;
+                        } else {
+                            t2func = t2func1;
+                        }
+                    }
+                    //System.out.println("t1func:" + t1func + ", t2func:" + t2func);
+                    Exp tempExp = new Exp(t1func, t2func);
+                    //tempExp.printExp();
+                    //System.out.println(exp1.coeffList);
+                    coeffList1 = exp1.getSubCoeffList();
+                    //System.out.println(exp2.coeffList);
+                    coeffList2 = exp2.getSubCoeffList();
+                    ArrayList<Double> coeffList;
+                    coeffList = new ArrayList<>();
+                    for (int i = 0; i < 11; i++) {
+                        coeffList.add(coeffList1.get(i) + funCoeff * coeffList2.get(i));
+                    }
+                    //System.out.println("coeffList:" + coeffList);
+                    tempExp.setSubCoeffList(coeffList);
+                    //tempExp.printExp();
+                    mergeFunc.addExp(tempExp);
+                }
+            }
+        }
+        //mergeFunc.printFunction();
+        return mergeFunc;
     }
 
     /**
@@ -607,6 +867,7 @@ public class tdb {
             //Print.f("consList[i]:", consList[i], 0);
         }
         phaseList.get(phaseIndex).setConstituentList(constituentList);
+
     }
 
     class Element {//better speciesName for this class!
@@ -703,7 +964,9 @@ public class tdb {
                 this.tempRange.add(Double.parseDouble(splitExpressLine[0].trim()));//Add tempRange
                 splitKeywordLine[i] = splitExpressLine[1].trim();//remaining ExpressLine
                 splitExpressLine = splitString(splitKeywordLine[i].trim(), endmarkSpace);// split to get word "Y/N" and expression
-                expStringList.add(splitKeywordLine[0].trim());// adding string to the array
+                //System.out.println("splitExpressLine[0]:"+splitExpressLine[0]);
+                //System.out.println("splitExpressLine[1]:"+splitExpressLine[1]);
+                expStringList.add(splitExpressLine[1].trim());// adding string to the array
                 //exp = new Exp(splitExpressLine[1].trim());
                 //this.expList.add(exp);//add expression
             }
@@ -729,6 +992,30 @@ public class tdb {
         public ArrayList<Exp> getExpList() {
             return expList;
         }
+
+        public void printFunction2() {
+            System.out.println("funcName:" + funcName);
+            for (Exp exp : expList) {
+                exp.printExp2();
+            }
+            System.out.println();
+        }
+
+        public void printFunction() {
+            System.out.println("funcName:" + funcName);
+            for (Exp exp : expList) {
+                exp.printExp();
+            }
+            System.out.println();
+        }
+
+        public void addExp(Exp exp) {
+            expList.add(exp);
+        }
+
+        public void setExpList(ArrayList<Exp> expList) {
+            this.expList = expList;
+        }
     }
 
     /**
@@ -738,11 +1025,12 @@ public class tdb {
 
         private String expStr;//expression String
         private ArrayList<Double> coeffList;//contains coefficients of the terms in expStr
+        private ArrayList<Double> subCoeffList;//contains substituted coefficients of the terms obtained after substituting function expressions
         private ArrayList<String> funcList; //contains terms of the expStr
         private ArrayList<Double> funcCoeffList;
         private ArrayList<Double> tempRange;
 
-        Exp(String inputExp) throws IOException {// this method calls readExpress method 
+        Exp(String inputExp) {// this method calls readExpress method 
             this.expStr = inputExp;
             this.funcList = new ArrayList<>();
             this.coeffList = new ArrayList<>();
@@ -750,11 +1038,22 @@ public class tdb {
             //readExpress(inputExp, coeffList, funcList, funcCoeffList);//readExpress is called with expression to be read,list of coeffs,list of functions, output is returned in funcCoeffList
         }
 
-        Exp(String inputExp, double t1, double t2) throws IOException {// this method calls readExpress method 
+        Exp(String inputExp, double t1, double t2) {// this method calls readExpress method 
             this.expStr = inputExp;
             this.funcList = new ArrayList<>();
             this.coeffList = new ArrayList<>();
             this.funcCoeffList = new ArrayList<>();
+            this.tempRange = new ArrayList<>();
+            tempRange.add(t1);
+            tempRange.add(t2);
+            //System.out.println("expStr:" + expStr);
+            //System.out.println("tempRange:" + tempRange);
+            //readExpress(inputExp, coeffList, funcList, funcCoeffList);//readExpress is called with expression to be read,list of coeffs,list of functions, output is returned in funcCoeffList
+        }
+
+        Exp(double t1, double t2) {// this method calls readExpress method 
+            //this.expStr = inputExp;
+            this.subCoeffList = new ArrayList<>();
             this.tempRange = new ArrayList<>();
             tempRange.add(t1);
             tempRange.add(t2);
@@ -771,6 +1070,10 @@ public class tdb {
             return (coeffList);
         }
 
+        public ArrayList<Double> getSubCoeffList() {
+            return (subCoeffList);
+        }
+
         public ArrayList<String> getFuncList() {
             return (funcList);
         }
@@ -779,8 +1082,16 @@ public class tdb {
             return (funcCoeffList);
         }
 
+        public ArrayList<Double> getTempRange() {
+            return (tempRange);
+        }
+
         public void setCoeffList(ArrayList<Double> coeffList) {
             this.coeffList = coeffList;
+        }
+
+        public void setSubCoeffList(ArrayList<Double> coeffList) {
+            this.subCoeffList = coeffList;
         }
 
         public void setFuncList(ArrayList<String> funcList) {
@@ -790,6 +1101,20 @@ public class tdb {
         public void setFuncCoeffList(ArrayList<Double> funcCoeffList) {
             this.funcCoeffList = funcCoeffList;
         }
+
+        /**
+         * for printing expressions after substitution
+         */
+        public void printExp() {
+            System.out.println("tempRange:" + tempRange + ", subCoeffList:" + subCoeffList);
+        }
+
+        /**
+         * for printing expressions before substitution
+         */
+        public void printExp2() {
+            System.out.println("tempRange:" + tempRange + ", coeffList:" + coeffList + ", funcList:" + funcList + ", funcCoeffList:" + funcCoeffList);
+        }/*+ ", coeffList:" + coeffList*/
     }
 
     /*
@@ -802,16 +1127,18 @@ public class tdb {
         String phasename;
         int phaseId;
         ArrayList<ArrayList<String>> constituentList;// 10 sublattices, e in each sublattice is a vector// ele id in Phase constitution£¬eg, constituent :Al,Mg,Zn:Zn,Va:
-        ArrayList<Double> T;		//
-        ArrayList<Exp> express;		//	//
+        ArrayList<Double> tempRange;		//
+        ArrayList<Exp> expList;		//
+        private ArrayList<String> expStringList;
 
         Parameter(String keywordLine) throws IOException {
-            //Print.f("Parameter is called with:" + keywordLine, 0);
-            //printPhaseList();
-//          PARAMETER G(HCP_A3,AG,CU:VA;0) 298.15 +35000-8*tempRange; 6000     N REF135 !
-            T = new ArrayList<>();
-            express = new ArrayList<>();
+            //  Print.f("Parameter is called with:" + keywordLine, 0);
+            //  printPhaseList();
+            //  PARAMETER G(HCP_A3,AG,CU:VA;0) 298.15 +35000-8*tempRange; 6000     N REF135 !
+            tempRange = new ArrayList<>();
+            expList = new ArrayList<>();
             constituentList = new ArrayList<>();
+            expStringList = new ArrayList<>();
             Exp exp;
             String endmarkSpace = " ";
             String endMarkSemiColon = ";";
@@ -863,32 +1190,48 @@ public class tdb {
             String[] splitExpressLine;
             tempList = splitString(keywordLine.trim(), endmarkSpace);//get lower tempRange limit
             //Print.f("tempList:", tempList, 0);
-            this.T.add(Double.parseDouble(tempList[0].trim()));
+            this.tempRange.add(Double.parseDouble(tempList[0].trim()));
             keywordLine = tempList[1].trim();//remaining kewwordLine
             tempList = keywordLine.split(endMarkSemiColon);//to get expressions
             //Print.f("splitKeywordLine:", splitKeywordLine, 0);
             int numRange = tempList.length;
             //Print.f("numRange:", numRange, 0);
-            exp = new Exp(tempList[0].trim());
-            this.express.add(exp);
+            //exp = new Exp(tempList[0].trim());
+            //this.expList.add(exp);
+            expStringList.add(tempList[0].trim());
             for (int i = 1; i < numRange - 1; i++) {
                 //Print.f("expressLine:" + splitKeywordLine[i], 0);
                 splitExpressLine = splitString(tempList[i].trim(), endmarkSpace);// get tempRange
-                this.T.add(Double.parseDouble(splitExpressLine[0].trim()));//Add tempRange
+                this.tempRange.add(Double.parseDouble(splitExpressLine[0].trim()));//Add tempRange
                 tempList[i] = splitExpressLine[1].trim();//remaining ExpressLine
                 splitExpressLine = splitString(tempList[i].trim(), endmarkSpace);// split to get word "Y/N" and expression
-                exp = new Exp(splitExpressLine[1].trim());
-                this.express.add(exp);//add expression
+                //exp = new Exp(splitExpressLine[1].trim());
+                //this.expList.add(exp);//add expression
+                expStringList.add(splitExpressLine[1].trim());
             }
             //Print.f("expressLine:" + splitKeywordLine[numRange - 1], 0);
             splitExpressLine = splitString(tempList[numRange - 1].trim(), endmarkSpace);// get tempRange
-            this.T.add(Double.parseDouble(splitExpressLine[0].trim()));//Add tempRange
+            this.tempRange.add(Double.parseDouble(splitExpressLine[0].trim()));//Add tempRange
+            for (int i = 0; i < numRange - 1; i++) {
+                exp = new Exp(expStringList.get(i), tempRange.get(i), tempRange.get(i + 1));// exp object is called with keyword line
+                this.expList.add(exp);
+            }
+        }
+
+        public ArrayList<Exp> getExpList() {
+            return expList;
+        }
+
+        public void setExpList(ArrayList<Exp> expList) {
+            this.expList = expList;
         }
 
         public void print() {
-            System.out.print("Paramter" + '\t' + phaseId + '\t' + type + '\t' + phasename + '\t' + order + '\t' + constituentList.toString() + '\t' + T.toString() + '\t');
-            for (Exp exp : express) {
-                System.out.print(exp.expStr + '\t');
+            System.out.println("Paramter" + '\t' + phaseId + '\t' + type + '\t' + phasename + '\t' + order + '\t' + constituentList.toString() + '\t' + tempRange.toString() );
+            for (Exp exp : expList) {
+                //System.out.print(exp.expStr + '\t');
+                exp.printExp();
+                //System.out.print('\t');
             }
             System.out.println();
         }
@@ -988,8 +1331,9 @@ public class tdb {
         i = 0;
         Print.f("List of all symbols used in phase parameters:", 0);
         for (Function f : functionList) {
-            System.out.println("" + i + '\t' + f.funcName + '\t' + f.tempRange + '\t' + f.expList);
-            i = i + 1;
+            //System.out.println("" + i + '\t' + f.funcName + '\t' + f.tempRange + '\t' + f.expList);
+            //i = i + 1;
+            f.printFunction();
         }
         i = 0;
         Print.f("List of " + numPhases + " phases", 0);
@@ -1277,8 +1621,9 @@ public class tdb {
         return (temp);
     }
 
-    /*
-    
+    /**
+     * @param
+     *
      */
     private boolean isContained(String str, String pattern) {
         //System.out.println("isContained is called with str: " + str + " and pattern: " + pattern);
@@ -1286,7 +1631,7 @@ public class tdb {
         int firstIndex = str.indexOf(pattern);
         if (firstIndex != -1) {
             int lastIndex = firstIndex + pattern.length() - 1;
-            System.out.println("firstIndex: " + firstIndex + ", lastIndex:" + lastIndex + ", strlen:" + str.length());
+            //System.out.println("firstIndex: " + firstIndex + ", lastIndex:" + lastIndex + ", strlen:" + str.length());
             if (firstIndex == 0) {
                 if (lastIndex == str.length() - 1) {
                     flag = true;
@@ -1320,13 +1665,11 @@ public class tdb {
         +117369-24.63*tempRange+ carries coefficient + > 1.0
      */
     private String readFunc(String inputExp, ArrayList<String> funcList, ArrayList<Double> funcCoeffList) {
+        //System.out.println("readFunc is called with: " + inputExp);
         inputExp = this.sympifyString(inputExp);
-        System.out.println("readFunc is called with: " + inputExp);
         String[] tempList;
-        int k = 0;
-        double temp, tempSum;
-        String numStr, tempStr;
-        boolean found;
+        double tempSum;
+        String tempStr;
         //Reading functions in the inputExp
         tempStr = inputExp.trim();
         for (Function f : functionList) {
@@ -1372,28 +1715,31 @@ public class tdb {
         }//end of function loop
         //System.out.println(funcList);
         //System.out.println(funcCoeffList);
-        System.out.println("readFunc is ended");
+        //System.out.println("readFunc is ended");
         return (tempStr);
     }//end of readfunc function
 
     /**
-     * @param inputExp This method reads coefficients of the following terms
-     * from the input String and store them in the array: Constant, *tempRange,
+     * This method reads coefficients of the following terms from the input
+     * String and store them in the array: Constant, *tempRange,
      * tempRange*Log(tempRange), *tempRange**2, *tempRange**3, *tempRange**4,
      * *tempRange**7, *tempRange**(-1), *tempRange**(-2), *tempRange**(-3),
-     * tempRange**(-9)
+     * tempRange**(-9) Coefficients will be returned in coeffList array.
+     *
+     * @param inputExp
      */
     private void readTerms(String inputExp, ArrayList<Double> coeffList) {
-        System.out.println("readTerms is called with inputExp : " + inputExp);
+        //System.out.println("readTerms is called with inputExp : " + inputExp);
         String[] terms = {"1", "*T", "*T*LOG(T)",
             "*T**2", "*T**3", "*T**4", "*T**7", "*T**(-1)", "*T**(-2)",
-            "*T**(-3)", "*T**(-9)"};
+            "*T**(-3)", "*T**(-9)", "*T**(-11)"};
+        int numTerms = 12;
         String[] temStrList;
         Pattern pattern;
         Matcher m;
-        double[] coeffArr = new double[11];
+        double[] coeffArr = new double[numTerms];
         int k;
-        for (int i = 10; i > 0; i--) {
+        for (int i = 11; i > 0; i--) {
             pattern = Pattern.compile(Pattern.quote(terms[i]));
             m = pattern.matcher(inputExp);
             if (m.find()) {
@@ -1421,7 +1767,7 @@ public class tdb {
                 } else {
                     inputExp = temStrList[0];
                 }
-                //System.out.println("remaining express: " + inputExp);
+                //System.out.println("remaining expList: " + inputExp);
             } else {
                 coeffArr[i] = 0.0;
             }
@@ -1430,11 +1776,11 @@ public class tdb {
         for (double d : coeffArr) {
             coeffList.add(d);
         }
-        //System.out.println("express: " + inputExp);
+        //System.out.println("expList: " + inputExp);
         if (inputExp.length() > 0) {//remaining expList is Constant
             coeffList.set(0, Double.parseDouble(inputExp));
         }
-        System.out.println("readTerms is ended");
+        //System.out.println("readTerms is ended");
     }
 
     /**
@@ -1456,7 +1802,7 @@ public class tdb {
         //3100.00-2.1*tempRange+GHSERMG
         //+11005.553-11.840873*tempRange+7.9401E-20*tempRange**7+GHSERAL#
         //+117369-24.63*tempRange+GHSERCC#+GPCLIQ#
-        Print.f("readExpress is called with inputExp:" + inputExp, 0);
+        //Print.f("readExpress is called with inputExp:" + inputExp, 0);
         //System.out.println("coeffList:" + coeffList);
         //System.out.println("funcList:" + funcList);
         //System.out.println("funcList:" + funcList);
@@ -1467,7 +1813,7 @@ public class tdb {
         //System.out.println("funcList: " + funcList);
         //System.out.println("funcCoeffList: " + funcCoeffList);
         //System.out.println("coeffList: " + coeffList);
-        Print.f("readExpress is ended", 0);
+        //Print.f("readExpress is ended", 0);
     }
 
     private boolean isInt(String in) {
