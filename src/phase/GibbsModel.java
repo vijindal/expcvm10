@@ -5,7 +5,7 @@
  */
 package phase;
 
-import calbince.Conditions;
+import calbince.Condition;
 import database.tdb;
 import java.util.ArrayList;
 import utils.io.Print;
@@ -33,7 +33,7 @@ public abstract class GibbsModel {
     private tdb systdb;
     private tdb.Phase phase;
     private String phaseName;
-    private Conditions condition;
+    private Condition condition;
     private ArrayList<String> elementNames;
     private String[] compList;
     //Following information wiil be filled by the corresponding phase model such as CECVM

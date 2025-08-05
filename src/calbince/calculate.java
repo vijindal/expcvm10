@@ -11,6 +11,7 @@ import static java.lang.Math.abs;
 import java.util.ArrayList;
 import phase.GibbsModel;
 import phase.A2TTERN;
+import phase.calphad.RK;
 import utils.io.Print;
 import static utils.jama.Mat.LDsolve;
 
@@ -33,12 +34,12 @@ public class calculate {
 
     private final CalVars calvars;
     private tdb systdb; // to store database defined a particular element set such as (Ti-Nb-V-Zr)
-    private ArrayList<CalcSet> calcSets; // to store lists of Conditions sets 
+    private ArrayList<CalcSet> calcSets; // to store lists of Condition sets 
     private ArrayList<String> elementNames;
     private ArrayList<CalcType> calcTypes; // to store lists of CalcType
     private String method;
     private ArrayList<String> phases;
-    private ArrayList<Conditions> conditions;
+    private ArrayList<Condition> conditions;
     private int p;//number of phases
     private int c;//number of components
     private int[] ncfList;
@@ -72,7 +73,7 @@ public class calculate {
     public calculate(CalVars calvars) throws IOException {
         System.out.println("Calculate.constructor methed called");
         this.calvars = calvars;
-        calvars.printCalcSetList();
+        //calvars.printCalcSetList();
         System.out.println("Calculate.constructor method ended");
     }
 
@@ -84,7 +85,7 @@ public class calculate {
      * that purpose
      */
     public void cal() {
-        System.out.println("Calculate.cal methed called");
+        System.out.println("Calculate.cal() methed called");
         int i = 0;
         systdb = calvars.gettdb();// Reading Database
         calcSets = calvars.getcalcSet();//Reading Calculation Sets
@@ -101,7 +102,7 @@ public class calculate {
                 conditions = calcType.getConditions();// reading values of the unknown variables 
                 System.out.println("Method:" + method);
                 System.out.println("Phases:" + phases);
-                for (Conditions condition : conditions) {
+                for (Condition condition : conditions) {
                     T = condition.getT();
                     P = condition.getP();
                     X = condition.getX();
@@ -216,18 +217,137 @@ public class calculate {
      * @return
      */
     private GibbsModel[] genPhaseList() {
+        System.out.println("genPhaseList() method is called");
         GibbsModel[] phaselist = new GibbsModel[p];
         ArrayList<tdb.Parameter> paramList;
+        String pModel = "RK";
+        GibbsModel phase_local = null;
         for (String phase : phases) {//loop over phases
+            System.out.println("phase name:" + phase);
             //1. Extract phenomenological parameters from the database
             paramList = systdb.getPhaseParam(elementNames, phase);
             for (tdb.Parameter param : paramList) {
-
                 param.print();
             }
             //2. Generate phase object
+            //GibbsModel phaseModel= new GibbsModel
+            switch (phase) {
+                case "LIQUID": {
+                    pModel="RK";
+                    switch (pModel) {
+                        case "RK": {
+                            phase_local = new RK(paramList, conditions);
+                            break;
+                        }
+                    }
+                    //phase_local = new RK(stdst[pIndex], eList[pIndex], T_in, xB_in);
+                    break;
+                }
+//            case "A1": {
+//                switch (pModel) {
+//                    case "RK": {
+//                        phase_local = new RK(stdst[pIndex], eList[pIndex], T_in, xB_in);
+//                        break;
+//                    }
+//                    case "TO": {
+//                        phase_local = new A1TOBINCE(stdst[pIndex], eList[pIndex], eMatFileName[pIndex], mList[pIndex], T_in, xB_in);
+//                        break;
+//                    }
+//                    case "QT": {
+//                        phase_local = new A1QTBINCE(stdst[pIndex], eList[pIndex], eMatFileName[pIndex], mList[pIndex], T_in, xB_in);
+//                        break;
+//                    }
+//                }
+//                break;
+//            }
+
+//            case "L10": {
+//                switch (pModel) {
+//                    case "TO": {
+//                        phase_local = new L10TOBINCE(stdst[pIndex], eList[pIndex], eMatFileName[pIndex], mList[pIndex], T_in, xB_in);
+//                    }
+//                }
+//                break;
+//            }
+//            case "L12": {
+//                switch (pModel) {
+//                    case "TO": {
+//                        phase_local = new L12TOBINCE(stdst[pIndex], eList[pIndex], eMatFileName[pIndex], mList[pIndex], T_in, xB_in);
+//                    }
+//                }
+//                break;
+//            }
+//            case "A2": {
+//                switch (pModel) {
+//                    case "RK":
+//                        //Print.f("stdst[pIndex]", stdst[pIndex], 0);
+//                        phase_local = new RK(stdst[pIndex], eList[pIndex], T_in, xB_in);
+//                        //phase_local.printPhaseInfo();
+//                        break;
+//                    case "T":
+//                        phase_local = new A2TBINCE(stdst[pIndex], eList[pIndex], eMatFileName[pIndex], mList[pIndex], T_in, xB_in);//vj-15-03-11
+//                        break;
+//                    case "ORC":
+//                        phase_local = new A2ORCBINCE(stdst[pIndex], eList[pIndex], eMatFileName[pIndex], T_in, xB_in);
+//                        break;
+//                }
+//                break;
+//            }
+//            case "B2": {
+//                switch (pModel) {
+//                    case "T":
+//                        phase_local = new B2TBINCE(stdst[pIndex], eList[pIndex], eMatFileName[pIndex], mList[pIndex], T_in, xB_in);
+//                        break;
+//                }
+//                break;
+//            }
+//            case "A3": {
+//                switch (pModel) {
+//                    case "RK":
+//                        phase_local = new RK(stdst[pIndex], eList[pIndex], T_in, xB_in);
+//                        break;
+//                    case "TO": {
+//                        phase_local = new A3TOBINCE(stdst[pIndex], eList[pIndex], eMatFileName[pIndex], mList[pIndex], T_in, xB_in);
+//                        break;
+//                    }
+//                }
+//                break;
+//            }
+//            case "B19": {
+//                switch (pModel) {
+//                    case "TO": {
+//                        phase_local = new B19TOBINCE(stdst[pIndex], eList[pIndex], eMatFileName[pIndex], mList[pIndex], T_in, xB_in);
+//                        break;
+//                    }
+//                }
+//                break;
+//            }
+//            case "D019": {
+//                switch (pModel) {
+//                    case "TO": {
+//                        phase_local = new D019TOBINCE(stdst[pIndex], eList[pIndex], eMatFileName[pIndex], mList[pIndex], T_in, xB_in);
+//                        break;
+//                    }
+//                }
+//                break;
+//            }
+//            case "SC": {
+//                switch (pModel) {
+//                    case "STCOMP": {
+//                        phase_local = new STCOMP(stdst[pIndex], eList[pIndex], T_in, xB_in);
+//                        break;
+//                    }
+//                }
+//                break;
+//            }
+                default: {
+                    Print.f("PhaseData.GenPhase(): Phase does not exist/to be updated in PhaseData.GenPhase method", 0);
+                    break;
+                }
+            }
             //3. Append to phase list
         }
+        System.out.println("genPhaseList() method is ended");
         return phaselist;
     }
 

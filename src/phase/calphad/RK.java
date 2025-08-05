@@ -9,7 +9,7 @@ import database.tdb;
 import database.tdb.Phase;
 import java.util.ArrayList;
 import phase.GibbsModel;
-import calbince.Conditions;
+import calbince.Condition;
 
 /**
  *
@@ -36,11 +36,11 @@ public class RK extends GibbsModel {
     private tdb systdb;
     private Phase phase;
     private String phaseName;
-    private Conditions condition;
+    private Condition condition;
     private ArrayList<String> elementNames;
     String[] compList;
 
-    public RK(tdb systdb, ArrayList<String> elementNames, String phaseName, Conditions condition) {
+    public RK(ArrayList<tdb.Parameter> paramList, Condition condition) {
         this.systdb = systdb;
         this.elementNames = elementNames;
         this.phaseName = phaseName;
