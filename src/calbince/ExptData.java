@@ -4,8 +4,8 @@
  */
 package calbince;
 
-import utils.io.Print;
-import utils.io.Utils;
+import util.Print;
+import util.Utils;
 import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.FileInputStream;

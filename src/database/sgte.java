@@ -4,7 +4,7 @@
  */
 package database;
 
-import utils.io.Print;
+import util.Print;
 import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.FileInputStream;

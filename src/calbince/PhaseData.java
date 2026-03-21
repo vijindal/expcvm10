@@ -4,9 +4,9 @@
  */
 package calbince;
 
-import domain.port.PhaseFactory;
-import utils.io.Print;
-import utils.io.Utils;
+import domain.PhaseFactory;
+import util.Print;
+import util.Utils;
 import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.FileInputStream;
@@ -17,18 +17,18 @@ import java.io.LineNumberReader;
 import java.text.DecimalFormat;
 import java.util.StringTokenizer;
 import phase.*;
-import phase.solution.calphad.RK;
-import phase.solution.calphad.STCOMP;
-import phase.solution.cecvm.A2ORCBINCE;
-import phase.solution.cecvm.A2TBINCE;
-import phase.solution.cecvm.B2TBINCE;
-import phase.solution.cecvm.A3TOBINCE;
-import phase.solution.cecvm.B19TOBINCE;
-import phase.solution.cecvm.D019TOBINCE;
-import phase.solution.cecvm.A1QTBINCE;
-import phase.solution.cecvm.A1TOBINCE;
-import phase.solution.cecvm.L10TOBINCE;
-import phase.solution.cecvm.L12TOBINCE;
+// REMOVED: import phase.calphad.RKBince; (consolidated to RKPhaseGeneral)
+import phase.calphad.STCOMP;
+import phase.cecvm.A2ORCBINCE;
+import phase.cecvm.A2TBINCE;
+import phase.cecvm.B2TBINCE;
+import phase.cecvm.A3TOBINCE;
+import phase.cecvm.B19TOBINCE;
+import phase.cecvm.D019TOBINCE;
+import phase.cecvm.A1QTBINCE;
+import phase.cecvm.A1TOBINCE;
+import phase.cecvm.L10TOBINCE;
+import phase.cecvm.L12TOBINCE;
 
 /**
  *
@@ -470,10 +470,7 @@ public class PhaseData {
         switch (pType) {
             case "A1": {
                 switch (pModel) {
-                    case "RK": {
-                        phase_local = new RK(stdst[pIndex], eList[pIndex], T_in, xB_in);
-                        break;
-                    }
+                    // REMOVED: case "RK": (consolidated to RKPhaseGeneral)
                     case "TO": {
                         phase_local = new A1TOBINCE(stdst[pIndex], eList[pIndex], eMatFileName[pIndex], mList[pIndex], T_in, xB_in);
                         break;
@@ -504,11 +501,7 @@ public class PhaseData {
             }
             case "A2": {
                 switch (pModel) {
-                    case "RK":
-                        //Print.f("stdst[pIndex]", stdst[pIndex], 0);
-                        phase_local = new RK(stdst[pIndex], eList[pIndex], T_in, xB_in);
-                        //phase_local.printPhaseInfo();
-                        break;
+                    // REMOVED: case "RK": (consolidated to RKPhaseGeneral)
                     case "T":
                         phase_local = new A2TBINCE(stdst[pIndex], eList[pIndex], eMatFileName[pIndex], mList[pIndex], T_in, xB_in);//vj-15-03-11
                         break;
@@ -528,9 +521,7 @@ public class PhaseData {
             }
             case "A3": {
                 switch (pModel) {
-                    case "RK":
-                        phase_local = new RK(stdst[pIndex], eList[pIndex], T_in, xB_in);
-                        break;
+                    // REMOVED: case "RK": (consolidated to RKPhaseGeneral)
                     case "TO": {
                         phase_local = new A3TOBINCE(stdst[pIndex], eList[pIndex], eMatFileName[pIndex], mList[pIndex], T_in, xB_in);
                         break;
@@ -558,12 +549,9 @@ public class PhaseData {
             }
             case "L": {
                 switch (pModel) {
-                    case "RK": {
-                        phase_local = new RK(stdst[pIndex], eList[pIndex], T_in, xB_in);
-                        break;
-                    }
+                    // REMOVED: case "RK": (consolidated to RKPhaseGeneral)
                 }
-                //phase_local = new RK(stdst[pIndex], eList[pIndex], T_in, xB_in);
+                // REMOVED RK case for L phase
                 break;
             }
             case "SC": {

@@ -5,7 +5,7 @@
  */
 package phase;
 
-import domain.model.ThermoCondition;
+import domain.ThermoCondition;
 import java.util.ArrayList;
 import java.util.logging.Logger;
 
@@ -22,7 +22,7 @@ public abstract class GibbsModel {
     private static final Logger LOG = Logger.getLogger(GibbsModel.class.getName());
     private double R; //= 8.3144;
     //Following information will be filled during object creation of a specific phase such as A2TTERN
-    String phaseTag; // Phase Name
+    protected String phaseTag; // Phase Name
     private double n;//number of moles of the phase
     private int numComp;//Number of components
     private int ncf;//number of internal parameters
@@ -95,6 +95,18 @@ public abstract class GibbsModel {
 
     public void setX(ArrayList<Double> x_input) {
         this.x = x_input;
+    }
+
+    public void setG0List(double[] G0List_input) {
+        this.G0List = G0List_input;
+    }
+
+    public void setG0TList(double[] G0TList_input) {
+        this.G0TList = G0TList_input;
+    }
+
+    public void setG0PList(double[] G0PList_input) {
+        this.G0PList = G0PList_input;
     }
 
     public void updateGE(double GN, double GTN, double GPN, double[] GxN, double[] GTxN, double[] GPxN, double[][] GxxN, double[][] eMatN, double[] cGN, double[] cTN, double[] cPN, double[][] cABN) {

@@ -1,8 +1,8 @@
 package calbince;
 
-import utils.io.Print;
-import infrastructure.logging.AppLevel;
-import infrastructure.logging.Trace;
+import util.Print;
+import infra.AppLevel;
+import infra.Trace;
 import java.io.IOException;
 
 public class CalModel {

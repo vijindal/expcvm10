@@ -5,7 +5,7 @@
  */
 package calbince;
 
-import utils.io.Print;
+import util.Print;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;

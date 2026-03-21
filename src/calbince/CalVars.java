@@ -7,7 +7,7 @@ package calbince;
 
 import database.tdb;
 import java.util.ArrayList;
-import utils.jama.Matrix;
+import util.Matrix;
 
 /**
  *

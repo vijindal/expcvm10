@@ -5,7 +5,7 @@
  */
 package calbince;
 
-import domain.model.ThermoCondition;
+import domain.ThermoCondition;
 import java.util.ArrayList;
 
 /**

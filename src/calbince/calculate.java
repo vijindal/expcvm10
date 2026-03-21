@@ -6,16 +6,16 @@
 package calbince;
 
 import database.tdb;
-import infrastructure.logging.AppLevel;
-import infrastructure.logging.Trace;
+import infra.AppLevel;
+import infra.Trace;
 import java.io.IOException;
 import static java.lang.Math.abs;
 import java.util.ArrayList;
 import phase.GibbsModel;
-import phase.A2TTERN;
-import phase.calphad.RK;
-import utils.io.Print;
-import static utils.jama.Mat.LDsolve;
+import phase.cecvm.A2TTERN;
+// REMOVED: import phase.calphad.RK; (consolidated to RKPhaseGeneral)
+import util.Print;
+import static util.Mat.LDsolve;
 
 /**
  *
@@ -238,14 +238,10 @@ public class calculate {
             //GibbsModel phaseModel= new GibbsModel
             switch (phase) {
                 case "LIQUID": {
+                    // REMOVED: RK model path (consolidated to RKPhaseGeneral)
+                    // TODO: Refactor to use RKPhaseGeneral for LIQUID phase calculations
                     pModel="RK";
-                    switch (pModel) {
-                        case "RK": {
-                            phase_local = new RK(paramList, conditions.get(0).toThermoCondition());
-                            break;
-                        }
-                    }
-                    //phase_local = new RK(stdst[pIndex], eList[pIndex], T_in, xB_in);
+                    LOG.warning("LIQUID phase with RK model not yet refactored; skipping phase creation");
                     break;
                 }
 //            case "A1": {

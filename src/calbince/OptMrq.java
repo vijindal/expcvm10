@@ -1,10 +1,10 @@
 package calbince;
 
-import utils.io.Print;
-import infrastructure.logging.AppLevel;
-import infrastructure.logging.Trace;
-import utils.jama.GaussjNR;
-import utils.jama.Mat;
+import util.Print;
+import infra.AppLevel;
+import infra.Trace;
+import util.GaussjNR;
+import util.Mat;
 import java.io.IOException;
 /*
  * 22.10.11 (SU) : New class for mrqmin

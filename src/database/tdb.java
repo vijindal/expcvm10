@@ -21,7 +21,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import utils.io.Print;
+import util.Print;
 
 /**
  *
@@ -1035,7 +1035,7 @@ public class tdb {
     /**
      * This class handles expression
      */
-    class Exp {
+    public class Exp {
 
         private String expStr;//expression String
         private ArrayList<Double> coeffList;//contains coefficients of the terms in expStr
@@ -1238,6 +1238,18 @@ public class tdb {
 
         public void setExpList(ArrayList<Exp> expList) {
             this.expList = expList;
+        }
+
+        public String getType() {
+            return type;
+        }
+
+        public int getOrder() {
+            return order;
+        }
+
+        public ArrayList<ArrayList<String>> getConstituentList() {
+            return constituentList;
         }
 
         public void print() {

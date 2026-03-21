@@ -1,13 +1,13 @@
 
 package calbince;
 
-import utils.io.Print;
-import infrastructure.logging.AppLevel;
-import infrastructure.logging.Trace;
-import utils.jama.LUDecomposition;
-import utils.jama.Mat;
-import utils.jama.Matrix;
-import utils.io.Utils;
+import util.Print;
+import infra.AppLevel;
+import infra.Trace;
+import util.LUDecomposition;
+import util.Mat;
+import util.Matrix;
+import util.Utils;
 import java.io.IOException;
 import java.text.DecimalFormat;
 import phase.PHASEBINCE;

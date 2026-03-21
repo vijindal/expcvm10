@@ -70,4 +70,12 @@
     nbproject/build-impl.xml file. 
 
     -->
+
+    <!-- Custom test target for RkGibbsTest using direct bash invocation -->
+    <target name="test-rk" depends="compile-test" description="Run RkGibbsTest only">
+        <exec executable="bash" failonerror="false">
+            <arg value="-c"/>
+            <arg value="cd &quot;${basedir}&quot; &amp;&amp; java -cp lib/junit-jupiter-api-5.10.3.jar:lib/junit-jupiter-engine-5.10.3.jar:lib/junit-jupiter-params-5.10.3.jar:lib/opentest4j-1.3.0.jar:${build.classes.dir} org.junit.platform.console.ConsoleLauncher --scan-classpath --details=verbose 2>&amp;1 | grep -E '(test|RkGibbs|passed|failed|Test)'"/>
+        </exec>
+    </target>
 </project>
