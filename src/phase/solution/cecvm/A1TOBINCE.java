@@ -4,7 +4,6 @@
  */
 package phase.solution.cecvm;
 
-import utils.io.Print;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 
@@ -106,7 +105,8 @@ public class A1TOBINCE extends FCCTOBINCE {
     private double[][] Gcuu_local = new double[(tcf_local - nxcf_local)][(tcf_local - nxcf_local)];
 
     public A1TOBINCE(String stdst[], double edis[], String eMatFile, double mdis[], double T_in, double xB_in) throws FileNotFoundException, IOException { // Constructor Method
-        Print.f("*****A1mTOBINCE constructor type 1 called", 6);
+        // Removed debug logging (infrastructure dependency) - level 6
+        //Print.f("*****A1mTOBINCE constructor type 1 called", 6);
         setEmat(eMatFile);//vj-15-03-11
         // Phase specific information
         setPhaseTag(phaseTag_local);
@@ -141,7 +141,8 @@ public class A1TOBINCE extends FCCTOBINCE {
         initGcu(Gcu_local);
         initScuu(Scuu_local);
         initGcuu(Gcuu_local);
-        Print.f("****A1mTOBINCE constructor type 1 ended", 6);
+        // Removed debug logging (infrastructure dependency) - level 6
+        //Print.f("****A1mTOBINCE constructor type 1 ended", 6);
     }
 
     private void genInitialValues(double x) throws IOException {//Phase specific method

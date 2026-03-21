@@ -4,15 +4,16 @@
  */
 package phase.solution.cecvm;
 
-import utils.io.Print;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.logging.Logger;
 
 /**
  *
  * @author metallurgy
  */
 public class B19TOBINCE extends CPHTOBINCE {
+    private static final Logger LOG = Logger.getLogger(B19TOBINCE.class.getName());
 
     //Phase specific information
     private final String phaseTag_local = "B19TOBINCE"; // Phase Name 
@@ -44,7 +45,7 @@ public class B19TOBINCE extends CPHTOBINCE {
     private final int np_local = 26;
 
     public B19TOBINCE(String stdst[], double edis[], String eMatFile, double[] msdis, double T_in, double xB_in) throws FileNotFoundException, IOException { // Constructor Method
-        Print.f("B19TOBINCE constructor method called ", 6);
+        LOG.finest("B19TOBINCE constructor method called");
         setEmat(eMatFile);//vj-15-03-11
         // Phase specific information
         setPhaseTag(phaseTag_local);
@@ -60,7 +61,7 @@ public class B19TOBINCE extends CPHTOBINCE {
         setM(m_local);
         setWcv(wcv_local);
         setLcv(lcv_local);
-        setCMat("data\\TransMat\\cmatB19TOBIN.txt");
+        setCMat("data/transmat/cmatB19TOBIN.txt");
         // Parameters
         setNP(np_local);
         //setR(((Math.abs(edis[0]) == 1) ? 1 : 8.3144)); //  Universal gas constant
@@ -79,7 +80,7 @@ public class B19TOBINCE extends CPHTOBINCE {
         initGcu(Gcu_local);
         initScuu(Scuu_local);
         initGcuu(Gcuu_local);
-        Print.f("B19TOBINCE constructor method ended", 6);
+        LOG.finest("B19TOBINCE constructor method ended");
     }
 
     private void randInit(double x) throws IOException {//Phase specific method

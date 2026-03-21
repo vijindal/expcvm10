@@ -5,10 +5,9 @@
  */
 package phase;
 
-import calbince.Condition;
-import database.tdb;
+import domain.model.ThermoCondition;
 import java.util.ArrayList;
-import utils.io.Print;
+import java.util.logging.Logger;
 
 /**
  *
@@ -20,6 +19,7 @@ import utils.io.Print;
 //(iii) condition parameters (like T, P, composition) (to be supplied by user)
 public abstract class GibbsModel {
 
+    private static final Logger LOG = Logger.getLogger(GibbsModel.class.getName());
     private double R; //= 8.3144;
     //Following information will be filled during object creation of a specific phase such as A2TTERN
     String phaseTag; // Phase Name
@@ -30,10 +30,9 @@ public abstract class GibbsModel {
     private double T; //Temperature
     private double P; //Pressure
     private ArrayList<Double> x;// composition of the components
-    private tdb systdb;
-    private tdb.Phase phase;
+    // Removed: tdb systdb and tdb.Phase fields (infrastructure dependency)
     private String phaseName;
-    private Condition condition;
+    private ThermoCondition condition;
     private ArrayList<String> elementNames;
     private String[] compList;
     //Following information wiil be filled by the corresponding phase model such as CECVM
@@ -59,9 +58,7 @@ public abstract class GibbsModel {
         this.phaseTag = phaseTag_In;
     }
 
-    public void setTdb(tdb systdb) {
-        this.systdb = systdb;
-    }
+    // Removed: setTdb() method (infrastructure dependency)
 
     public void setElementNames(ArrayList<String> elementNames) {
         this.elementNames = elementNames;
@@ -120,9 +117,7 @@ public abstract class GibbsModel {
         return (this.phaseTag);
     }
 
-    public tdb getTdb() {
-        return (this.systdb);
-    }
+    // Removed: getTdb() method (infrastructure dependency)
 
     public ArrayList<String> getElementNames() {
         return (this.elementNames);
@@ -272,16 +267,15 @@ public abstract class GibbsModel {
      * derivatives with temperature, pressure and composition variables
      */
     public void printGE() {
-        Print.f("G:", G, 0);
-        Print.f("GT:", GT, 0);
-        Print.f("GP:", GP, 0);
-        Print.f("Gx:", Gx, 0);
-        Print.f("GTx:", GTx, 0);
-        Print.f("GPx:", GPx, 0);
-        Print.f("Gxx:", Gxx, 0);
-        Print.f("cG:", cG, 0);
-        Print.f("cT:", cT, 0);
-        Print.f("cP:", cP, 0);
-        Print.f("cAB:", cAB, 0);
+        LOG.fine("G: " + G);
+        LOG.fine("GT: " + GT + "  GP: " + GP);
+        LOG.fine("Gx: " + java.util.Arrays.toString(Gx));
+        LOG.fine("GTx: " + java.util.Arrays.toString(GTx));
+        LOG.fine("GPx: " + java.util.Arrays.toString(GPx));
+        LOG.finer("Gxx: " + java.util.Arrays.deepToString(Gxx));
+        LOG.finer("cG: " + java.util.Arrays.toString(cG));
+        LOG.finer("cT: " + java.util.Arrays.toString(cT));
+        LOG.finer("cP: " + java.util.Arrays.toString(cP));
+        LOG.finer("cAB: " + java.util.Arrays.deepToString(cAB));
     }
 }

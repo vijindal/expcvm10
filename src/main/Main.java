@@ -1,177 +1,57 @@
 
 /*
- * To change this template, choose Tools | Templates
- * and open the template in the editor.
+ * Composition root: wires all layers and selects entry point (GUI or CLI).
  */
 package main;
 
-import database.tdb;
-import utils.io.DataPrinter;
-import utils.io.Print;
-import calbince.*;
-import java.io.FileNotFoundException;
+import application.service.CalculationService;
+import application.service.OptimizationService;
+import domain.port.PhaseFactory;
+import infrastructure.factory.PhaseFactoryImpl;
+import infrastructure.logging.ConsoleLogger;
+import infrastructure.logging.LoggingConfig;
+import infrastructure.output.OptimizationOutputAdapter;
+import infrastructure.parser.TdbParser;
+import presentation.cli.CliApp;
+import presentation.gui.GuiApp;
+
 import java.io.IOException;
-import java.net.InetAddress;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Date;
-import phase.A2TTERN;
+import java.util.logging.Level;
 
 public class Main {
 
-    public static void main(String[] args) throws FileNotFoundException, IOException {
-//        System.out.println("-------------Job/System Properties--------------------");
-        String currentDirectory = System.getProperty("user.dir");
-//        String expIn = currentDirectory + "/data/ExptData.txt";
-//        String phaseIn = currentDirectory + "/data/PhaseData.txt";
-//        String filePrefix = currentDirectory + "/data/log";
-//        try {
-//            System.out.println("-------------Job/System Properties--------------------");
-//            System.out.println("  started on: " + (new Date()).toString());
-//            System.out.println("    hostname: " + InetAddress.getLocalHost().getHostName());
-//            System.out.println("executing on: " + System.getProperty("os.name"));
-//            System.out.println("        arch: " + System.getProperty("os.arch"));
-//            System.out.println("      kernel: " + System.getProperty("os.version"));
-//            System.out.println(" JVM-version: " + System.getProperty("java.vm.version"));
-//            System.out.println("  JVM-vender: " + System.getProperty("java.vm.vender"));
-//            System.out.println("    JVM-name: " + System.getProperty("java.vm.name"));
-//            System.out.println("-----------------------------------------------------");
-//            System.out.println("                expCVM-version: 05.00");
-//            System.out.println("Default experimental data file: " + expIn);
-//            System.out.println("       Default phase data file: " + phaseIn);
-//            System.out.println("              Default log file: data/log.txt");
-//            System.out.println("-----------------------------------------------------");
-//            long beg = System.currentTimeMillis();
-//            if (args.length == 0) {
-//                System.out.println("No arguments were given, default calModule() called");
-//                calModule(expIn, phaseIn, filePrefix);
-//            } else {
-//                if (args[0].equals("opt")) {
-//                    optimizeModule(expIn, phaseIn, filePrefix);
-//                }
-//            }
-//            long end = System.currentTimeMillis();
-//            System.out.println("#Calculations took " + (double) (end - beg) / 1000 + " sec");
-//        } catch (IOException e) {
-//            System.out.println(e.getMessage());
-//        }
-        //tdb rtbd = new tdb(currentDirectory + "/data/Unary.TDB");
-        //tdb rtbd = new tdb(currentDirectory + "/data/cost507.tdb");
-        //tdb rtbd = new tdb(currentDirectory + "/data/agcu.TDB");
-        //tdb rtbd = new tdb(currentDirectory + "/data/steel1.TDB");
-         tdb rtbd = new tdb(currentDirectory + "/data/tizr_kum_cvm.tdb");
+    public static void main(String[] args) throws IOException {
+        // --- Initialize logging subsystem ---
+        String logDir = System.getProperty("user.dir") + "/data/";
+        LoggingConfig.init(Level.INFO, logDir + "expcvm.log", Level.ALL);
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            @Override
+            public void run() {
+                LoggingConfig.shutdown();
+            }
+        });
 
-        //tdb rtbd = new tdb(currentDirectory + "/data/cost507.TDB");
-        //rtbd.printtdb();
-        //String[] elementList = {"V", "TI"};
-        String[] elementList = {"TI", "ZR"};
-        tdb systdb = rtbd.gettdb(elementList);
-        //systdb.printtdb();
-        CalVars calvars = new CalVars(systdb);
-        CalcSet calcSet = new CalcSet();
-        ArrayList<String> elements = new ArrayList<>(Arrays.asList(elementList));
-        calcSet.setElementNames(elements);
-        CalcType calcType = new CalcType();
-        calcType.setMethod("HM"); //Enthalpy
-        ArrayList<String> phases = new ArrayList<>();
-        phases.add("LIQUID");
-        calcType.setPhases(phases);
-        double condT = 500.0;
-        double condP = 10000.0;
-        ArrayList<ArrayList<Double>> condX = new ArrayList<>();
-        ArrayList<Double> x = new ArrayList<>();
-        double temp = 1.0 / 3;
-        x.add(temp);
-        x.add(temp);
-        x.add(temp);
-        condX.add(x);
-        //System.out.println("condX:" + condX);
-       Condition calculation = new Condition(condT, condP, condX);
-       calcType.addConditions(calculation);
-        calcSet.addCalcType(calcType);
-        calvars.addcalcSet(calcSet);
-        //calvars.printCalcSetList();
-        //calculate.printCalcSetList();
-        calculate cal = new calculate(calvars);
-        cal.cal();
-     
-//        String[] stdst = {""};
-//        double[] ecdis = {0, 0, 0, 0, 0, 0, 0., 0., -1500., 0., 0., 0., 2966.67, 3026.67, 4666.67, 5933.33, 6053.33, 9333.33};
-//        double[] evdis = {0, 0, 0, 0, 0, 0, 0., 0., 0., 0., 0., 0., 0, 0, 0, 0, 0, 0};
-//        A2TTERN a2ttern1 = new A2TTERN();
-//        ArrayList<Double> X = a2ttern1.genInitialValues(x);
-//        //System.out.println(X);
-//        A2TTERN a2ttern = new A2TTERN(stdst, ecdis, evdis, condT, X);
-//        a2ttern.calGderivatives();
-//        a2ttern.printPhaseInfo();
-//        a2ttern.printGE();
-    }
+        // --- Wire infrastructure adapters ---
+        PhaseFactory phaseFactory = new PhaseFactoryImpl();
+        TdbParser tdbParser = new TdbParser();
+        ConsoleLogger logger = new ConsoleLogger();
+        OptimizationOutputAdapter outputAdapter = new OptimizationOutputAdapter();
 
-    private static void calModule(String exptDataFileName, String phaseDataFileName, String filePrefix) throws IOException {
-        int logLevelParamIn = 2;
-        DataPrinter Dp = new DataPrinter(filePrefix, logLevelParamIn);
-        //Reading phase data
-        //PhaseData phasedata = new PhaseData();
-        //DataReader dr2 = new DataReader(phaseDataFileName, phasedata);
-        //phasedata.readPhaseDataInputFile();
-        PhaseData phasedata = new PhaseData(phaseDataFileName);
-        //System.out.println("filename:"+phaseDataFileName);
-        phasedata.readPhaseDataInputFile();
-        phasedata.print();
-        //Reading expt data
-        //ExptData exptdata = new ExptData();
-        //DataReader dr1 = new DataReader(exptDataFileName,exptdata);
-        ExptData exptdata = new ExptData(exptDataFileName);
-        exptdata.readExptDataFile();
-        exptdata.print();
-        //Dp.initOutput(exptdata, phasedata);
-        //Calculations
-        Print.f("Cal Model calculations for " + filePrefix + " system begins", 0);
-        ExptData recordData = new ExptData();
-        CalModel calmodel = new CalModel(exptdata, phasedata, recordData);
-        calmodel.Run();
-        //Post-Processing
-        recordData.print();
-        //Dp.finalOutput(recordData, phasedata);
-        Print.f("Finished Execution", 0);
-    }
+        // --- Wire application services ---
+        CalculationService calculationService = new CalculationService(tdbParser);
+        OptimizationService optimizationService = new OptimizationService(logger, outputAdapter);
 
-    private static void optimizeModule(String exptDataFileName, String phaseDataFileName, String filePrefix) throws IOException {
-        //Initialization
-        int logLevelParamIn = 1;
-        DataPrinter dataPrinter = new DataPrinter(filePrefix, logLevelParamIn);
-
-        //Reading phase data
-        //PhaseData phasedata = new PhaseData();
-        //DataReader dr2 = new DataReader(phaseDataFileName, phasedata);
-        //phasedata.readPhaseDataInputFile();
-        PhaseData phasedata = new PhaseData(phaseDataFileName);
-        phasedata.readPhaseDataInputFile();
-        phasedata.print();
-
-        //Reading expt data
-        //ExptData exptdata = new ExptData();
-        //DataReader dr1 = new DataReader(exptDataFileName,exptdata);
-        ExptData exptdata = new ExptData(exptDataFileName);
-        exptdata.readExptDataFile();
-        exptdata.readExptDataFile();
-        //Checking Consistency
-        exptdata.check(phasedata);
-
-        phasedata.setFitParam();
-        exptdata.print();
-        phasedata.print();
-        phasedata.printFitParam();
-        dataPrinter.initOpt(exptdata, phasedata);
-        //Calculations
-        Print.f("Simultaneous optimization begins...", 0);
-        OptMrq optmrq = new OptMrq(exptdata, phasedata);
-        //optmrq.print();
-        optmrq.fit(50);
-        //Dp.outOpt(phasedata);
-        Print.f("Simultaneous optimization calculations ended", 0);
-        //Post-Processing
-        dataPrinter.finalOpt(phasedata);
-        Print.f("Finished Execution", 0);
+        // --- Select entry point ---
+        if (args.length > 0 && "--gui".equals(args[0])) {
+            // Strip --gui from args before passing to GUI
+            String[] guiArgs = Arrays.copyOfRange(args, 1, args.length);
+            GuiApp gui = new GuiApp(calculationService, optimizationService);
+            gui.launch(guiArgs);
+        } else {
+            CliApp cli = new CliApp(calculationService, optimizationService);
+            cli.run(args);
+        }
     }
 }
+

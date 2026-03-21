@@ -5,6 +5,7 @@
  */
 package calbince;
 
+import domain.model.ThermoCondition;
 import java.util.ArrayList;
 
 /**
@@ -106,5 +107,12 @@ public class Condition {
      */
     public int dof() {
         return (c + 2 - p);
+    }
+
+    /**
+     * Convert to immutable domain value object.
+     */
+    public ThermoCondition toThermoCondition() {
+        return new ThermoCondition(T, P, new java.util.ArrayList<java.util.List<Double>>(x));
     }
 }

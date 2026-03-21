@@ -4,6 +4,7 @@
  */
 package calbince;
 
+import domain.port.PhaseFactory;
 import utils.io.Print;
 import utils.io.Utils;
 import java.io.BufferedReader;
@@ -60,6 +61,7 @@ public class PhaseData {
     private int maxFitItr;//vj-2013-04-04-No of fitmrq iterations
     private String[][] outStrFirmrq = null;//vj-2012-04-21, for storing fitmrq calculations 
     private final String cname = "PhaseData";
+    private PhaseFactory phaseFactory; // injected port for phase creation
 
     public PhaseData() throws IOException {
         Print.f(cname + ".constructor called", 6);
@@ -431,6 +433,13 @@ public class PhaseData {
         }
     }
 
+    /**
+     * Set the phase factory port. When set, genPhase() delegates to it.
+     */
+    public void setPhaseFactory(PhaseFactory phaseFactory) {
+        this.phaseFactory = phaseFactory;
+    }
+
     
     public PHASEBINCE genPhase(String[] pid) throws IOException {
         //Print.f(cname + ".genPhase called", 7);
@@ -443,6 +452,21 @@ public class PhaseData {
         double T_in = 1500.0; //default initial temperature of the phase
         double xB_in = 0.5; //default initial composition of the phase
 
+        if (phaseFactory != null) {
+            phase_local = phaseFactory.createPhase(pType, pModel, pInstance,
+                    stdst[pIndex], eList[pIndex], eMatFileName[pIndex],
+                    mList[pIndex], T_in, xB_in);
+        }
+        if (phase_local == null) {
+            // Legacy fallback
+            phase_local = genPhaseLegacy(pType, pModel, pIndex, T_in, xB_in);
+        }
+        Print.f(cname + ".GenPhase ended", 7);
+        return (phase_local);
+    }
+
+    private PHASEBINCE genPhaseLegacy(String pType, String pModel, int pIndex, double T_in, double xB_in) throws IOException {
+        PHASEBINCE phase_local = null;
         switch (pType) {
             case "A1": {
                 switch (pModel) {
@@ -556,8 +580,6 @@ public class PhaseData {
                 break;
             }
         }
-        //phase_local.printPhaseInfo();
-        Print.f(cname + ".GenPhase ended", 7);
         return (phase_local);
     }
 

@@ -6,15 +6,16 @@
 package phase.solution.cecvm;
 
 import phase.solution.cecvm.CPHTOBINCE;
-import utils.io.Print;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.logging.Logger;
 
 /**
  *
  * @author metallurgy
  */
 public class D019TOBINCE extends CPHTOBINCE {
+    private static final Logger LOG = Logger.getLogger(D019TOBINCE.class.getName());
 
     //Phase specific information
     private final String phaseTag_local = "D019TOBINCE"; // Phase Name 
@@ -42,7 +43,7 @@ public class D019TOBINCE extends CPHTOBINCE {
     private final int np_local = 26;
 
     public D019TOBINCE(String stdst[], double edis[], String eMatFile, double[] msdis, double T_in, double xB_in) throws FileNotFoundException, IOException { // Constructor Method
-        Print.f("D019TOBINCE constructor method called ", 6);
+        LOG.finest("D019TOBINCE constructor method called");
         setEmat(eMatFile);//vj-15-03-11
         // Phase specific information
         setPhaseTag(phaseTag_local);
@@ -58,7 +59,7 @@ public class D019TOBINCE extends CPHTOBINCE {
         setM(m_local);
         setWcv(wcv_local);
         setLcv(lcv_local);
-        setCMat("..\\data\\TransMat\\cmatD019TOBIN.txt");
+        setCMat("data/transmat/cmatD019TOBIN.txt");
         // Parameters
         setNP(np_local);
         //setR(((Math.abs(edis[0]) == 1) ? 1 : 8.3144)); //  Universal gas constant
@@ -77,7 +78,7 @@ public class D019TOBINCE extends CPHTOBINCE {
         initGcu(Gcu_local);
         initScuu(Scuu_local);
         initGcuu(Gcuu_local);
-        Print.f("D019TOBINCE constructor method ended", 6);
+        LOG.finest("D019TOBINCE constructor method ended");
     }
 
     private void randInit(double x) throws IOException {//Phase specific method

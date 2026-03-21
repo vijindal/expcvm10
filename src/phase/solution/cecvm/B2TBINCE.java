@@ -1,11 +1,12 @@
 package phase.solution.cecvm;
 
-import utils.io.Print;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.logging.Logger;
 //import debug.*;
 
 public class B2TBINCE extends BCCTBINCE {
+    private static final Logger LOG = Logger.getLogger(B2TBINCE.class.getName());
 //Phase specific information
 
     private final String phaseTag_local = "B2mTBINCE";
@@ -62,7 +63,7 @@ public class B2TBINCE extends BCCTBINCE {
     private double[][] Gcuu_local = new double[(ncf_local)][(ncf_local)];
 
     public B2TBINCE(String stdst[], double edis[], String eMatFile, double mdis[], double T_in, double xB_in) throws FileNotFoundException, IOException { // Constructor Method
-        Print.f("b2mTBINcCE constructor method called ", 6);
+        LOG.finest("B2mTBINcCE constructor method called");
         setEmat(eMatFile);//vj-15-03-11
         // Phase specific information
         setPhaseTag(phaseTag_local);
@@ -97,7 +98,7 @@ public class B2TBINCE extends BCCTBINCE {
         initGcu(Gcu_local);
         initScuu(Scuu_local);
         initGcuu(Gcuu_local);
-        Print.f("b2mTBINcCE constructor method ended", 6);
+        LOG.finest("B2mTBINcCE constructor method ended");
     }
 
     private double[] genRandCF(double x) {//vj-2012-04-03:Generate random CF

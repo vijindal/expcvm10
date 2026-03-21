@@ -1,6 +1,8 @@
 package utils.io;
 
 import java.text.DecimalFormat;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * @author : Shivam Updated: SU: 11.02.2012 : added method f() for printing 2D
@@ -12,7 +14,31 @@ public class Print {
     static DecimalFormat df = new DecimalFormat("#.########");
     //public static final int pr2F = 1;// 0 for nothing, 1 for console, 2 for file, 3 for both console & file
 
+    // JUL bridge: maps legacy numeric levels to JUL levels and emits log records
+    private static final Logger JUL = Logger.getLogger("legacy.Print");
+
+    private static Level toJulLevel(int loglevel) {
+        switch (loglevel) {
+            case 0: return Level.SEVERE;
+            case 1: return Level.INFO;
+            case 2: return Level.CONFIG;
+            case 3: case 4: return Level.FINE;
+            case 5: return Level.FINER;
+            default: return Level.FINEST;  // 6, 7+
+        }
+    }
+
     private static void write(String str, int loglevel) {
+        // Route through JUL (always, regardless of DataPrinter settings)
+        Level julLevel = toJulLevel(loglevel);
+        if (JUL.isLoggable(julLevel)) {
+            String clean = str.replaceAll("^\\*+", "").trim();
+            if (!clean.isEmpty()) {
+                JUL.log(julLevel, clean);
+            }
+        }
+
+        // Legacy console/file output (unchanged behaviour)
         if (loglevel <= DataPrinter.logLevel) {
             switch (DataPrinter.pr2F) {
                 case 0:// Prints Nothing

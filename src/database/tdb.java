@@ -1,3 +1,4 @@
+// ...existing code...
 /**
  * @author      Vikas Jindal
  * @version 10.0 (current version number of program)
@@ -27,8 +28,21 @@ import utils.io.Print;
  * @author Vikas Jindal
  * @version 10.0 (current version number of program)
  * @since 10.0 (the version of the package this class was first added to)
+ * @deprecated Use {@code database.Tdb} (PascalCase) for new code. Will be renamed in a future migration step.
  */
+// TODO: Rename class to Tdb (PascalCase) when all legacy references are updated.
 public class tdb {
+
+    /**
+     * Returns the names of all elements in the database.
+     */
+    public ArrayList<String> getElementNames() {
+        ArrayList<String> names = new ArrayList<>();
+        for (Element element : elementList) {
+            names.add(element.elementName);
+        }
+        return names;
+    }
 
     private String tdbFileName;
     private ArrayList<Element> elementList; //list of elements of Element type
@@ -1343,6 +1357,17 @@ public class tdb {
         }
         Print.f("End of Listing data", 0);
         printSepLine();
+    }
+
+    /**
+     * Returns phase names currently loaded in this database object.
+     */
+    public ArrayList<String> getPhaseNames() {
+        ArrayList<String> names = new ArrayList<>();
+        for (Phase phase : phaseList) {
+            names.add(phase.getPhaseName());
+        }
+        return names;
     }
 
     public HashMap countElements(String formula) {

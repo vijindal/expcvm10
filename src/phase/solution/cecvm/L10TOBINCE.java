@@ -1,12 +1,13 @@
 package phase.solution.cecvm;
 
 import phase.solution.cecvm.FCCTOBINCE;
-import utils.io.Print;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.logging.Logger;
 //import debug.*;
 
 public class L10TOBINCE extends FCCTOBINCE {
+    private static final Logger LOG = Logger.getLogger(L10TOBINCE.class.getName());
 //Phase specific information
 
     private String phaseTag_local = "L10mTOBINcCE";
@@ -705,7 +706,7 @@ public class L10TOBINCE extends FCCTOBINCE {
     private double[][] Gcuu_local = new double[(ncf_local)][(ncf_local)];
 
     public L10TOBINCE(String stdst[], double edis[], String eMatFile, double mdis[], double T_in, double xB_in) throws FileNotFoundException, IOException { // Constructor Method
-        Print.f("L10mTOBINcCE constructor method called ", 6);
+        LOG.finest("L10mTOBINcCE constructor method called");
         setEmat(eMatFile);//vj-15-03-11
         // Phase specific information
         setPhaseTag(phaseTag_local);
@@ -741,7 +742,7 @@ public class L10TOBINCE extends FCCTOBINCE {
         initScuu(Scuu_local);
         initGcuu(Gcuu_local);
         //printPhaseInfo();
-        Print.f("L10mTOBINcCE constructor method ended", 6);
+        LOG.finest("L10mTOBINcCE constructor method ended");
     }
 
 //    private double[] genRandCF(double x) {//vj-2012-04-03:Generate random CF

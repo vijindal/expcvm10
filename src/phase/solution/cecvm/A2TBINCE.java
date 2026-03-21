@@ -4,15 +4,16 @@
  */
 package phase.solution.cecvm;
 
-import utils.io.Print;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.logging.Logger;
 
 /**
  *
  * @author metallurgy
  */
 public class A2TBINCE extends BCCTBINCE {
+    private static final Logger LOG = Logger.getLogger(A2TBINCE.class.getName());
     //Phase specific information
 
     private final String phaseTag_local = "A2mTBINCE";
@@ -51,7 +52,7 @@ public class A2TBINCE extends BCCTBINCE {
     //private double utc[] = new double[lcf_local[tcdis_local - 1]];
 
     public A2TBINCE(String stdst[], double edis[], String eMatFile, double[] msdis, double T_in, double xB_in) throws FileNotFoundException, IOException { // Constructor Method
-        Print.f("*****A2mTBINc constructor called", 6);
+        LOG.finest("A2mTBINc constructor called");
         //setEmat(eMatFile);//vj-15-03-11
         // Phase specific information
         setPhaseTag(phaseTag_local);
@@ -86,7 +87,7 @@ public class A2TBINCE extends BCCTBINCE {
         initGcu(Gcu_local);
         initScuu(Scuu_local);
         initGcuu(Gcuu_local);
-        Print.f("****A2mTBINc constructor ended", 6);
+        LOG.finest("A2mTBINc constructor ended");
     }
 
     private void genInitialValues(double x) throws IOException {//Phase specific method

@@ -2,6 +2,8 @@
 package calbince;
 
 import utils.io.Print;
+import infrastructure.logging.AppLevel;
+import infrastructure.logging.Trace;
 import utils.jama.LUDecomposition;
 import utils.jama.Mat;
 import utils.jama.Matrix;
@@ -16,6 +18,7 @@ import phase.PHASEBINCE;
  */
 public class Methods {
 
+    private static final java.util.logging.Logger LOG = java.util.logging.Logger.getLogger(Methods.class.getName());
     private PHASEBINCE phase0 = null;
     private PHASEBINCE phase1 = null;
     private PHASEBINCE phase2 = null;
@@ -25,14 +28,14 @@ public class Methods {
     static DecimalFormat df = new DecimalFormat("#.########");
 
     public Methods(PhaseData phasedataIn) throws IOException {//vj-2013-04-04
-        Print.f(cname + ".constructor methed called", 6);
+        Trace.enter(LOG, AppLevel.ENGINE, "Methods", "Methods");
         this.phasedata = phasedataIn;
         //phasedata.print();
-        Print.f(cname + ".constructor method ended", 6);
+        Trace.exit(LOG, AppLevel.ENGINE, "Methods", "Methods");
     }
 
     public void funcsCal(ExptDatum datum) throws IOException {//vj-2013-03-24-added
-        Print.f(cname + ".funcsCal method called", 7);
+        Trace.enter(LOG, AppLevel.ENGINE, "Methods", "funcsCal");
         setPhase(datum);//vj-2013-04-01-create phase object(s) according to datum
         switch (datum.getBList()) {
             /*
@@ -257,11 +260,11 @@ public class Methods {
                 break;
             }
         }
-        Print.f(cname + ".funcsCal method closed", 7);
+        Trace.exit(LOG, AppLevel.ENGINE, "Methods", "funcsCal");
     }//vj-2013-04-01-funcsOpt for calModel
 
     public void funcsOpt(ExptDatum datum_in, double[] dyda_out) throws IOException {//vj-2013-04-01-funcs for OptMrq
-        Print.f(cname + ".funcsOpt method called", 7);
+        Trace.enter(LOG, AppLevel.ENGINE, "Methods", "funcsOpt");
         setPhase(datum_in); //vj-2013-04-06-create phase object(s) according to datum_in
         for (int temp = 0; temp < dyda_out.length; temp++) {//Input array initialized to zero
             dyda_out[temp] = 0;

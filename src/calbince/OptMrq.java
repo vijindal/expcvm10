@@ -1,6 +1,8 @@
 package calbince;
 
 import utils.io.Print;
+import infrastructure.logging.AppLevel;
+import infrastructure.logging.Trace;
 import utils.jama.GaussjNR;
 import utils.jama.Mat;
 import java.io.IOException;
@@ -12,6 +14,7 @@ import java.io.IOException;
 
 public class OptMrq {
 
+    private static final java.util.logging.Logger LOG = java.util.logging.Logger.getLogger(OptMrq.class.getName());
     private static final int NDONE = 4;
     private int ITMAX = 40;
     int ndat, ma, mfit;
@@ -61,7 +64,7 @@ public class OptMrq {
     }
 
     public void fit(int imax_In) throws IOException {
-        Print.f(cname + ".fit() method called {", 5);
+        Trace.enter(LOG, AppLevel.ENGINE, "OptMrq", "fit");
         this.ITMAX = imax_In;
         phasedata.initStrOpt(ITMAX);//2013-04-06-Initiate output string array
         int j, k, l, iter, done = 0;

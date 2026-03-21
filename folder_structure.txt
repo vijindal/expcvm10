@@ -1,0 +1,849 @@
+Folder PATH listing for volume Windows 
+Volume serial number is CE1F-7298
+C:.
+¦   .gitignore
+¦   build.xml
+¦   changelog.txt
+¦   folder_structure.txt
+¦   known-issues.txt
+¦   manifest.mf
+¦   
++---.git
+¦   ¦   COMMIT_EDITMSG
+¦   ¦   config
+¦   ¦   FETCH_HEAD
+¦   ¦   HEAD
+¦   ¦   index
+¦   ¦   packed-refs
+¦   ¦   
+¦   +---branches
+¦   +---hooks
+¦   +---logs
+¦   ¦   ¦   HEAD
+¦   ¦   ¦   
+¦   ¦   +---refs
+¦   ¦       +---heads
+¦   ¦       ¦       master
+¦   ¦       ¦       
+¦   ¦       +---remotes
+¦   ¦           +---origin
+¦   ¦                   master
+¦   ¦                   
+¦   +---objects
+¦   ¦   +---00
+¦   ¦   ¦       a18b90aa744f134a585ed9670c6621e335e5c8
+¦   ¦   ¦       b9657c305d3d146e264f4448c58c70e9023055
+¦   ¦   ¦       
+¦   ¦   +---01
+¦   ¦   ¦       28db2acbb2dbf8fe7c047d168d2179280b6281
+¦   ¦   ¦       
+¦   ¦   +---02
+¦   ¦   ¦       46965d1ab17cd8d8d20ea08c584d755aed7589
+¦   ¦   ¦       7bda5dc591d5a9489d45a80880ca9859920d6e
+¦   ¦   ¦       c32d125c3daf972dfac72fedec96ee029e511c
+¦   ¦   ¦       
+¦   ¦   +---06
+¦   ¦   ¦       073d34cf3cc8638fbf9d22e617d866adfad876
+¦   ¦   ¦       0fa5e7fa76f3f0cd981190f6479c0e4190f1c2
+¦   ¦   ¦       75c557731ce04919b29710912b53dd03d0e8af
+¦   ¦   ¦       
+¦   ¦   +---07
+¦   ¦   ¦       a5daffb113f326a7fbeb5469c1a3094752d7db
+¦   ¦   ¦       cb88ee39c5962a28729bb9918b6dff8262b478
+¦   ¦   ¦       fa9d03543bc13ad7923858b4a3abc19cd20784
+¦   ¦   ¦       
+¦   ¦   +---08
+¦   ¦   ¦       bbff188399936081824f3aa278756a7aa0ad81
+¦   ¦   ¦       
+¦   ¦   +---09
+¦   ¦   ¦       b50ef22e5aba719cf2994e6991b76979545ca0
+¦   ¦   ¦       
+¦   ¦   +---0a
+¦   ¦   ¦       7230e2842610d4e4b761503cc32f76da1cef87
+¦   ¦   ¦       
+¦   ¦   +---0b
+¦   ¦   ¦       2a751045c5cc02e11232b71ea67551042f7fc9
+¦   ¦   ¦       
+¦   ¦   +---0c
+¦   ¦   ¦       1b659b2effcf93351479e5f894566f09b60c77
+¦   ¦   ¦       233877d95ef28fe71980f2a8c147efc901347b
+¦   ¦   ¦       743bc91abeb84e8926542d82ddd2833797fe43
+¦   ¦   ¦       
+¦   ¦   +---0d
+¦   ¦   ¦       db87e492a44da4cdd6ff63fca85660b54997f0
+¦   ¦   ¦       
+¦   ¦   +---0e
+¦   ¦   ¦       39ebcc6085711d2d591e9212cdf8d0f3d52658
+¦   ¦   ¦       
+¦   ¦   +---10
+¦   ¦   ¦       c67bea45653c65420fadab3ccde7166aa3351c
+¦   ¦   ¦       d8dd37ae2141d0bd0352e4e0e7352e0ab2e6cb
+¦   ¦   ¦       
+¦   ¦   +---11
+¦   ¦   ¦       a07c07999131ab4e91feba46b2b6161d5ca18a
+¦   ¦   ¦       
+¦   ¦   +---12
+¦   ¦   ¦       c669f636e48110c06b23867a24ec306b89da73
+¦   ¦   ¦       
+¦   ¦   +---14
+¦   ¦   ¦       8b202c66c12b4d76928e2130e1f6fb21b405f7
+¦   ¦   ¦       
+¦   ¦   +---16
+¦   ¦   ¦       27a3ba48180b3c285e59be239864fe67d963fa
+¦   ¦   ¦       6f14955468b9210698c6a448dea71a522b8d89
+¦   ¦   ¦       7363017300ad2cb16ec6dd90c07952157797df
+¦   ¦   ¦       
+¦   ¦   +---18
+¦   ¦   ¦       dfb97b3d556ec7fa56cf954ebb4a8463cc0b79
+¦   ¦   ¦       
+¦   ¦   +---19
+¦   ¦   ¦       b42993c91d3e3c68ab368bef6ce369c6c9413f
+¦   ¦   ¦       
+¦   ¦   +---1b
+¦   ¦   ¦       0c93a2107517f893edc970f7c80f8a95299a56
+¦   ¦   ¦       a0e0bd94bda24383edc2b3ceca160e97b8a923
+¦   ¦   ¦       
+¦   ¦   +---1d
+¦   ¦   ¦       3d3210e0407164e175a49e7a8210f694852664
+¦   ¦   ¦       
+¦   ¦   +---1e
+¦   ¦   ¦       f5c21d33f1fc5e6c01b1a0551165d80b0fc469
+¦   ¦   ¦       
+¦   ¦   +---1f
+¦   ¦   ¦       4e42998f0ff9608a33fa6a78c16a33fa4eafce
+¦   ¦   ¦       
+¦   ¦   +---22
+¦   ¦   ¦       9f59754a4e1852158cf2b42822378a6973eac9
+¦   ¦   ¦       a6753aa593e10de0e4e1573bee0aee3b890f7e
+¦   ¦   ¦       b729ea36dfdfb8059f9ff528ba2435210a7881
+¦   ¦   ¦       efd684b0c0c167a07a39b4323bc03fcf6f9af3
+¦   ¦   ¦       
+¦   ¦   +---23
+¦   ¦   ¦       3f40a28a2ab069d022f0f405805fa16f8487eb
+¦   ¦   ¦       
+¦   ¦   +---24
+¦   ¦   ¦       07c0f49c97494f1773a1fee0168c866c88005f
+¦   ¦   ¦       264ccd7da6810ffd78e9de54774612fd18cf98
+¦   ¦   ¦       
+¦   ¦   +---25
+¦   ¦   ¦       5d89e0a368b10cfd4e0e68e44e7c20777cf8b2
+¦   ¦   ¦       
+¦   ¦   +---26
+¦   ¦   ¦       6ee1f9e6a295d454d08cbed48091058e1d9059
+¦   ¦   ¦       ccb599c0ae7580922f19bd4e51019794273145
+¦   ¦   ¦       
+¦   ¦   +---28
+¦   ¦   ¦       2b2e2550484d8c20358a0d56f483822b82a855
+¦   ¦   ¦       
+¦   ¦   +---2a
+¦   ¦   ¦       1eaf1067d9e347a107928e6f3661a56c58b4bd
+¦   ¦   ¦       
+¦   ¦   +---2b
+¦   ¦   ¦       dad14d333544ef285462d9196523eb863134ea
+¦   ¦   ¦       
+¦   ¦   +---2c
+¦   ¦   ¦       ed764d59a3638e82d428de5090adcda1735a1a
+¦   ¦   ¦       
+¦   ¦   +---2d
+¦   ¦   ¦       1225cc437c27141b38fe12e2e23dac1f17761b
+¦   ¦   ¦       14146056adccb0543825da1355013aff7dd6a2
+¦   ¦   ¦       
+¦   ¦   +---2e
+¦   ¦   ¦       0e3d2eaf1edac88db4f5b61218aa11e1c6e0fe
+¦   ¦   ¦       edcee800575fbe268081ba2c36d48f1ecd55b1
+¦   ¦   ¦       
+¦   ¦   +---2f
+¦   ¦   ¦       a477a075a9c2a707b1e9da14e19695b9954a3e
+¦   ¦   ¦       ccee567840cceb5c9db7c470cb47f99ecdd4d4
+¦   ¦   ¦       
+¦   ¦   +---31
+¦   ¦   ¦       aa2c43cc33e417020d62db3d79529a93340195
+¦   ¦   ¦       
+¦   ¦   +---32
+¦   ¦   ¦       54e06342f6f7ea27faeb810ba2cf06d32f957b
+¦   ¦   ¦       af3d69139f129cd9a787cadbd9777af3a7d050
+¦   ¦   ¦       
+¦   ¦   +---33
+¦   ¦   ¦       b4e2b77ddebd7c7e71837bb1539c1bc8c91fff
+¦   ¦   ¦       
+¦   ¦   +---34
+¦   ¦   ¦       52d2af371dd3ff879c170c7591dbdeae95bce2
+¦   ¦   ¦       
+¦   ¦   +---37
+¦   ¦   ¦       0106f0231831283e807d224c3bde769faab03b
+¦   ¦   ¦       7a65e68bfed463ef5231cf44c2c761cebd868c
+¦   ¦   ¦       94f1c8d583e2ccbc23b3fa06404af1b46986d6
+¦   ¦   ¦       
+¦   ¦   +---39
+¦   ¦   ¦       aaa6cf2053a5c47952676ae1f4f37d9d859257
+¦   ¦   ¦       
+¦   ¦   +---3b
+¦   ¦   ¦       2ec0802f2082305d4546c6563cb6fb2f95bbf3
+¦   ¦   ¦       59dde9dae964679245aaf57ce246621367afe3
+¦   ¦   ¦       b9da37387703629aaf7ba9955b37c01620ad67
+¦   ¦   ¦       
+¦   ¦   +---3c
+¦   ¦   ¦       99c9db64ade8381dc277765bb40d79284bdca8
+¦   ¦   ¦       c4ba0c714f2a5c7344f42f6ddd4244150f2b8a
+¦   ¦   ¦       
+¦   ¦   +---3e
+¦   ¦   ¦       44031d93ad0198d281af165957f14241055f15
+¦   ¦   ¦       a18a166958ec8e89d77143122ef80a7efe7b9f
+¦   ¦   ¦       f11af36d63093235bf219e4d62fa4212a1e456
+¦   ¦   ¦       
+¦   ¦   +---41
+¦   ¦   ¦       7f4a668a2478699c2826ae0d1d772f9adf3ad5
+¦   ¦   ¦       cb510527f29947b8579245b9b39d9ac4acb59d
+¦   ¦   ¦       
+¦   ¦   +---42
+¦   ¦   ¦       f2132c06b0be6e3378f1b4ee7cbb0d969fdc17
+¦   ¦   ¦       
+¦   ¦   +---43
+¦   ¦   ¦       4d9d4772d8711a98d5cba2dff4b1292547e33d
+¦   ¦   ¦       
+¦   ¦   +---45
+¦   ¦   ¦       383e8a729ac66fa6fa0114c1e102c58de92530
+¦   ¦   ¦       
+¦   ¦   +---46
+¦   ¦   ¦       32e0c3f9d55537f9ad9e1a0fd8c4fbc45e232c
+¦   ¦   ¦       6083bb87fd6282c96da62e1e977ed6a29696c7
+¦   ¦   ¦       cba4a7dd698d3709a826334085e3365667fbad
+¦   ¦   ¦       
+¦   ¦   +---47
+¦   ¦   ¦       3a18999e5d1e5d5549a3913e1e6493c0f23e03
+¦   ¦   ¦       
+¦   ¦   +---49
+¦   ¦   ¦       ae49bf6de65ddd841b1f3f415ecb7e7eb6f60b
+¦   ¦   ¦       
+¦   ¦   +---4b
+¦   ¦   ¦       773acd4db6d9c5a12d848b24768e59a821a86b
+¦   ¦   ¦       b74bc2cd6b333530e9115505f81ab654da921d
+¦   ¦   ¦       
+¦   ¦   +---4e
+¦   ¦   ¦       f141b9be5f525541b2210a0a5511c6b01736ff
+¦   ¦   ¦       
+¦   ¦   +---4f
+¦   ¦   ¦       24f6e9782bd99b8a038f16fa5ddd78463d938d
+¦   ¦   ¦       29aa5d590b78c5a239f503702c3c0c611d3f8a
+¦   ¦   ¦       56526ca735a18c8b68a383d870fd6bfc00799b
+¦   ¦   ¦       a32f98f05aa070812148053b97f6a76cdff3f6
+¦   ¦   ¦       
+¦   ¦   +---51
+¦   ¦   ¦       89058a435cdf87d991558381f25b55688b68b6
+¦   ¦   ¦       9be558e5d75f7764a2eba5b2c283ba81ea6f2c
+¦   ¦   ¦       
+¦   ¦   +---52
+¦   ¦   ¦       255cee8c78bbaa1506414d22cec730697c75c4
+¦   ¦   ¦       974694babb7132b8df773922965e71a8037b2c
+¦   ¦   ¦       
+¦   ¦   +---53
+¦   ¦   ¦       8c75e0767606d30bfcaa3d076d7b4713a09a6a
+¦   ¦   ¦       
+¦   ¦   +---54
+¦   ¦   ¦       63fb392e97d79a29b29f09df879da7b6f784a2
+¦   ¦   ¦       
+¦   ¦   +---55
+¦   ¦   ¦       c2d21126f68e5b3d1578cd71a803899a1b1368
+¦   ¦   ¦       
+¦   ¦   +---57
+¦   ¦   ¦       5343ef62a2d7ecbdd900236bd4aabfe70e8c06
+¦   ¦   ¦       
+¦   ¦   +---59
+¦   ¦   ¦       7e3aa5316d34be4786a69e050ac763c0e54b0c
+¦   ¦   ¦       
+¦   ¦   +---5a
+¦   ¦   ¦       3a9419cdbe9758f620660e2540d76c75c8a67b
+¦   ¦   ¦       44027ed7266926bbd7c89c3bbcdf81163adcff
+¦   ¦   ¦       
+¦   ¦   +---5b
+¦   ¦   ¦       b8fb6d35ec9610d1894733df3e6c9ff5eabcaf
+¦   ¦   ¦       f4a79b4646e42ba9afd3c347cb6ba440c94bbb
+¦   ¦   ¦       
+¦   ¦   +---5e
+¦   ¦   ¦       6bb623ffc8ab8bc5f4250126bcecaae54ecbc6
+¦   ¦   ¦       c37d797d98b22ea7f11a82e02b3d41bb319cac
+¦   ¦   ¦       
+¦   ¦   +---5f
+¦   ¦   ¦       21a0f4f02f7a460778a8e2b3255e57d1aeed20
+¦   ¦   ¦       5953a9dcef248be3a38c44bce30b7f87d7115e
+¦   ¦   ¦       65a364472a57264553cf6174d5359736fcbc89
+¦   ¦   ¦       ebddc1f0cfa36bcc97ee649fe18042e906d6cc
+¦   ¦   ¦       
+¦   ¦   +---60
+¦   ¦   ¦       c5f0332bed8494c45816ff6dcc7d1e40a4c8a4
+¦   ¦   ¦       
+¦   ¦   +---62
+¦   ¦   ¦       e927ea1ba2efe27456cf135ae06e45af12c09e
+¦   ¦   ¦       
+¦   ¦   +---63
+¦   ¦   ¦       348b541f9607b149fc3a8e05ac6679b76219f2
+¦   ¦   ¦       d00c3ee6baebcf933c0a8422688398806ac570
+¦   ¦   ¦       df5a0426f8d90649e8ebd97d9231c53c74a356
+¦   ¦   ¦       
+¦   ¦   +---64
+¦   ¦   ¦       55de92c0ed434620fc54a8e331dbef309af363
+¦   ¦   ¦       a850ab6d3d81080e8586e13b1e5e5d91d24c02
+¦   ¦   ¦       
+¦   ¦   +---65
+¦   ¦   ¦       24acc4cb5998c7871712c872aa4fafb11caadc
+¦   ¦   ¦       
+¦   ¦   +---66
+¦   ¦   ¦       7bc5389ff277e3c68d87fb6e063cca050c334d
+¦   ¦   ¦       d9eee1f7827d7047b08ededa7571ce36aa0a1e
+¦   ¦   ¦       
+¦   ¦   +---67
+¦   ¦   ¦       23797ffcd446c705635ba69b391e7f0d58505e
+¦   ¦   ¦       50d3acd16bdb3df31a6c0145d24bcdf9c91a2f
+¦   ¦   ¦       
+¦   ¦   +---6a
+¦   ¦   ¦       dd259d5de71aee33ada1a10c514d3100b78581
+¦   ¦   ¦       dd850c32cc790964b7c44bb490a95cc19096cd
+¦   ¦   ¦       
+¦   ¦   +---6c
+¦   ¦   ¦       ca786a078235eb8792d732ce17cd238f6d73e4
+¦   ¦   ¦       
+¦   ¦   +---6d
+¦   ¦   ¦       6c4384029196cda87bd61285a9cd3a0f8a78c8
+¦   ¦   ¦       fd49582f7fa350da1aaa29140d01f6def4cb3b
+¦   ¦   ¦       
+¦   ¦   +---6e
+¦   ¦   ¦       6a7b851c48fcfbec4bcbd201b23f5acf4e4702
+¦   ¦   ¦       
+¦   ¦   +---6f
+¦   ¦   ¦       159d55f921ac6b20016be35366dbccbdfbdb48
+¦   ¦   ¦       8ed173da44b78bed78d091707ccb28403a8ab9
+¦   ¦   ¦       d5a765862ecfdcd0860e11dd40255a0912ea71
+¦   ¦   ¦       
+¦   ¦   +---70
+¦   ¦   ¦       be308269e0b36e2d0f2add535093fb37add7aa
+¦   ¦   ¦       
+¦   ¦   +---71
+¦   ¦   ¦       0b1a0470378b5532808a2ec047bb4a6b9084df
+¦   ¦   ¦       
+¦   ¦   +---72
+¦   ¦   ¦       c28aa508587f7f06d8185d100e27f4bf3b0a4c
+¦   ¦   ¦       c4e53e849aeb58ee8f7a5e78be01354ba12926
+¦   ¦   ¦       
+¦   ¦   +---75
+¦   ¦   ¦       8c642b47af708cf2ba80471f05a3f2698db4b7
+¦   ¦   ¦       
+¦   ¦   +---76
+¦   ¦   ¦       9885952e7752b84172484ae125d89d8462d48f
+¦   ¦   ¦       
+¦   ¦   +---78
+¦   ¦   ¦       229c2c263071164351058ffb9fd12723887f60
+¦   ¦   ¦       9fbeb0c3dbcf282f802e1c2aa5ae9217e9fb7b
+¦   ¦   ¦       d539058bb277cedfd63bbd01d5dcab3ca22abd
+¦   ¦   ¦       
+¦   ¦   +---79
+¦   ¦   ¦       532b73788149729fc3be27f765624e8fdd4849
+¦   ¦   ¦       ae1b49b9d17858f9f39b541d87fc57e48507bb
+¦   ¦   ¦       
+¦   ¦   +---7c
+¦   ¦   ¦       b2238e5900721c8d53adf955893a54cc7be09e
+¦   ¦   ¦       c245d58becbcabceec7b4605dda5b20ce2c8f8
+¦   ¦   ¦       
+¦   ¦   +---7f
+¦   ¦   ¦       a6a5215dab003b8424aef0a7f5d8f8c5cf7c54
+¦   ¦   ¦       
+¦   ¦   +---80
+¦   ¦   ¦       5975084caafc38207672f8c91392e30f8a702e
+¦   ¦   ¦       bfd00ceed527ed7b6d621e6cb510983dcf48cd
+¦   ¦   ¦       
+¦   ¦   +---81
+¦   ¦   ¦       62e3b12adb46f00152c6ee38cd1733348844a6
+¦   ¦   ¦       
+¦   ¦   +---83
+¦   ¦   ¦       014212417ef527b5a8eff44589a0b58917360c
+¦   ¦   ¦       b810148ff038c9a3d143bd0fbf8fea3fccc8ff
+¦   ¦   ¦       
+¦   ¦   +---84
+¦   ¦   ¦       228600bd1473a1e455ac7d486f009041d8e4c7
+¦   ¦   ¦       afe7623f105a5019eaf95fba109effe428fc20
+¦   ¦   ¦       
+¦   ¦   +---85
+¦   ¦   ¦       d70575596fd7d935b4bc9834c7cc18a87db867
+¦   ¦   ¦       
+¦   ¦   +---86
+¦   ¦   ¦       fdb4604cac9656282712ee046d44e3b2c42e58
+¦   ¦   ¦       
+¦   ¦   +---87
+¦   ¦   ¦       a8344b9b8bc8ad24e57faa9cd92e18dc80acfc
+¦   ¦   ¦       
+¦   ¦   +---88
+¦   ¦   ¦       a31d38db9e6b305c0f9503638166a3eb4749af
+¦   ¦   ¦       
+¦   ¦   +---89
+¦   ¦   ¦       3af8d5f846528a4ed1352ec6b8781fb40fe914
+¦   ¦   ¦       c2789e1900050a29c0624e7b23da99983a38f7
+¦   ¦   ¦       
+¦   ¦   +---8a
+¦   ¦   ¦       603617cc0ef2ae900a3851f792a819c238f2ea
+¦   ¦   ¦       889c1fa4dc8f8322d61200f7778e5c71f0e196
+¦   ¦   ¦       
+¦   ¦   +---8b
+¦   ¦   ¦       4a6eeff4586fc8eafa09d7b5247de5e231208f
+¦   ¦   ¦       8c922b83fec07941e3aca1f89ae52896e1d2f0
+¦   ¦   ¦       f290f6cdb00619a73107c0d05383a06fcb7a40
+¦   ¦   ¦       
+¦   ¦   +---8d
+¦   ¦   ¦       ad30bf692a602b288684c5a47c42b0f94941bc
+¦   ¦   ¦       
+¦   ¦   +---8e
+¦   ¦   ¦       d62af47163c4ea7fb50bc69077ebc76d309734
+¦   ¦   ¦       
+¦   ¦   +---8f
+¦   ¦   ¦       adcc69f6e32f93421fdb6224b12aa44c190e42
+¦   ¦   ¦       d565e917b9c2f96648077260c75bbcc400e848
+¦   ¦   ¦       db1feb536c4e31410563e726b817c429575aa0
+¦   ¦   ¦       
+¦   ¦   +---92
+¦   ¦   ¦       02326f553324e21b10ac4fe6cc02eeeb775224
+¦   ¦   ¦       c2a57eb78079ca4d064bd772dc12c282bd0f2f
+¦   ¦   ¦       
+¦   ¦   +---95
+¦   ¦   ¦       b3fd32d2fdc658223b73f2fd306b8d9c46e902
+¦   ¦   ¦       e432de44650adbc6d52f14f57f911aa391b12a
+¦   ¦   ¦       
+¦   ¦   +---97
+¦   ¦   ¦       5d5e25f737915f7156203bf7e125d672ffd265
+¦   ¦   ¦       6a926a47297094480b937e2b3740037bbe00a4
+¦   ¦   ¦       a63ba38e5e106b040e78d250c2901dbf87a7d8
+¦   ¦   ¦       bab565022b27f7b833d8a7ca2268ffed3800f2
+¦   ¦   ¦       
+¦   ¦   +---98
+¦   ¦   ¦       55c8d2783046e5f4ac3fb44890121aac9f1af6
+¦   ¦   ¦       dc08d58e848e1b0f9b26b2a67bc22279c3c5ce
+¦   ¦   ¦       e62ab4531b5724bc3f7a4057f72d238f4dce53
+¦   ¦   ¦       
+¦   ¦   +---9a
+¦   ¦   ¦       adba7ea20cedfc6573aa044a9d20ca375e0719
+¦   ¦   ¦       
+¦   ¦   +---9b
+¦   ¦   ¦       30631f5feb636507ecb1897636ace3fe40a144
+¦   ¦   ¦       4690875877b2e279af713ed42b17140663d17e
+¦   ¦   ¦       
+¦   ¦   +---9d
+¦   ¦   ¦       1b03e603f9bb45d105ef43d8774bf2c27b56f6
+¦   ¦   ¦       3f4f1e313ca79be221713facacced0cfb1f326
+¦   ¦   ¦       
+¦   ¦   +---9e
+¦   ¦   ¦       d024e6e397496e8c4a95e76dbbb51456525810
+¦   ¦   ¦       
+¦   ¦   +---9f
+¦   ¦   ¦       35c6c1f9545c3a636bbb29483f8ee79949623f
+¦   ¦   ¦       c7dc23ab6c97cf746d5449b64a3281de847030
+¦   ¦   ¦       
+¦   ¦   +---a1
+¦   ¦   ¦       747d5749705ccc3526110241e6528918ab1f45
+¦   ¦   ¦       7d6b4401c56a45656b7c12084facbb284c544a
+¦   ¦   ¦       d5bb046461ca4bcbe4de20ecd20815c0ef815d
+¦   ¦   ¦       
+¦   ¦   +---a3
+¦   ¦   ¦       124e3d10de7e312e1ebf53b4579716740b1948
+¦   ¦   ¦       
+¦   ¦   +---a5
+¦   ¦   ¦       683908f0eacc552e2d6f24b5626c57b829c183
+¦   ¦   ¦       
+¦   ¦   +---a7
+¦   ¦   ¦       7d1364c87c2c63eb2b92c1d8f6dc8e31862f99
+¦   ¦   ¦       b7ef349e1d9326d993b5badea5262cd62d124a
+¦   ¦   ¦       
+¦   ¦   +---a8
+¦   ¦   ¦       1b9ba6c30a302253e164151f7e3c037aecd591
+¦   ¦   ¦       
+¦   ¦   +---a9
+¦   ¦   ¦       e24b6602504c9d93dbf0c80bef0467a874cab1
+¦   ¦   ¦       
+¦   ¦   +---aa
+¦   ¦   ¦       1c3c73bf99e9a1a2ab2aa5ffed4547c9ab139a
+¦   ¦   ¦       
+¦   ¦   +---ab
+¦   ¦   ¦       553c070afb634c42ba75429768d60d4c02fd14
+¦   ¦   ¦       92f7e2875395da47f57573de5f2a34865f29a7
+¦   ¦   ¦       c25a1c468f9bccbe886af16e124524d63d4fe4
+¦   ¦   ¦       
+¦   ¦   +---ac
+¦   ¦   ¦       861ef6eb122c9e39ca6e76068ec8aca3a5b59e
+¦   ¦   ¦       df26d5769730aadaca1c1dd1ffd0dca9c6cc18
+¦   ¦   ¦       
+¦   ¦   +---ad
+¦   ¦   ¦       9cf5c68489d90f8bc8f57174be20a2a1d016b2
+¦   ¦   ¦       f3c779ebf90b2d8ed49cb2c306eda5f93d9b38
+¦   ¦   ¦       
+¦   ¦   +---ae
+¦   ¦   ¦       a36ca7a405e07acd052dd631ad8c3cad1f96ed
+¦   ¦   ¦       ea3f18762e42c4a737d4d95e9a318d315e5c63
+¦   ¦   ¦       
+¦   ¦   +---af
+¦   ¦   ¦       1fd2276ebd3893d9dd030f37e137c95ffaac3c
+¦   ¦   ¦       350aafec5a2514d712ed1dcfe3326444451ce9
+¦   ¦   ¦       
+¦   ¦   +---b1
+¦   ¦   ¦       db1facc8f7c2a6677efc06902a9b229bd35413
+¦   ¦   ¦       f17b0148b9c7e109d7af4b1ab6c984946311f0
+¦   ¦   ¦       
+¦   ¦   +---b3
+¦   ¦   ¦       a0d3e3144ebd3687afc17864fc6c2e1874e30c
+¦   ¦   ¦       
+¦   ¦   +---b4
+¦   ¦   ¦       2911aa7004540e5e46f596239b311c2ee40a6a
+¦   ¦   ¦       
+¦   ¦   +---b5
+¦   ¦   ¦       0f428e40d0849b9d92e0299f6550a0962afcbc
+¦   ¦   ¦       b0f4e16d0e988610536e1bf122fe0f4d21bbce
+¦   ¦   ¦       
+¦   ¦   +---b7
+¦   ¦   ¦       0510f30540b434771a6a20347033dc2cbff017
+¦   ¦   ¦       dd4d243d9b38c351f6a2a9a5bb1740388385e6
+¦   ¦   ¦       
+¦   ¦   +---b8
+¦   ¦   ¦       526d844d70780f14bfcaee2bd05e89c96301ea
+¦   ¦   ¦       7f0ecff9d7e38dbf65670d11ed4fa13dfd2fcd
+¦   ¦   ¦       
+¦   ¦   +---b9
+¦   ¦   ¦       6be0f1e8f6a57ce72c5e8cf3ba11ee34684710
+¦   ¦   ¦       
+¦   ¦   +---ba
+¦   ¦   ¦       2d58be0f08776eb1724222e1902af34445a181
+¦   ¦   ¦       
+¦   ¦   +---bb
+¦   ¦   ¦       2988e284e89fa13fc525019a539393ec8b35fe
+¦   ¦   ¦       
+¦   ¦   +---bc
+¦   ¦   ¦       67bc39a1268f5e5357f54facb136fc5292c751
+¦   ¦   ¦       
+¦   ¦   +---bd
+¦   ¦   ¦       00a8a11f0beb42f49c157c543028a0490688d2
+¦   ¦   ¦       
+¦   ¦   +---bf
+¦   ¦   ¦       5c1fb7ad3bd67e1c34cf8a237ff4c8ce149e7e
+¦   ¦   ¦       
+¦   ¦   +---c1
+¦   ¦   ¦       1a30188e76cc99d4ad9c18aa832cbd580c738b
+¦   ¦   ¦       2fe994e9b11b66c7a3785cd2f48ce5fc0d63c6
+¦   ¦   ¦       4f53dedb48e329098af0cf46d00736c8840884
+¦   ¦   ¦       f423861c3128e448bea9887a565ea256aa18fa
+¦   ¦   ¦       
+¦   ¦   +---c2
+¦   ¦   ¦       0c14d8f8d80ba65b764db9117906b4ab85967e
+¦   ¦   ¦       
+¦   ¦   +---c3
+¦   ¦   ¦       38477bfecb655813cbc01e4d6eb8492e209c1e
+¦   ¦   ¦       
+¦   ¦   +---c4
+¦   ¦   ¦       0e036beff8d8fe64f56d8bfad2eec4ae11be5d
+¦   ¦   ¦       
+¦   ¦   +---c6
+¦   ¦   ¦       0fb136555a2bf80896d4e6c1ce4ea7c4809576
+¦   ¦   ¦       e6ebe804290d9673cf69e5751b4084cf97e3ff
+¦   ¦   ¦       
+¦   ¦   +---c7
+¦   ¦   ¦       5915355785e6a97b6cbb74db8be50363aab873
+¦   ¦   ¦       
+¦   ¦   +---c8
+¦   ¦   ¦       20294014c8dcb3fc8f889f89d69d90b5456781
+¦   ¦   ¦       
+¦   ¦   +---cb
+¦   ¦   ¦       027e0ca5a9f215bdb1ae8b53b8d19ea4c6fa74
+¦   ¦   ¦       1ab39fbe94224437da15c572510eae46424343
+¦   ¦   ¦       9abfb4e3c5e2cfd9b2bab290b2599d3c1fe367
+¦   ¦   ¦       
+¦   ¦   +---cc
+¦   ¦   ¦       5d31296f16e7cd5d4cea27038d63840aca5ec3
+¦   ¦   ¦       7901edd7e9f267c521a4b999908f284074c11c
+¦   ¦   ¦       
+¦   ¦   +---ce
+¦   ¦   ¦       9ba52cb8f5c18ddf658959ace8aeb4722720eb
+¦   ¦   ¦       
+¦   ¦   +---cf
+¦   ¦   ¦       2bc68141539d7d2b68c8e2805072e947635970
+¦   ¦   ¦       3ed25996a3bc7f8d00e931427885dfcebdf5bb
+¦   ¦   ¦       bdaa316b6ccee1c3f16f6044126146c84d1048
+¦   ¦   ¦       
+¦   ¦   +---d0
+¦   ¦   ¦       32d3904056f397a09be5888b5390d587a668a3
+¦   ¦   ¦       
+¦   ¦   +---d1
+¦   ¦   ¦       d3d13725d5bba730de2f45349f715958e76a4c
+¦   ¦   ¦       ef209b01883685471b9346f79d6234b2bcb371
+¦   ¦   ¦       
+¦   ¦   +---d2
+¦   ¦   ¦       489a7f0a44c9a713a9e9862e0fca27a4cc4784
+¦   ¦   ¦       
+¦   ¦   +---d4
+¦   ¦   ¦       e672c46b25b73ff5430ab65bad2f50dfc0a618
+¦   ¦   ¦       
+¦   ¦   +---d6
+¦   ¦   ¦       199a70a30d0e4fd94e0d9a5b84cce07c600222
+¦   ¦   ¦       7842280e973890359897f24f01d42c24a5d2db
+¦   ¦   ¦       b9bce77a0481af4935aa627bf8411dc7687569
+¦   ¦   ¦       e262a900237d73e85233b0e2c5b09973d3e35d
+¦   ¦   ¦       
+¦   ¦   +---d7
+¦   ¦   ¦       8ed3fa7416b77842d4b01bcdd08d3ccbf0004e
+¦   ¦   ¦       
+¦   ¦   +---d8
+¦   ¦   ¦       7d734b556300005b9eaf7e79439f3da35d4491
+¦   ¦   ¦       d2646acfb068982985c46ecef6f2f5235ba8c3
+¦   ¦   ¦       
+¦   ¦   +---d9
+¦   ¦   ¦       a4f3e19636ea117a71e359fb0287ccb27f946e
+¦   ¦   ¦       
+¦   ¦   +---da
+¦   ¦   ¦       09d95ae4071e4b654fdb247bee6ac4cc642f44
+¦   ¦   ¦       
+¦   ¦   +---dc
+¦   ¦   ¦       4bb94a893dc4d13869aff47faf818b3147cb4a
+¦   ¦   ¦       
+¦   ¦   +---de
+¦   ¦   ¦       523e50716a7c0b5931974c96de8a2efa2d578e
+¦   ¦   ¦       
+¦   ¦   +---df
+¦   ¦   ¦       0405e9a8bbe296dd84be336a9002fd38c42c46
+¦   ¦   ¦       82bb6189f8ff3f8fc82b916ca78a38f452eeb6
+¦   ¦   ¦       e54fbafcd846021ff8d3c62c8b30241a350aff
+¦   ¦   ¦       
+¦   ¦   +---e2
+¦   ¦   ¦       3cd5d156c9c20862a6d9a0a6f834773ebfff53
+¦   ¦   ¦       4ae6d9a827eb6b36872a0d24a892080ea237b3
+¦   ¦   ¦       
+¦   ¦   +---e3
+¦   ¦   ¦       4939b44aba4e92dcde9762d075eba07010032b
+¦   ¦   ¦       
+¦   ¦   +---e4
+¦   ¦   ¦       05e7dacde7640a9f0c5501fef5282eae654186
+¦   ¦   ¦       
+¦   ¦   +---e5
+¦   ¦   ¦       708a55907ef8f9e09c839d86c9a91d2f259fbc
+¦   ¦   ¦       
+¦   ¦   +---e6
+¦   ¦   ¦       fd8f1ba030d96e6a2e5946fb94c7e58d903dfe
+¦   ¦   ¦       
+¦   ¦   +---e7
+¦   ¦   ¦       48d0cf16fe9b49596629d29bb88ba77a3fcb83
+¦   ¦   ¦       5a37b792913f0e8c9f85e353faff7085c9546d
+¦   ¦   ¦       
+¦   ¦   +---e8
+¦   ¦   ¦       e48165ec5f06d388c8d5f42f414129d05eb0a3
+¦   ¦   ¦       
+¦   ¦   +---e9
+¦   ¦   ¦       210d6da7881a575e650a7b993479e792a07261
+¦   ¦   ¦       62650b111afa964fac1e757400e42678b17963
+¦   ¦   ¦       
+¦   ¦   +---eb
+¦   ¦   ¦       87ecd5eac2bfc13cf045ccd9fbdbb12369fdcc
+¦   ¦   ¦       fbd5110f601244f83b880cb731a7ac5a5d557a
+¦   ¦   ¦       
+¦   ¦   +---ec
+¦   ¦   ¦       0563387a9d956ccb6ac5b192781551efbfc7b8
+¦   ¦   ¦       
+¦   ¦   +---ed
+¦   ¦   ¦       55be1db2517f19d0f9a2e3f3be5065f172ba02
+¦   ¦   ¦       66b33c110e43f7897da6b8a22ba55eb0e26d22
+¦   ¦   ¦       f12a191c5a60d47403e696f5e108dfeeae643b
+¦   ¦   ¦       
+¦   ¦   +---ef
+¦   ¦   ¦       f96829c11c9c3dfda681c9eed841f330fbf97c
+¦   ¦   ¦       fed0fd51b1c12c8a10f8bdac8686274fe291fd
+¦   ¦   ¦       
+¦   ¦   +---f0
+¦   ¦   ¦       05f1ce2ec86157b538c590ddf80888a12655b4
+¦   ¦   ¦       3f1d1bfd15e5a3f62a6b0dd10ad620537b68e5
+¦   ¦   ¦       f48bc3c3e650d29406528e1853f4756073516d
+¦   ¦   ¦       
+¦   ¦   +---f3
+¦   ¦   ¦       1dd42237ee6d91989166158275f1e245e398a8
+¦   ¦   ¦       
+¦   ¦   +---f4
+¦   ¦   ¦       031119a5d34bfb86f8a816c7d69e8f0ff1524f
+¦   ¦   ¦       6af2346274b1c2911459a4bc2ae721058d4056
+¦   ¦   ¦       
+¦   ¦   +---f6
+¦   ¦   ¦       0750f239cebd3379aeec690cc0ca25cc354766
+¦   ¦   ¦       7a82ef35dca43a9f3628d760aaf9388f646a0b
+¦   ¦   ¦       
+¦   ¦   +---f7
+¦   ¦   ¦       0330f9ca99b85b44afd10fa2eed6b632d35096
+¦   ¦   ¦       de790d548ad20b6c58a338d4937f498b2a5a1a
+¦   ¦   ¦       
+¦   ¦   +---f8
+¦   ¦   ¦       e7cce1b425d8eaf060aed386e10a000b4c92f0
+¦   ¦   ¦       
+¦   ¦   +---f9
+¦   ¦   ¦       909aa2eae1102c8fc310ef708905a0d51bf87b
+¦   ¦   ¦       
+¦   ¦   +---fa
+¦   ¦   ¦       d44c85153f4fc507860338ae0a83156fcb31d8
+¦   ¦   ¦       d866fe1113805621d46bf0b418dfc88c00d8da
+¦   ¦   ¦       
+¦   ¦   +---fc
+¦   ¦   ¦       86358df54d1d377d93d9c12658f2042a23708b
+¦   ¦   ¦       
+¦   ¦   +---fe
+¦   ¦   ¦       a0d209f40d1d68e5d226de8d7670cbd456960c
+¦   ¦   ¦       a45ced6dc23a76b84e43e22a0a9e67ddc5d34e
+¦   ¦   ¦       
+¦   ¦   +---ff
+¦   ¦   ¦       770479f39d0a07ca95f42bc99e6920d2e7f1ff
+¦   ¦   ¦       
+¦   ¦   +---info
+¦   ¦   +---pack
+¦   ¦           pack-4e7067ed35137874d1d87d5917bdb9e122e0e0c8.idx
+¦   ¦           pack-4e7067ed35137874d1d87d5917bdb9e122e0e0c8.pack
+¦   ¦           
+¦   +---refs
+¦       +---heads
+¦       ¦       master
+¦       ¦       
+¦       +---remotes
+¦       ¦   +---origin
+¦       ¦           master
+¦       ¦           
+¦       +---tags
++---data
+¦   ¦   agcu.TDB
+¦   ¦   cmatA2ORCBIN.txt
+¦   ¦   cMatA3mTOBIN.txt
+¦   ¦   cost507.tdb
+¦   ¦   cost507R.TDB
+¦   ¦   EmatA2ORCBIN.txt
+¦   ¦   EmatBCCmTBIN.txt
+¦   ¦   EmatCPHmTOBIN.txt
+¦   ¦   EmatFCCmTOBIN.txt
+¦   ¦   EmatRKBIN.txt
+¦   ¦   EmatSTCOMPBIN.txt
+¦   ¦   ExptData.txt
+¦   ¦   log-CalModelOut.txt
+¦   ¦   log-OptMrqOut.txt
+¦   ¦   PhaseData.txt
+¦   ¦   steel1.TDB
+¦   ¦   steel7.TDB
+¦   ¦   tizr_kum.tdb
+¦   ¦   tizr_kum_cvm.tdb
+¦   ¦   unary.dat
+¦   ¦   Unary.TDB
+¦   ¦   
+¦   +---cr-mo
+¦   ¦       ExptData.txt
+¦   ¦       PhaseData.txt
+¦   ¦       
+¦   +---nb-ti
+¦           ExptData.txt
+¦           PhaseData.txt
+¦           
++---nbproject
+¦   ¦   build-impl.xml
+¦   ¦   genfiles.properties
+¦   ¦   project.properties
+¦   ¦   project.xml
+¦   ¦   
+¦   +---private
+¦           private (DESKTOP-9LI2S75's conflicted copy 2019-11-21).xml
+¦           private.properties
+¦           private.xml
+¦           
++---src
+    +---calbince
+    ¦       CalcSet.java
+    ¦       CalcType.java
+    ¦       calculate.java
+    ¦       CalModel.java
+    ¦       CalVars.java
+    ¦       Condition.java
+    ¦       ExptData.java
+    ¦       ExptDatum.java
+    ¦       GetNumData.java
+    ¦       Methods.java
+    ¦       Mrqcof.java
+    ¦       OptMrq.java
+    ¦       PhaseData.java
+    ¦       
+    +---database
+    ¦       sgte.java
+    ¦       stdst.java
+    ¦       tdb.java
+    ¦       
+    +---main
+    ¦       Main.java
+    ¦       
+    +---phase
+    ¦   ¦   A2TTERN.java
+    ¦   ¦   CECVM.java
+    ¦   ¦   GibbsModel.java
+    ¦   ¦   PHASEBINCE.java
+    ¦   ¦   
+    ¦   +---calphad
+    ¦   ¦       RK.java
+    ¦   ¦       
+    ¦   +---cecvm
+    ¦   ¦       A2TBIN.java
+    ¦   ¦       B2TTERN.java
+    ¦   ¦       
+    ¦   +---SGTE
+    ¦   ¦       unary.dat
+    ¦   ¦       
+    ¦   +---solution
+    ¦   ¦   +---calphad
+    ¦   ¦   ¦       RK.java
+    ¦   ¦   ¦       STCOMP.java
+    ¦   ¦   ¦       
+    ¦   ¦   +---cecvm
+    ¦   ¦           A1QTBINCE.java
+    ¦   ¦           A1TOBINCE.java
+    ¦   ¦           A2ORCBINCE.java
+    ¦   ¦           A2TBINCE.java
+    ¦   ¦           A3TOBINCE.java
+    ¦   ¦           B19TOBINCE.java
+    ¦   ¦           B2TBINCE.java
+    ¦   ¦           BCCTBINCE.java
+    ¦   ¦           CPHTOBINCE.java
+    ¦   ¦           CVMBINCE.java
+    ¦   ¦           D019TOBINCE.java
+    ¦   ¦           FCCQTBINCE.java
+    ¦   ¦           FCCTOBINCE.java
+    ¦   ¦           L10TOBINCE.java
+    ¦   ¦           L12TOBINCE.java
+    ¦   ¦           
+    ¦   +---TransMat
+    ¦           cmatA1mQTBIN.txt
+    ¦           cmatA1mTOBIN.txt
+    ¦           cmatA2mTBIN.txt
+    ¦           cmatA2ORCBIN.txt
+    ¦           cMatA3mTOBIN.txt
+    ¦           cmatL10mTOBIN.txt
+    ¦           cmatL12mTOBIN.txt
+    ¦           EcmatA2ORCBIN.txt
+    ¦           EcmatBCCmTBIN.txt
+    ¦           EcmatCPHmTOBIN.txt
+    ¦           EcmatFCCmTOBIN.txt
+    ¦           EmatA2ORCBIN.txt
+    ¦           EmatBCCmTBIN.txt
+    ¦           EmatCPHmTOBIN.txt
+    ¦           EmatFCCmTOBIN.txt
+    ¦           
+    +---utils
+        +---io
+        ¦       DataPrinter.java
+        ¦       DataReader.java
+        ¦       Format.java
+        ¦       Ftest.java
+        ¦       Print.java
+        ¦       PrintfFormat.java
+        ¦       Utils.java
+        ¦       
+        +---jama
+                Cholesky.java
+                CholeskyDecomposition.java
+                EigenvalueDecomposition.java
+                GaussjNR.java
+                LinearSearch.java
+                LudcmpNR.java
+                LUDecomposition.java
+                Mat.java
+                Maths.java
+                Matrix.java
+                MinimizedFunctionInterface.java
+                QRDecomposition.java
+                SingularValueDecomposition.java
+                

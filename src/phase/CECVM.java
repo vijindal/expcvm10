@@ -6,8 +6,8 @@
 package phase;
 
 import java.util.ArrayList;
-import utils.io.Print;
-import utils.io.Utils;
+import java.util.Arrays;
+import java.util.logging.Logger;
 import utils.jama.Matrix;
 
 /**
@@ -16,6 +16,7 @@ import utils.jama.Matrix;
  */
 public abstract class CECVM extends GibbsModel {
 
+    private static final Logger LOG = Logger.getLogger(CECVM.class.getName());
     //Following information to be read from GibbsModel
     //private String phaseTag; // Phase Name
     private int numComp;//Number of components
@@ -872,7 +873,7 @@ public abstract class CECVM extends GibbsModel {
      */
     @Override
     public void printPhaseInfo() {//vj-2012-03-20
-        Utils.drawLine();
+        LOG.info("========================================");
         //phaseTag = getPhaseTag();
         //numComp = getNumComp();
         //R = getR();
@@ -880,58 +881,35 @@ public abstract class CECVM extends GibbsModel {
         //P = getP();
         //x = getX();
 
-        Print.f("phaseTag:", phaseTag, 0);
-        Print.f("number of components:", numComp, 0);
-        Print.f("R:", R, 0);
-        Print.f("T:", T, 0);
-        Print.f("P:", P, 0);
-        Print.f("x:", x_local.toString(), 0);
+        LOG.info("phaseTag: " + phaseTag);
+        LOG.info("number of components: " + numComp);
+        LOG.fine("R: " + R);
+        LOG.fine("T: " + T);
+        LOG.fine("P: " + P);
+        LOG.fine("x: " + x_local);
 
-        Print.f("tcdis:" + tcdis + ", nxcdis:" + nxcdis + ", ncdis:" + ncdis, 0);
-        Print.f("mhdis:", mhdis, 0);
-        Print.f("kbdis:", kbdis, 0);
-        Print.f("rcdis:", rcdis, 0);
-        Print.f("nijTable:", nijTable, 0);
+        LOG.fine("tcdis:" + tcdis + ", nxcdis:" + nxcdis + ", ncdis:" + ncdis);
+        LOG.finer("mhdis: " + Arrays.toString(mhdis));
+        LOG.finer("kbdis: " + Arrays.toString(kbdis));
+        LOG.finer("rcdis: " + Arrays.toString(rcdis));
+        LOG.finer("nijTable: " + Arrays.deepToString(nijTable));
 
-        Print.f("tc:" + tc + ", nxc:" + nxc + ", nc:" + nc, 0);
-        Print.f("lc:", lc, 0);
-        Print.f("rc:", rc, 0);
+        LOG.fine("tc:" + tc + ", nxc:" + nxc + ", nc:" + nc);
+        LOG.finer("lc: " + Arrays.toString(lc));
+        LOG.finer("rc: " + Arrays.toString(rc));
 
-        Print.f("ec:", ec, 0);
-        Print.f("ev:", ev, 0);
-        //Print.f(edis.length, "Size of edis", 0);
-        //Print.f("ec:", ec, 0);
-        //Print.f(eMat, "eMat:", 0);
-        //Print.f(ecMat, "ecMat:", 0);
-        //Print.f("elementA:", elementA, 0);
-        //Print.f("elementB:", elementB, 0);
-        //Print.f("dataBaseID:", dataBaseID, 0);
-        //Print.f("phaseID:", phaseID, 0);
-        Print.f("tcfdis:" + tcfdis, 0);
-        Print.f("mcfdis:", mcfdis, 0);
-        Print.f("rcfdis:", rcfdis, 0);
+        LOG.finer("ec: " + Arrays.toString(ec));
+        LOG.finer("ev: " + Arrays.toString(ev));
+        LOG.fine("tcfdis:" + tcfdis);
+        LOG.finer("mcfdis: " + Arrays.toString(mcfdis));
+        LOG.finer("rcfdis: " + Arrays.toString(rcfdis));
 
-        Print.f("tcf:" + tcf + ", nxcf:" + nxcf + ", ncf:" + ncf, 0);
-        Print.f("lcf:", lcf, 0);
-        //Print.f("rcf:", rcf, 0);
-        Print.f("wcv:", wcv, 0);
-        Print.f("lcv:", lcv, 0);
-        //Print.f("x_local:" + x_local, 0);
-        Print.f("cv:", cv, 0);
-
-//        System.out.print("Cluster Variables:");
-//        for (int i = 0; i < getTcdis(); i++) {
-//            for (int j = 0; j < lc[i]; j++) {
-//                for (int l = 0; l < lcv[i][j]; l++) {
-//                    System.out.print(" cv[" + i + "][" + j + "][" + l + "]:" + cv[i][j][l]);
-//                }
-//                System.out.print(",");
-//            }
-//            System.out.println();
-//        }
-        //calG(u);
-        //System.out.println("Free Energy:" + G);
-        Utils.drawLine();
+        LOG.fine("tcf:" + tcf + ", nxcf:" + nxcf + ", ncf:" + ncf);
+        LOG.finer("lcf: " + Arrays.toString(lcf));
+        LOG.finer("wcv: " + Arrays.deepToString(wcv));
+        LOG.finer("lcv: " + Arrays.deepToString(lcv));
+        LOG.finer("cv: " + Arrays.deepToString(cv));
+        LOG.info("========================================");
         //System.out.println("Smc:"+calSmc());
         //System.out.println(calHmc());
         //System.out.println("G:" + calG());

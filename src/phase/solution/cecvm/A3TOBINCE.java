@@ -4,7 +4,6 @@
  */
 package phase.solution.cecvm;
 
-import utils.io.Print;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 
@@ -205,7 +204,8 @@ public class A3TOBINCE extends CPHTOBINCE {
     private double[][] Gcuu_local = new double[(tcf_local - nxc_local)][(tcf_local - nxc_local)];
 
     public A3TOBINCE(String stdst[], double edis[], String eMatFile, double msdis[], double T_in, double xB_in) throws FileNotFoundException, IOException { // Constructor Method
-        Print.f("*****A3mTOBINCE constructor type 1 called", 6);
+        // Removed debug logging (infrastructure dependency) - level 6
+        //Print.f("*****A3mTOBINCE constructor type 1 called", 6);
         //setEmat(eMatFile);
         //Highest symmetry phase information
         tcdis_local = getTcdis();
@@ -257,7 +257,8 @@ public class A3TOBINCE extends CPHTOBINCE {
         initGcu(Gcu_local);
         initScuu(Scuu_local);
         initGcuu(Gcuu_local);
-        Print.f("****A3mTOBINCE constructor type 1 ended", 6);
+        // Removed debug logging (infrastructure dependency) - level 6
+        //Print.f("****A3mTOBINCE constructor type 1 ended", 6);
     }
 
     private void genInitialValues(double x) throws IOException {//Phase specific method

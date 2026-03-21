@@ -4,9 +4,9 @@
  */
 package phase.solution.cecvm;
 
-import utils.io.Print;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.logging.Logger;
 import phase.solution.cecvm.CVMBINCE;
 
 /**
@@ -14,6 +14,7 @@ import phase.solution.cecvm.CVMBINCE;
  * @author metallurgy
  */
 public abstract class CPHTOBINCE extends CVMBINCE {
+    private static final Logger LOG = Logger.getLogger(CPHTOBINCE.class.getName());
 
     private int tcdis_local = 14;
     private int nxcdis_local = 1;
@@ -38,7 +39,7 @@ public abstract class CPHTOBINCE extends CVMBINCE {
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}}; // coefficients of multplicities in the product of m*kb
 
     public CPHTOBINCE() throws FileNotFoundException, IOException {
-        Print.f("*****CPHmTOBINCE constructor called ", 6);
+        LOG.finest("CPHmTOBINCE constructor called");
         setTcdis(tcdis_local); //  No of total clusters
         setNxcdis(nxcdis_local); //  No of clusters realted to point cluters
         setNcdis(ncdis_local);
@@ -46,7 +47,7 @@ public abstract class CPHTOBINCE extends CVMBINCE {
         setRcdis(rcdis_local);
         setUab(tcdis_local, rcdis_local);//Calculate and set uA and uB arrays
         setNij(nij_local);
-        Print.f("****CPHmTOBINCE constructor closed ", 6);
+        LOG.finest("CPHmTOBINCE constructor closed");
     }
 
     // Getter Methods

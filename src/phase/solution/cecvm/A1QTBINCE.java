@@ -4,7 +4,6 @@
  */
 package phase.solution.cecvm;
 
-import utils.io.Print;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 
@@ -183,7 +182,8 @@ public class A1QTBINCE extends FCCQTBINCE {
     //private double utc[] = new double[lcf_local[tcdis_local - 1]];
 
     public A1QTBINCE(String stdst[], double edis[], String eMatFile, double mdis[], double T_in, double xB_in) throws FileNotFoundException, IOException { // Constructor Method
-        Print.f("*****A1mQTBINCE constructor type 1 called", 6);
+        // Removed debug logging (infrastructure dependency) - level 6
+        //Print.f("*****A1mQTBINCE constructor type 1 called", 6);
         setEmat(eMatFile);//vj-15-03-11
         //Highest symmetry phase information
         //setKbdis(kbdis_local);
@@ -201,7 +201,7 @@ public class A1QTBINCE extends FCCQTBINCE {
         setM(m_local);
         setWcv(wcv_local);
         setLcv(lcv_local);
-        setCMat("src/phase/TransMat/cmatA1mQTBIN.txt");
+        setCMat("data/transmat/cmatA1mQTBIN.txt");
         // Parameters
         setNP(np_local);
         //setR(((Math.abs(edis[0]) == 1) ? 1 : 8.3144)); //  Universal gas constant
@@ -220,7 +220,8 @@ public class A1QTBINCE extends FCCQTBINCE {
         initGcu(Gcu_local);
         initScuu(Scuu_local);
         initGcuu(Gcuu_local);
-        Print.f("****A1mQTBINCE constructor type 1 ended", 6);
+        // Removed debug logging (infrastructure dependency) - level 6
+        //Print.f("****A1mQTBINCE constructor type 1 ended", 6);
     }
 
     private void genInitialValues(double x) throws IOException {//Phase specific method

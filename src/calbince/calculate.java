@@ -6,6 +6,8 @@
 package calbince;
 
 import database.tdb;
+import infrastructure.logging.AppLevel;
+import infrastructure.logging.Trace;
 import java.io.IOException;
 import static java.lang.Math.abs;
 import java.util.ArrayList;
@@ -29,9 +31,12 @@ import static utils.jama.Mat.LDsolve;
  * property, (optional) custom model, points (carries information about the
  * conditions such as temperature, pressure, and compositions), (optional) T,
  * (optional) P and additional parameters.
+ * @deprecated Use {@code calbince.Calculate} (PascalCase) for new code. Will be renamed in a future migration step.
  */
+// TODO: Rename class to Calculate (PascalCase) when all legacy references are updated.
 public class calculate {
 
+    private static final java.util.logging.Logger LOG = java.util.logging.Logger.getLogger(calculate.class.getName());
     private final CalVars calvars;
     private tdb systdb; // to store database defined a particular element set such as (Ti-Nb-V-Zr)
     private ArrayList<CalcSet> calcSets; // to store lists of Condition sets 
@@ -71,10 +76,10 @@ public class calculate {
     double maxerrx = 1.0E-11;
 
     public calculate(CalVars calvars) throws IOException {
-        System.out.println("Calculate.constructor methed called");
+        Trace.enter(LOG, AppLevel.ENGINE, "calculate", "calculate");
         this.calvars = calvars;
         //calvars.printCalcSetList();
-        System.out.println("Calculate.constructor method ended");
+        Trace.exit(LOG, AppLevel.ENGINE, "calculate", "calculate");
     }
 
     /**
@@ -85,7 +90,7 @@ public class calculate {
      * that purpose
      */
     public void cal() {
-        System.out.println("Calculate.cal() methed called");
+        Trace.enter(LOG, AppLevel.ENGINE, "calculate", "cal");
         int i = 0;
         systdb = calvars.gettdb();// Reading Database
         calcSets = calvars.getcalcSet();//Reading Calculation Sets
@@ -98,8 +103,8 @@ public class calculate {
                 method = calcType.getMethod(); //reading method such as phase equilibria calculations
                 phases = calcType.getPhases();// reading phases involved
                 p = phases.size();//reading number of phases
+                conditions = calcType.getConditions();// reading values of the unknown variables
                 phaseList = genPhaseList();//Creating phaseList  
-                conditions = calcType.getConditions();// reading values of the unknown variables 
                 System.out.println("Method:" + method);
                 System.out.println("Phases:" + phases);
                 for (Condition condition : conditions) {
@@ -236,7 +241,7 @@ public class calculate {
                     pModel="RK";
                     switch (pModel) {
                         case "RK": {
-                            phase_local = new RK(paramList, conditions);
+                            phase_local = new RK(paramList, conditions.get(0).toThermoCondition());
                             break;
                         }
                     }

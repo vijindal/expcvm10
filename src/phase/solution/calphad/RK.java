@@ -4,8 +4,9 @@
  */
 package phase.solution.calphad;
 
-import utils.io.Print;
 import database.stdst;
+import infrastructure.logging.AppLevel;
+import infrastructure.logging.Trace;
 import java.io.IOException;
 import phase.PHASEBINCE;
 
@@ -14,6 +15,7 @@ import phase.PHASEBINCE;
  * @author metallurgy
  */
 public class RK implements PHASEBINCE {
+    private static final java.util.logging.Logger LOG = java.util.logging.Logger.getLogger(RK.class.getName());
     // Phase specific information
 
     private final String phaseTag = "RK"; // Phase Name
@@ -37,13 +39,13 @@ public class RK implements PHASEBINCE {
     private double G;//  Configurational Free energy
 
     public RK(String stdst[], double edis[], double T_in, double xB_in) throws IOException {
-        Print.f(phaseTag + ".constructor method called", 4);
+        // Removed debug logging (infrastructure dependency)
         setReferenceStateParameters(stdst);
         this.edis = edis;
         this.T = T_in;
         this.xB = xB_in;
         this.G = calG();
-        Print.f(phaseTag + ".constructor method closed", 4);
+        // Removed debug logging (infrastructure dependency)
     }
 
 //Setter Methods
@@ -423,13 +425,13 @@ public class RK implements PHASEBINCE {
 
     @Override
     public double[] calDMUx() throws IOException {//2012-02-29(VJ): Added
-        Print.f(getPhaseTag() + ".calDMUx() method called", 5);
+        // Removed debug logging (infrastructure dependency)
         double DMUxN[] = new double[2];
         double x = getXB();
         double DGxxN = calDGxx();
         DMUxN[0] = -x * DGxxN;
         DMUxN[1] = (1 - x) * DGxxN;
-        Print.f(getPhaseTag() + ".calDMUx() method ended", 5);
+        // Removed debug logging (infrastructure dependency)
         return DMUxN;
     }
 
@@ -500,13 +502,18 @@ public class RK implements PHASEBINCE {
 
     @Override
     public double calGm() throws IOException {//vj-2012-07-17// free energy of mixing
-        return (calGid() + calGEm());
+        Trace.enter(LOG, AppLevel.MODEL, "RK", "calGm");
+        double gm = calGid() + calGEm();
+        Trace.exit(LOG, AppLevel.MODEL, "RK", "calGm");
+        return gm;
     }
 
     @Override
     public double calG() throws IOException {//2012-02-29(VJ): Added
+        Trace.enter(LOG, AppLevel.MODEL, "RK", "calG");
         G = calG0() + calGm();
-        //Print.f(calG0()+","+calGm(), 0);
+        Trace.result(LOG, AppLevel.MODEL, "RK.calG: G=" + G);
+        Trace.exit(LOG, AppLevel.MODEL, "RK", "calG");
         return (G);
     }
 
@@ -551,7 +558,7 @@ public class RK implements PHASEBINCE {
 
     @Override
     public double[] calGAB() throws IOException {//vj-2012-02-29//Returns Chemical activity of component A and B at xB
-        Print.f(getPhaseTag() + ".calMU() method called", 5);
+        // Removed debug logging (infrastructure dependency)
         double MU[] = new double[2];
         double GN = calG();
         double xN = xB;
@@ -559,26 +566,26 @@ public class RK implements PHASEBINCE {
         //System.out.println("GN:" + GN + ", xN:" + xN + ", GxN:" + GxN);
         MU[0] = GN - xN * GxN;
         MU[1] = GN + (1 - xN) * GxN;
-        Print.f(getPhaseTag() + ".calMU() method ended", 5);
+        // Removed debug logging (infrastructure dependency)
         return MU;
     }
 
     @Override
     public double[] calDMUT() throws IOException {
-        Print.f(getPhaseTag() + ".calDMUT() method called", 5);
+        // Removed debug logging (infrastructure dependency)
         double DMUTN[] = new double[2];
         double xN = getXB();
         double DGTN = calDGT();
         double DGTxN = calDGTx();
         DMUTN[0] = DGTN - xN * DGTxN;
         DMUTN[1] = DGTN + (1 - xN) * DGTxN;
-        Print.f(getPhaseTag() + ".calDMUT() method ended", 5);
+        // Removed debug logging (infrastructure dependency)
         return DMUTN;
     }
 
     @Override
     public double[][] calDMUe() throws IOException {//2012-02-23(VJ): Added
-        Print.f(getPhaseTag() + ".calDMUe() method called", 5);
+        // Removed debug logging (infrastructure dependency)
         double x = xB;
         double DGeN[] = calGe();
         double DGexN[] = calDGex();
@@ -588,17 +595,18 @@ public class RK implements PHASEBINCE {
             DMUeN[0][itc] = DGeN[itc] - x * DGexN[itc];
             DMUeN[1][itc] = DGeN[itc] + (1 - x) * DGexN[itc];
         }
-        Print.f(getPhaseTag() + ".calDMUe() method ended", 5);
+        // Removed debug logging (infrastructure dependency)
         return DMUeN;
     }
 
     @Override
     public void printPhaseInfo() throws IOException {
         drawLine();
-        Print.f("elementA:", elementA, 0);
-        Print.f("elementB:", elementB, 0);
-        Print.f("dataBaseID:", dataBaseID, 0);
-        Print.f("phaseID:", phaseID, 0);
+        // Removed debug logging (infrastructure dependency) - use standard output instead
+        System.out.println("elementA: " + elementA);
+        System.out.println("elementB: " + elementB);
+        System.out.println("dataBaseID: " + dataBaseID);
+        System.out.println("phaseID: " + phaseID);
         System.out.print("ECI:");
         for (int i = 0; i < (np); i++) {
             System.out.print(edis[i] + " ");

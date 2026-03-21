@@ -5,15 +5,16 @@
  */
 package phase.solution.cecvm;
 
-import utils.io.Print;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.logging.Logger;
 
 /**
  *
  * @author metallurgy
  */
 public abstract class BCCTBINCE extends CVMBINCE {
+    private static final Logger LOG = Logger.getLogger(BCCTBINCE.class.getName());
     //Highest symmetry phase information: values to be set by respective Phase Class object for example BCCmTBINcCE
 
     private final int tcdis_local = 5;
@@ -29,7 +30,7 @@ public abstract class BCCTBINCE extends CVMBINCE {
         {0, 0, 0, 0, 1}};
 
     public BCCTBINCE() throws FileNotFoundException, IOException {
-        Print.f("*****BCCmTBINc constructor called ", 6);
+        LOG.finest("BCCmTBINc constructor called");
         setTcdis(tcdis_local); //  No of total clusters
         setNxcdis(nxcdis_local); //  No of clusters realted to point cluters
         setNcdis(ncdis_local);
@@ -37,7 +38,7 @@ public abstract class BCCTBINCE extends CVMBINCE {
         setRcdis(rcdis_local);
         setUab(tcdis_local, rcdis_local);//Calculate and set uA and uB arrays
         setNij(nij);
-        Print.f("****BCCmTBINc constructor closed ", 6);
+        LOG.finest("BCCmTBINc constructor closed");
     }
 
     // Getter Methods

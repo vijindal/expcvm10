@@ -10,7 +10,8 @@ import java.io.IOException;
  * @author JEDIABJ77
  *
  */
-// 0 -> calG(), 1 -> calGT(), 2 -> calGTT() 
+// 0 -> calG(), 1 -> calGT(), 2 -> calGTT()
+// TODO: Rename class to Stdst (PascalCase) when all legacy references are updated.
 public class stdst {
 
     /**

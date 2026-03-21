@@ -4,7 +4,6 @@
  */
 package phase.solution.cecvm;
 
-import utils.io.Print;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 
@@ -115,7 +114,8 @@ public class A2ORCBINCE extends BCCTBINCE {
     //private double utc[] = new double[lcf_local[tcdis_local - 1]];
 
     public A2ORCBINCE(String stdst[], double edis[], String eMatFile, double T_in, double xB_in) throws FileNotFoundException, IOException { // Constructor Method
-        Print.f("*****A2ORCBINCE constructor type 1 called", 6);
+        // Removed debug logging (infrastructure dependency) - level 6
+        //Print.f("*****A2ORCBINCE constructor type 1 called", 6);
         //Highest symmetry phase information
         setKbdis(kbdis_local);
         setTcdis(tcdis_local);
@@ -138,7 +138,7 @@ public class A2ORCBINCE extends BCCTBINCE {
         setM(m_local);
         setWcv(wcv_local);
         setLcv(lcv_local);
-        setCMat("C:\\Users\\admin\\Dropbox\\Proj\\CVM\\SourceCodes\\expCVM.04.30\\data\\TransMat\\cmatA2ORCBIN.txt");
+        setCMat("data/transmat/cmatA2ORCBIN.txt");
         setEmat(eMatFile);//vj-15-09-15 //setEmat("EmatA2ORCBIN.txt");
         // Parameters
         //double R_local = ((Math.abs(edis[0]) == 1) ? 1 : 8.3144);
@@ -158,7 +158,8 @@ public class A2ORCBINCE extends BCCTBINCE {
         initGcu(Gcu_local);
         initScuu(Scuu_local);
         initGcuu(Gcuu_local);
-        Print.f("****A2ORCBINCE constructor type 1 ended", 6);
+        // Removed debug logging (infrastructure dependency) - level 6
+        //Print.f("****A2ORCBINCE constructor type 1 ended", 6);
     }
 
     private void setUab(int tcdis_In, int[] rcdis_In) {

@@ -4,9 +4,11 @@
  */
 package phase.solution.calphad;
 
-import utils.io.Print;
 import database.stdst;
+import infrastructure.logging.AppLevel;
+import infrastructure.logging.Trace;
 import java.io.IOException;
+import java.util.logging.Logger;
 import phase.PHASEBINCE;
 
 /**
@@ -14,6 +16,7 @@ import phase.PHASEBINCE;
  * @author metallurgy
  */
 public class STCOMP implements PHASEBINCE {
+    private static final Logger LOG = Logger.getLogger(STCOMP.class.getName());
     // Phase specific information
 
     private String phaseTag = "Stoichiometric Compounds"; // Phase Name
@@ -37,13 +40,13 @@ public class STCOMP implements PHASEBINCE {
     private double G;//  Configurational Free energy
 
     public STCOMP(String stdst[], double edis[], double T_in, double xB_in) throws IOException {
-        Print.f(phaseTag + ".constructor method called", 4);
+        // Removed debug logging (infrastructure dependency)
         setReferenceStateParameters(stdst);
         this.edis = edis;
         this.T = T_in;
         this.xB = xB_in;
         this.G = calG();
-        Print.f(phaseTag + ".constructor method closed", 4);
+        // Removed debug logging (infrastructure dependency)
     }
 
 //Setter Methods
@@ -216,7 +219,10 @@ public class STCOMP implements PHASEBINCE {
 
     @Override
     public double calG() throws IOException {//2012-02-29(VJ): Added
+        Trace.enter(LOG, AppLevel.MODEL, "STCOMP", "calG");
         G = edis[0] + edis[1] * T + edis[2] * T * Math.log(T) + edis[3] * T * T + (edis[4] / T) + (edis[5] * T * T * T);
+        Trace.result(LOG, AppLevel.MODEL, "STCOMP.calG: G=" + G);
+        Trace.exit(LOG, AppLevel.MODEL, "STCOMP", "calG");
         return (G);
     }
 
@@ -249,7 +255,7 @@ public class STCOMP implements PHASEBINCE {
 
     @Override
     public double[] calGAB() throws IOException {//vj-2012-02-29//Returns Chemical activity of component A and B at xB
-        Print.f(getPhaseTag() + ".calMU() method called", 5);
+        // Removed debug logging (infrastructure dependency)
         double MU[] = new double[2];
         double GN = calG();
         double xN = xB;
@@ -257,7 +263,7 @@ public class STCOMP implements PHASEBINCE {
         //System.out.println("GN:" + GN + ", xN:" + xN + ", GxN:" + GxN);
         MU[0] = GN - xN * GxN;
         MU[1] = GN + (1 - xN) * GxN;
-        Print.f(getPhaseTag() + ".calMU() method ended", 5);
+        // Removed debug logging (infrastructure dependency)
         return MU;
     }
 
@@ -284,13 +290,13 @@ public class STCOMP implements PHASEBINCE {
 
     @Override
     public double[] calDMUx() throws IOException {//2012-02-29(VJ): Added
-        Print.f(getPhaseTag() + ".calDMUx() method called", 5);
+        // Removed debug logging (infrastructure dependency)
         double DMUxN[] = new double[2];
         double x = getX();
         double DGxxN = calDGxx();
         DMUxN[0] = -x * DGxxN;
         DMUxN[1] = (1 - x) * DGxxN;
-        Print.f(getPhaseTag() + ".calDMUx() method ended", 5);
+        // Removed debug logging (infrastructure dependency)
         return DMUxN;
     }
 
@@ -301,14 +307,14 @@ public class STCOMP implements PHASEBINCE {
 
     @Override
     public double[] calDMUT() throws IOException {
-        Print.f(getPhaseTag() + ".calDMUT() method called", 5);
+        // Removed debug logging (infrastructure dependency)
         double DMUTN[] = new double[2];
         double xN = getX();
         double DGTN = calDGT();
         double DGTxN = calDGTx();
         DMUTN[0] = DGTN - xN * DGTxN;
         DMUTN[1] = DGTN + (1 - xN) * DGTxN;
-        Print.f(getPhaseTag() + ".calDMUT() method ended", 5);
+        // Removed debug logging (infrastructure dependency)
         return DMUTN;
     }
 
@@ -326,7 +332,7 @@ public class STCOMP implements PHASEBINCE {
 
     @Override
     public double[][] calDMUe() throws IOException {//2012-02-23(VJ): Added
-        Print.f(getPhaseTag() + ".calDMUe() method called", 5);
+        // Removed debug logging (infrastructure dependency)
         double DGeN[] = {1, T, T * Math.log(T), T * T, 1 / T, T * T * T};
         double DGexN[] = {0, 0, 0, 0, 0, 0};
         //prnt.Array(DGexN, "DGexN:");
@@ -335,7 +341,7 @@ public class STCOMP implements PHASEBINCE {
             DMUeN[0][itc] = DGeN[itc] - xB * DGexN[itc];
             DMUeN[1][itc] = DGeN[itc] + (1 - xB) * DGexN[itc];
         }
-        Print.f(getPhaseTag() + ".calDMUe() method ended", 5);
+        // Removed debug logging (infrastructure dependency)
         return DMUeN;
     }
 //Second order derivatives

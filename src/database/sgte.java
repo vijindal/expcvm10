@@ -33,7 +33,9 @@ import java.util.ArrayList;
  * Whenever a new phase for an element is required it is read from the sgte unary
  * file and is strored in a arraylist which can be used later rather than reading
  * freshly from the file each time
+ * @deprecated Use {@code database.Sgte} (PascalCase) for new code. Will be renamed in a future migration step.
  */
+// TODO: Rename class to Sgte (PascalCase) when all legacy references are updated.
 public class sgte {
 
     private static final int cmatMaxLength = 11;

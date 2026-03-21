@@ -8,8 +8,11 @@ import utils.io.DataReader;
 import utils.io.Print;
 import utils.jama.LUDecomposition;
 import database.stdst;
+import infrastructure.logging.AppLevel;
+import infrastructure.logging.Trace;
 import java.io.*;
 import java.util.StringTokenizer;
+import java.util.logging.Logger;
 import phase.PHASEBINCE;
 
 /**
@@ -17,6 +20,7 @@ import phase.PHASEBINCE;
  *
  */
 public abstract class CVMBINCE implements PHASEBINCE {
+    private static final Logger LOG = Logger.getLogger(CVMBINCE.class.getName());
 
     //Highest symmetry phase information: values to be set by respective Phase Class object for example BCCmTBINcCE
     int tcdis; //  No of total clusters
@@ -1821,8 +1825,11 @@ public abstract class CVMBINCE implements PHASEBINCE {
 
     @Override
     public double calG() throws IOException {//vj-2012-03-16
+        Trace.enter(LOG, AppLevel.SOLVER, "CVMBINCE", "calG");
         checkMinimize();
         G = calG0() + calGm();
+        Trace.result(LOG, AppLevel.SOLVER, "CVMBINCE.calG: G=" + G);
+        Trace.exit(LOG, AppLevel.SOLVER, "CVMBINCE", "calG");
         return (G);
     }
 
@@ -1842,10 +1849,12 @@ public abstract class CVMBINCE implements PHASEBINCE {
 
     @Override
     public double calGm() throws IOException {//vj-2012-07-18//Gibbs energy of mixing
+        Trace.enter(LOG, AppLevel.SOLVER, "CVMBINCE", "calGm");
         checkMinimize();
         double GmcN = calGmc();
         double GmvN = calGmv();
         double GmN = GmcN + GmvN;
+        Trace.exit(LOG, AppLevel.SOLVER, "CVMBINCE", "calGm");
         return (GmN);
     }
 

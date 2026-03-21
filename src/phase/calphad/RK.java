@@ -5,17 +5,19 @@
  */
 package phase.calphad;
 
-import database.tdb;
-import database.tdb.Phase;
 import java.util.ArrayList;
+import java.util.logging.Logger;
 import phase.GibbsModel;
-import calbince.Condition;
+import domain.model.ThermoCondition;
+import infrastructure.logging.AppLevel;
+import infrastructure.logging.Trace;
 
 /**
  *
  * @author admin
  */
 public class RK extends GibbsModel {
+    private static final Logger LOG = Logger.getLogger(RK.class.getName());
     // Parameters
 
     //private double[] xList; 
@@ -33,24 +35,32 @@ public class RK extends GibbsModel {
 //    private double Gu[];//First derivative of G w.r.t. u
 //    private double Guu[][];//Second derivative of G w.r.t. u
 
-    private tdb systdb;
-    private Phase phase;
+    // Removed infrastructure dependencies: tdb systdb, Phase phase
     private String phaseName;
-    private Condition condition;
+    private ThermoCondition condition;
     private ArrayList<String> elementNames;
     String[] compList;
+    // Note: paramList retained as Object for backward compatibility bridge
+    // Domain should not depend on database.tdb.Parameter type
+    private final ArrayList<?> paramList;
 
-    public RK(ArrayList<tdb.Parameter> paramList, Condition condition) {
-        this.systdb = systdb;
-        this.elementNames = elementNames;
-        this.phaseName = phaseName;
+    public RK(ArrayList<?> paramList, ThermoCondition condition) {
+        this.paramList = (paramList != null) ? new ArrayList<>(paramList) : new ArrayList<>();
         this.condition = condition;
-        setNumComp(elementNames.size());
-        setT(condition.getT());
-        setP(condition.getP());
-        setX(condition.getX().get(0));
-        phase = systdb.getPhase(phaseName);
-        phase.print();
+        setR(8.3144);
+
+        if (condition != null && condition.getX() != null && !condition.getX().isEmpty()) {
+            ArrayList<Double> x0 = new ArrayList<>(condition.getX().get(0));
+            setNumComp(x0.size());
+            setX(x0);
+            setT(condition.getT());
+            setP(condition.getP());
+        } else {
+            setNumComp(0);
+            setX(new ArrayList<Double>());
+            setT(298.15);
+            setP(101325.0);
+        }
 
     }
     //set methods
@@ -59,12 +69,18 @@ public class RK extends GibbsModel {
     //Thermodynamic Calculations
     @Override
     public double calG() {//vj-2012-03-16
+        Trace.enter(LOG, AppLevel.MODEL, "RK", "calG");
         G = calG0() + calGm();
+        Trace.result(LOG, AppLevel.MODEL, "RK.calG: G=" + G);
+        Trace.exit(LOG, AppLevel.MODEL, "RK", "calG");
         return (G);
     }
 
     public double calG0() {
         G0List = getG0List();
+        if (G0List == null || G0List.length < getNumComp()) {
+            G0List = new double[getNumComp()];
+        }
         double G0N = 0.0;
         for (int iComp = 0; iComp < getNumComp(); iComp++) {
             G0N = G0N + (getX().get(iComp) * G0List[iComp]);

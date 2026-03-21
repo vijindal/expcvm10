@@ -1,10 +1,13 @@
 package calbince;
 
 import utils.io.Print;
+import infrastructure.logging.AppLevel;
+import infrastructure.logging.Trace;
 import java.io.IOException;
 
 public class CalModel {
 
+    private static final java.util.logging.Logger LOG = java.util.logging.Logger.getLogger(CalModel.class.getName());
     private PhaseData phasedata = null;
     private ExptData exptdata = null;
     private ExptData recordDat = null;
@@ -12,15 +15,15 @@ public class CalModel {
     private final String cname = "CalModel";
 
     public CalModel(ExptData exptdataIn, PhaseData phasedataIn, ExptData recordDatIn) throws IOException {//VJ-2013-03-23-Modified
-        Print.f(cname + ".constructor method called", 6);
+        Trace.enter(LOG, AppLevel.ENGINE, "CalModel", "CalModel");
         this.exptdata = exptdataIn;
         this.phasedata = phasedataIn;
         this.recordDat = recordDatIn;
-        Print.f(cname + ".constructor method closed", 6);
+        Trace.exit(LOG, AppLevel.ENGINE, "CalModel", "CalModel");
     }// Closed calModel Constructor
 
     public void Run() throws IOException {
-        Print.f(cname + ".Run method called", 7);
+        Trace.enter(LOG, AppLevel.ENGINE, "CalModel", "Run");
         //recordDat.init(exptdata.getDataFileName(), exptdata.getNdat());
         recordDat.init(exptdata.getDataFileName(), exptdata);//vj-2013-06-02
         Methods methods = new Methods(phasedata);//vj-2013-04-04
@@ -29,11 +32,11 @@ public class CalModel {
             methods.funcsCal(dat);
             recordDat.setExptDatum(dat);
         }
-        Print.f(cname + ".Run method ended", 7);
+        Trace.exit(LOG, AppLevel.ENGINE, "CalModel", "Run");
     }
 
     public void RunIntgQuant() throws IOException {//vj-2013-04-19
-        Print.f(cname + ".RunIntgQuant method called", 7);
+        Trace.enter(LOG, AppLevel.ENGINE, "CalModel", "RunIntgQuant");
         recordDat.init(exptdata.getDataFileName(), 55);
         Methods methods = new Methods(phasedata);
         int iDat = 0;
