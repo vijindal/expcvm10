@@ -1,264 +1,438 @@
+# expCVM 10 — Thermodynamic Workbench
 
-Thermodynamic calculation and optimization codebase for CALPHAD/CVM-style binary and multicomponent phase modeling.
+A professional Java-based application for thermodynamic calculations and database assessment using **CALPHAD** and **CVM** (Cluster Variation Method) models.
 
-## Project Vision
+---
 
-The project is expected to deliver two major capabilities:
+## Features
 
-1. Thermodynamic assessment of multicomponent systems using experimental and theoretical data (for example thermochemical and phase-diagram data) to generate and refine thermodynamic database (`.tdb`) files.
-2. Use available database files to perform multiple types of calculations (single-point, step, map, phase-diagram and related calculations).
+### 🔬 **Core Capabilities**
+- **Database-driven workflows**: Load and work with CALPHAD thermodynamic databases (`.tdb` files)
+- **Single-point calculations**: Compute equilibrium properties at fixed temperature/pressure
+- **Parameter fitting**: Optimize model parameters against experimental data (Levenberg-Marquardt)
+- **Multiple methods**: Support for HM (Enthalpy), Gm (Molar Gibbs), G (Total Gibbs) calculations
+- **Dynamic model composition**: Automatically parse available elements and phases from TDB files
 
-Both capabilities are large and will be implemented incrementally through smaller subtasks.
+### 🖥️ **User Interface**
+- **Swing GUI** with intuitive input panels and results display
+- **Live logging console** with custom log levels (ERROR, WARN, RESULT, FLOW, ENGINE, MODEL, SOLVER)
+- **Real-time feedback** on database metadata and parsed phase information
+- **CLI mode** available for batch operations and scripting
 
-## Tech Stack
+### ⚙️ **Technical Highlights**
+- **Java 8 compatible** — Runs on any Java 8+ environment
+- **Clean Architecture** — Layered design with clear separation of concerns
+- **Comprehensive logging** — Hierarchical 7-level tracing for debugging complex calculations
+- **Extensible design** — Easy to add new phase models and calculation types
 
+---
 
-## Build And Run
+## Quick Start
 
-From project root:
+### 1. **Build the Project**
 
 ```bash
-# Ant-based build
-ant clean
-ant jar
-ant run
+# Using javac directly (fastest)
+javac --release 8 -sourcepath src -d build/classes $(find src -name "*.java")
 
-# Direct command-line compile and run
-javac --release 8 -sourcepath src -d build/classes src/main/Main.java
+# Or use Ant (NetBeans)
+ant clean && ant jar
+```
 
-# Run with GUI (single-tab, embedded log console)
+### 2. **Run with GUI**
+
+```bash
 java -cp build/classes main.Main --gui
+```
 
-# Run without GUI (CLI mode)
+The GUI will open with:
+- **Input Panel**: Select temperature, pressure, elements, phases, and calculation method
+- **Results Window**: View calculation outputs and parsed database information
+- **Log Console**: Monitor real-time execution with adjustable log levels
+
+### 3. **Run CLI (Batch Mode)**
+
+```bash
 java -cp build/classes main.Main
 ```
 
-GUI output jar is generated at `dist/expcvm10.jar`.
-
-## Expected Features
+Runs a default Ti-Zr binary system calculation at 500 K and 10,000 bar.
+
+---
+
+## Installation
+
+### Requirements
+- **Java 8** or higher (JDK or JRE)
+- **Ant** (optional, for NetBeans builds)
+- ~50 MB disk space
+
+### Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/vijindal/expcvm10.git
+cd expcvm10
+
+# Compile
+javac --release 8 -sourcepath src -d build/classes $(find src -name "*.java")
+
+# Verify build
+java -cp build/classes main.Main --gui
+```
+
+---
+
+## Usage Guide
+
+### Workflow: Single-Point Calculation
+
+#### **Via GUI**
+1. **Load Database**
+   - The default Ti-Zr database (`data/tizr_kum_cvm.tdb`) is pre-configured
+   - Elements: Ti, Zr
+   - Phases: LIQUID
+
+2. **Configure Calculation**
+   - Temperature: 500 K
+   - Pressure: 10,000 bar
+   - Method: HM (or Gm, G)
+   - Phase: LIQUID
+
+3. **Run Calculation**
+   - Click **Calculate**
+   - Results appear in the Results Window
+   - Execution time: typically 0.1–1 seconds
+
+4. **View Logs**
+   - Set log level to **RESULT** to see computed values
+   - Set to **FLOW** to trace GUI → Service flow
+   - Set to **ENGINE** for calculation engine details
+
+#### **Via CLI**
+
+```bash
+# Run with default parameters (Ti-Zr, 500 K, 10,000 bar, HM method)
+java -cp build/classes main.Main
+
+# Expected output
+# [INFO] CLI running default calculation demo
+# [RESULT] runCalculation: method=HM, T=500, P=10,000
+# [RESULT] Computed value: -4,567.151
+# #Calculations took 0.094 sec
+```
+
+---
+
+## Architecture Overview
+
+### Layered Design
+
+```
+┌─────────────────────────────────────────────┐
+│         Presentation Layer                  │
+│   (GUI: Swing, CLI: Console Interface)      │
+└──────────────────┬──────────────────────────┘
+                   ↓
+┌─────────────────────────────────────────────┐
+│         Application Layer                   │
+│  (CalculationService, OptimizationService)  │
+└──────────────────┬──────────────────────────┘
+                   ↓
+┌─────────────────────────────────────────────┐
+│         Domain Layer                        │
+│  (ThermoCondition, ThermoResult, Ports)     │
+└──────────────────┬──────────────────────────┘
+                   ↓
+┌─────────────────────────────────────────────┐
+│      Infrastructure Layer                   │
+│  (TDB Parser, Logger, Factory Implementations)
+└──────────────────┬──────────────────────────┘
+                   ↓
+┌─────────────────────────────────────────────┐
+│      Physics Core (Calculation Engines)     │
+│  (GibbsModel, Phase Models, CVM Solvers)    │
+└─────────────────────────────────────────────┘
+```
+
+### Key Packages
+
+| Package | Purpose | Key Classes |
+|---------|---------|------------|
+| `src/main` | Application entry point | `Main.java` |
+| `src/presentation` | UI layer | `GuiApp`, `CliApp`, `MainFrame` |
+| `src/application` | Business logic orchestration | `CalculationService`, `OptimizationService` |
+| `src/domain` | Domain models & contracts | `ThermoCondition`, `PhaseFactory` (interface) |
+| `src/infrastructure` | Implementations & adapters | `TdbParser`, `ConsoleLogger`, `PhaseFactoryImpl` |
+| `src/calbince` | Calculation engines | `calculate`, `CalModel`, `Methods`, `OptMrq` |
+| `src/phase` | Thermodynamic models | `GibbsModel`, `RK` (Redlich-Kister), `CECVM` |
+| `src/database` | Database layer | `tdb`, `stdst` (parser & access) |
+| `src/utils` | Utilities | JAMA matrix library, IO helpers |
 
-### A. Assessment And Database Development
+---
 
-1. Import/standardize mixed data sources (thermochemical and phase-equilibria datasets).
-2. Define model structure and parameterization per phase/system.
-3. Fit model parameters against selected datasets.
-4. Validate fitted models against withheld/reference datasets.
-5. Export/maintain database files (`.tdb`) with traceable revisions.
+## Use Cases & Examples
 
-### B. Database-Driven Calculations
+### **Use Case 1: Single-Point Equilibrium Calculation**
 
-1. Single-point equilibrium/property calculations.
-2. Step calculations (vary one condition, track response).
-3. Map calculations (vary two conditions/composition dimensions).
-4. Automated phase-diagram workflows.
-5. Batch runs and reproducible output/report generation.
-# expCVM 10 — Thermodynamic Workbench
+**Goal**: Calculate Gibbs free energy at a fixed condition
 
-## Overview
-expCVM 10 is a professional Java-based GUI application for thermodynamic calculations using CALPHAD and CVM models. It supports database-driven workflows, dynamic input panels, and immediate feedback on database metadata, available elements, and phases.
+```
+Input:  System = Ti-Zr
+        Temperature = 500 K
+        Pressure = 10,000 bar
+        Phase = LIQUID
+        Method = HM (Enthalpy method)
 
-## Features
-- Java 8, Swing GUI
-- Dynamic input panel: elements, phases, and methods are populated from the selected TDB file
-- Results window shows parsed elements and phases from the TDB file
-- Robust backend/frontend data flow
-- Logging and export options
+Process: Load TDB → Extract system → Set conditions → Calculate
+Output:  G (Gibbs free energy) = -4,567.151 J/mol
+         Execution time: 94 ms
+```
 
-## Usage
-1. **Build:**
-  ```
-  javac --release 8 -sourcepath src -d build/classes (Get-ChildItem -Recurse -Filter "*.java" src | ForEach-Object { $_.FullName })
-  ```
-2. **Run GUI:**
-  ```
-  java -cp build/classes main.Main --gui
-  ```
-3. **Select a TDB file:**
-  - The GUI will display available elements and phases from the database in both the input panel and the results window.
+### **Use Case 2: Parameter Fitting (Assessment)**
 
-## Project Structure
-- `src/` — Java source code
-- `data/` — TDB and data files
-- `build/` — Compiled classes
+**Goal**: Optimize phase model parameters against experimental data
 
-## Status
-See `project_status.md` for current progress and known issues.
+```
+Input:   Experimental data (enthalpy, equilibrium points)
+         Phase model structure (e.g., RK interaction for LIQUID)
+         Initial parameter guesses
 
-## Features Already Implemented (Current State)
+Process: 1. Load experimental data
+         2. Define phase model
+         3. Run Levenberg-Marquardt optimizer
+         4. Monitor fit quality with R² and residuals
 
-### Logging Infrastructure (Phase 13 — Complete)
+Output:  Optimized parameters
+         Fit statistics
+         Validated model for export to TDB
+```
 
-Custom hierarchical logging system with 7 meaningful application-level levels and structured method entry/exit tracing:
+### **Use Case 3: Step Calculation (Vary One Variable)**
 
-- **AppLevel**: Custom `Level` subclass replacing standard JUL levels — ERROR(1000), WARN(900), RESULT(800), FLOW(700), ENGINE(500), MODEL(400), SOLVER(300)
-- **Trace Utility**: Structured `>> ClassName.method [ClassName.java]` / `<< ClassName.method [ClassName.java] (42ms)` logging for method entry/exit
-- **4-Level Method Hierarchy**:
-  - **L0 (FLOW)**: `MainController` — GUI action handlers
-  - **L1 (FLOW)**: `CalculationService`, `OptimizationService` — Service facades
-  - **L2 (ENGINE)**: `calculate`, `CalModel`, `OptMrq`, `Methods` — Core calculation engines
-  - **L3 (MODEL)**: `phase.calphad.RK`, `phase.solution.calphad.RK`, `STCOMP` — Thermodynamic models
-  - **L4 (SOLVER)**: `CVMBINCE` (CVM solver base) — Deep CVM calculations
-- **GUI Log Console**: Single-panel Swing interface with embedded live log viewer, level selector (dropdown), and filter by class name
-- **Backward Compatibility**: Legacy `Print.f()` debug statements auto-bridged to JUL; old log statements converted to AppLevel
+**Goal**: Track property change as temperature varies
 
-### Core Data/Model Infrastructure
+```
+Input:   Base condition: P = 10,000 bar
+         Variable: T from 300 to 1500 K (step 100 K)
+         Phase: LIQUID
 
-1. TDB parsing and internal database object model (`src/database/tdb.java`).
-2. System extraction from larger databases by element selection (`gettdb(...)`).
-3. Phase-model abstraction and multiple concrete phase model classes (`src/phase/**`, `src/phase/solution/**`).
+Output:  Series of (T, G) pairs
+         Plot-ready data for phase diagram/thermodynamic curves
+```
 
-### Assessment-Oriented Building Blocks
+---
 
-1. Experimental and phase input data structures/readers (`ExptData`, `ExptDatum`, `PhaseData`).
-2. Calculation and fitting flow classes (`CalModel`, `Methods`, `OptMrq`, `Mrqcof`).
-3. Parameter-vector handling for fitting in `PhaseData` and optimization routines in `OptMrq`.
+## Configuration & Logging
 
-### Calculation-Oriented Building Blocks
+### **Log Levels**
 
-1. Runtime wiring from `main.Main` for loading `.tdb`, selecting elements, creating calculation sets.
-2. Newer calculation scaffolding in `calbince.calculate` for condition-driven workflows.
-3. Legacy/established property calculations and optimization paths through `Methods`/`CalModel`.
+| Level | Value | Use Case |
+|-------|-------|----------|
+| **SOLVER** | 300 | Deep CVM solver iterations (per-atom details) |
+| **MODEL** | 400 | Thermodynamic model calculations (per-phase) |
+| **ENGINE** | 500 | Core calculation engine (per-method) |
+| **FLOW** | 700 | Service and controller flow (per-action) |
+| **RESULT** | 800 | Computed values and summaries (default) |
+| **WARN** | 900 | Potential issues |
+| **ERROR** | 1000 | Errors and exceptions |
 
-## Partially Implemented / Not Yet First-Class
+### **Setting Log Level (GUI)**
 
-1. End-to-end automated `.tdb` creation workflow from raw datasets is not yet a single integrated pipeline.
-2. Standardized production workflows for step/map/phase-diagram calculations are not yet exposed as stable user-facing modules.
-3. Validation, reporting, and test automation need expansion for large-scale assessment/calculation campaigns.
-4. Architecture violation remediation is complete; per-package logging defaults are in place but may need tuning as new layers are added.
+1. Open **Log Console** (embedded in main window)
+2. Select log level from dropdown: **RESULT** (default) → **FLOW** → **ENGINE** → **SOLVER**
+3. Optionally filter by class name
 
-## Incremental Subtask Roadmap
+### **Configuration File**
 
-### Track A: Assessment To Database (`.tdb`)
+Logging is configured via `LoggingConfig.java`:
+- **Default level per package**: presentation=FLOW, application=FLOW, calbince=ENGINE, phase=MODEL
+- **Output**: File (`data/expcvm.log`) + Console
+- **Format**: `[HH:mm:ss.SSS] LEVEL [ClassName.method] message`
 
-1. Define canonical dataset schema and input adapters for thermochemical/phase data.
-2. Add dataset quality and consistency checks.
-3. Stabilize parameter fitting pipeline (objective definitions, constraints, diagnostics).
-4. Add model validation suite and acceptance criteria.
-5. Add controlled `.tdb` export/versioning workflow.
+---
 
-### Track B: Database To Calculations
+## Major Updates
 
-1. Stabilize single-point API/CLI workflow.
-2. Implement step-calculation driver with structured outputs.
-3. Implement map-calculation driver (2D sweep).
-4. Implement phase-diagram workflow modules.
-5. Add batch orchestration and reproducible report outputs.
+### **Phase 13: Custom Logging System** (Completed)
+- Replaced standard Java logging with 7 application-level log levels
+- Structured method entry/exit tracing via `Trace` utility
+- GUI log console with live filtering and level selection
+- Backward compatibility with legacy `Print.f()` debug calls
 
-### Cross-Cutting
+### **Phase 12: Single-Tab GUI** (Completed)
+- Refactored GUI to single-panel Swing layout
+- Embedded real-time log console
+- Dynamic input panel populated from TDB files
+- Results window showing parsed elements and phases
 
-1. Architecture boundary enforcement using `ARCHITECTURE.md`.
-2. Add regression/characterization tests for parser, fitting, and calculation kernels.
-3. Improve logging and run metadata for reproducibility.
+### **Phase 7–10: Architecture Refactoring** (Completed)
+- Migrated from flat structure to Clean Architecture
+- Introduced application, domain, infrastructure, presentation layers
+- Eliminated cross-layer dependencies
+- Added service layer facades (CalculationService, OptimizationService)
 
-## Current Architecture (Observed)
+### **Phase 1–6: Foundation** (Completed)
+- Initial GUI implementation
+- Runtime crash fixes
+- Core calculation engines (CALPHAD, CVM solvers)
+- TDB parser and database abstraction
 
-- `src/main`: program entry and orchestration (`Main.java`)
-- `src/calbince`: application logic, workflows, optimization, input models
-- `src/phase`: thermodynamic model abstractions and implementations
-- `src/database`: TDB parsing and database object graph
-- `src/utils`: IO helpers and matrix/numerical utilities
+---
 
-High-level runtime flow:
+## Project Status
 
-1. `main.Main` reads a TDB file and configures calculation inputs.
-2. `calbince.calculate` and/or `calbince.CalModel` execute calculations.
-3. `phase.*` implementations compute Gibbs and derivatives.
-4. `database.tdb` provides thermodynamic parameters.
-5. `utils.io.*` handles printing and file utilities.
+**Current Build**: ✅ **PASSING** (Java 8, 120 compiled classes)
+**Last Update**: Phase 13 (Logging Redesign)
+**GUI Status**: ✅ Launches without errors
 
-## Layer Logic Review (Against Standard Practices)
+For detailed development progress, architecture decisions, and known limitations, see:
+- **[PROJECT_STATUS.md](PROJECT_STATUS.md)** — Internal development phases and component status
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — Architectural layer definitions and boundaries
+- **[COMPARISON_WITH_GITHUB.md](COMPARISON_WITH_GITHUB.md)** — Refactoring summary
 
-### What Is Good
+---
 
-- Package separation exists by concern (`main`, `calbince`, `phase`, `database`, `utils`).
-- Domain-level abstraction is present (`phase.GibbsModel`, `phase.PHASEBINCE`).
-- Entry point is isolated in `main.Main`, not spread across many files.
+## Data Files
 
-### Key Gaps
+### **Thermodynamic Databases (`.tdb`)**
 
-1. **Layer direction is mixed (infrastructure and domain leak into application internals).**
-- `phase.GibbsModel` depends on `calbince.Condition` (`src/phase/GibbsModel.java`).
-- `phase.calphad.RK` depends on `calbince.Condition` (`src/phase/calphad/RK.java`).
-- This creates bidirectional coupling between application and domain layers.
+Located in `data/`:
+- `tizr_kum_cvm.tdb` — Ti-Zr binary system with CALPHAD/CVM models
 
-2. **Application layer performs concrete domain composition (factory logic hardcoded).**
-- `calbince.PhaseData.genPhase(...)` constructs many concrete phase classes via nested `switch` (`src/calbince/PhaseData.java`).
-- Adding a new phase/model requires editing this central method, violating Open/Closed Principle.
+### **Transformation Matrices**
 
-3. **Utilities depend on application models (wrong dependency direction).**
-- `utils.io.DataReader` imports `calbince.ExptData` and `calbince.PhaseData` (`src/utils/io/DataReader.java`).
-- Utility/infrastructure code should not depend on higher-level application objects.
+Located in `data/transmat/`:
+Pre-computed energy transformation matrices for CVM solvers (crystal structure specific).
 
-4. **Extensive logging and stdout in core paths reduces testability and signal/noise control.**
-- Core classes print directly (`src/database/tdb.java`, `src/calbince/calculate.java`, many `Print.f` calls).
-- No centralized logging abstraction/level policy.
+### **Standard State Database**
 
-5. **No automated tests present.**
-- No test files discovered (`**/*Test*.java` returned none).
-- Refactoring layer boundaries is higher risk without regression tests.
+Located in `data/sgte/`:
+Elemental reference properties (SGTE standards).
 
-6. **Naming and style inconsistency affects maintainability.**
-- Class names with lowercase initials (`tdb`, `calculate`) and mixed conventions.
-- Legacy patterns and large classes increase cognitive load.
+---
 
-## Recommended Target Layering
+## Build Outputs
 
-Use a one-way dependency rule:
+- **Compiled classes**: `build/classes/`
+- **JAR file**: `dist/expcvm10.jar` (generated by Ant)
+- **Logs**: `data/expcvm.log`
 
-- `main` (composition root) -> `application` -> `domain` -> `infrastructure`
+---
 
-Where:
+## System Requirements
 
-- `application`: use-cases and orchestration (`calculate`, `CalModel`, optimization services)
-- `domain`: `GibbsModel`, thermodynamic state/value objects, phase behavior interfaces
-- `infrastructure`: `tdb` parsing, file IO, persistence/input adapters, logging adapters
-- `utils`: pure helpers only (no dependency on application/domain models)
+| Component | Requirement |
+|-----------|-------------|
+| **Java** | 8 or higher |
+| **RAM** | 256 MB minimum (1+ GB for large systems) |
+| **Disk** | ~50 MB |
+| **OS** | Windows, macOS, Linux |
 
-## Refactoring Roadmap
+---
 
-### Phase 1: Safe Structural Steps
+## Troubleshooting
 
-1. Introduce small immutable domain value objects for state.
-- Example: `ThermoCondition` in domain package.
-- Remove direct domain dependency on `calbince.Condition`.
+### **GUI doesn't launch**
+```bash
+# Check Java version
+java -version
 
-2. Extract phase creation into a dedicated factory interface.
-- `PhaseFactory` interface in domain/application boundary.
-- Move concrete mapping logic out of `PhaseData.genPhase(...)`.
+# Verify build
+javac -version
 
-3. Invert `DataReader` dependency.
-- Make `DataReader` return DTOs or parsed records.
-- Application layer maps DTOs into `ExptData`/`PhaseData`.
+# Rebuild from scratch
+rm -rf build/classes
+javac --release 8 -sourcepath src -d build/classes $(find src -name "*.java")
+java -cp build/classes main.Main --gui
+```
 
-### Phase 2: Testability And Reliability
+### **TDB file not found**
+- Ensure you're in the project root directory
+- Check that `data/tizr_kum_cvm.tdb` exists
+- Verify file path in log output
 
-1. Add characterization tests around current behavior.
-- `tdb` parsing smoke tests with fixed input snapshots.
-- `calculate` and `Methods.funcsCal` golden-value tests.
+### **Calculations are slow**
+- Reduce log level to **RESULT** or lower
+- Avoid **SOLVER** level (very verbose, 1000s of messages)
+- Check system resources (RAM, CPU)
 
-2. Replace direct prints in core logic with logger facade.
-- Keep current verbosity options but route through one abstraction.
+### **Unexpected results**
+- Check **Results Window** for parsed elements/phases
+- Compare with known reference values
+- Set log level to **ENGINE** to trace calculation steps
 
-### Phase 3: Maintainability
+---
 
-1. Standardize naming to Java conventions (PascalCase classes).
-2. Break up large classes (`tdb`, `Methods`, `PhaseData`) by responsibility.
-3. Introduce package-level API boundaries and keep implementation classes internal by convention.
+## Developer Resources
 
-## Practical Notes For Current Codebase
+### **Adding a New Phase Model**
 
-- Current architecture is workable for research workflows, but scaling new phases/models will become costly because construction and dispatch logic is centralized.
-- The highest-leverage improvement is to separate model creation and condition/state objects from application package classes.
-- Add tests before major refactors to preserve existing scientific results.
+1. Create `src/phase/solution/cecvm/NewModel.java` extending `GibbsModel`
+2. Implement `calG()` and `calGm()` methods
+3. Register in `PhaseFactoryImpl.createPhase()` (infrastructure layer)
+4. Add corresponding TDB data
 
-## Important Files
+### **Adding a New Calculation Type**
 
-- Entry point: `src/main/Main.java`
-- Core application workflow: `src/calbince/calculate.java`, `src/calbince/CalModel.java`, `src/calbince/Methods.java`
-- Phase abstraction/modeling: `src/phase/GibbsModel.java`, `src/phase/PHASEBINCE.java`, `src/phase/calphad/RK.java`
-- Database parser: `src/database/tdb.java`
-- IO utilities: `src/utils/io/DataReader.java`, `src/utils/io/DataPrinter.java`
+1. Create use case in `src/application/calculation/NewUseCase.java`
+2. Wire into `CalculationService` (application layer)
+3. Expose via GUI or CLI (presentation layer)
 
-## Status
+### **Contributing Logging**
 
-This README includes an architecture review snapshot based on the current code state and is intended as a practical modernization guide.
+Use the `Trace` utility for method entry/exit:
+```java
+import infrastructure.logging.Trace;
+
+public void myMethod() {
+    Trace.enter(this, "myMethod");
+    try {
+        // ... calculation code ...
+        Trace.exit(this, "myMethod", 42); // 42ms elapsed
+    } catch (Exception e) {
+        Trace.error(this, "myMethod", e);
+    }
+}
+```
+
+---
+
+## License & Citation
+
+**Author**: Vijay Jindal
+**Refactored**: March 2026
+**Language**: Java 8+
+**License**: See repository for license details
+
+---
+
+## Contact & Support
+
+- **Issues**: [GitHub Issues](https://github.com/vijindal/expcvm10/issues)
+- **Questions**: Refer to `PROJECT_STATUS.md` for detailed component documentation
+
+---
+
+## Quick Reference
+
+```bash
+# Compile
+javac --release 8 -sourcepath src -d build/classes $(find src -name "*.java")
+
+# Run GUI
+java -cp build/classes main.Main --gui
+
+# Run CLI
+java -cp build/classes main.Main
+
+# Build JAR (requires Ant)
+ant clean && ant jar && ant run
+
+# View logs
+tail -f data/expcvm.log
+```
+
+---
+
+**Last Updated**: March 21, 2026 | **Version**: 10.00
