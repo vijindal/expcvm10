@@ -5,6 +5,7 @@ import application.dto.ModelInfo;
 import infrastructure.logging.AppLevel;
 import infrastructure.logging.LoggingConfig;
 import presentation.gui.controllers.MainController;
+import presentation.gui.theme.DarkTheme;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -38,13 +39,14 @@ public class MainFrame extends JFrame {
     private JLabel elementsLabel;
     private JLabel phasesLabel;
 
-    private static final Color BG = new Color(245, 247, 250);
-    private static final Color CARD = new Color(255, 255, 255);
-    private static final Color ACCENT = new Color(34, 88, 138);
-    private static final Color SUCCESS = new Color(24, 136, 74);
-    private static final Color ERROR_COLOR = new Color(176, 48, 48);
-    private static final Color VALID_BG = new Color(240, 255, 240);
-    private static final Color INVALID_BG = new Color(255, 240, 240);
+    // Colors are now defined in DarkTheme - imported above
+    private static final Color BG           = DarkTheme.BG;
+    private static final Color CARD         = DarkTheme.CARD;
+    private static final Color ACCENT       = DarkTheme.ACCENT;
+    private static final Color SUCCESS      = DarkTheme.SUCCESS;
+    private static final Color ERROR_COLOR  = DarkTheme.ERROR_COLOR;
+    private static final Color VALID_BG     = DarkTheme.VALID_BG;
+    private static final Color INVALID_BG   = DarkTheme.INVALID_BG;
 
     private final MainController controller;
 
@@ -100,28 +102,36 @@ public class MainFrame extends JFrame {
 
     private JMenuBar buildMenuBar() {
         JMenuBar bar = new JMenuBar();
+        bar.setBackground(DarkTheme.MENU_BG);
+        bar.setForeground(DarkTheme.FG_PRIMARY);
+        bar.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, DarkTheme.BORDER));
 
         // --- File ---
         JMenu fileMenu = new JMenu("File");
         fileMenu.setMnemonic('F');
+        styleMenu(fileMenu);
 
         JMenuItem openTdb = new JMenuItem("Open TDB...");
         openTdb.setAccelerator(KeyStroke.getKeyStroke("control O"));
         openTdb.addActionListener(this::onBrowseTdb);
+        styleMenuItem(openTdb);
         fileMenu.add(openTdb);
 
         JMenuItem inspectTdb = new JMenuItem("Inspect TDB...");
         inspectTdb.addActionListener(this::onLoadModelMetadata);
+        styleMenuItem(inspectTdb);
         fileMenu.add(inspectTdb);
 
         fileMenu.addSeparator();
 
         JMenuItem exportCsv = new JMenuItem("Export Results as CSV...");
         exportCsv.addActionListener(this::onExportCsv);
+        styleMenuItem(exportCsv);
         fileMenu.add(exportCsv);
 
         JMenuItem exportJson = new JMenuItem("Export Results as JSON...");
         exportJson.addActionListener(this::onExportJson);
+        styleMenuItem(exportJson);
         fileMenu.add(exportJson);
 
         fileMenu.addSeparator();
@@ -129,6 +139,7 @@ public class MainFrame extends JFrame {
         JMenuItem exit = new JMenuItem("Exit");
         exit.setAccelerator(KeyStroke.getKeyStroke("alt F4"));
         exit.addActionListener(e -> dispose());
+        styleMenuItem(exit);
         fileMenu.add(exit);
 
         bar.add(fileMenu);
@@ -136,13 +147,16 @@ public class MainFrame extends JFrame {
         // --- Assessment ---
         JMenu assessMenu = new JMenu("Assessment");
         assessMenu.setMnemonic('A');
+        styleMenu(assessMenu);
 
         JMenuItem calModel = new JMenuItem("Run CalModel...");
         calModel.addActionListener(this::onMenuCalModel);
+        styleMenuItem(calModel);
         assessMenu.add(calModel);
 
         JMenuItem optimize = new JMenuItem("Run Optimization...");
         optimize.addActionListener(this::onMenuOptimize);
+        styleMenuItem(optimize);
         assessMenu.add(optimize);
 
         bar.add(assessMenu);
@@ -150,6 +164,7 @@ public class MainFrame extends JFrame {
         // --- Help ---
         JMenu helpMenu = new JMenu("Help");
         helpMenu.setMnemonic('H');
+        styleMenu(helpMenu);
 
         JMenuItem about = new JMenuItem("About");
         about.addActionListener(e ->
@@ -159,6 +174,7 @@ public class MainFrame extends JFrame {
                                 + "and assessment tool.\n\n"
                                 + "Java 8  |  Swing GUI  |  JUL Logging",
                         "About expCVM 10", JOptionPane.INFORMATION_MESSAGE));
+        styleMenuItem(about);
         helpMenu.add(about);
 
         bar.add(helpMenu);
@@ -188,6 +204,9 @@ public class MainFrame extends JFrame {
         topSplit.setDividerLocation(420);
         topSplit.setResizeWeight(0.35);
         topSplit.setBorder(null);
+        topSplit.setDividerSize(1);
+        topSplit.setContinuousLayout(true);
+        topSplit.setBackground(DarkTheme.BORDER);
 
         // Bottom: log console
         JPanel logPanel = buildCard("Log Console", buildLogConsole());
@@ -196,6 +215,9 @@ public class MainFrame extends JFrame {
         mainSplit.setDividerLocation(440);
         mainSplit.setResizeWeight(0.68);
         mainSplit.setBorder(null);
+        mainSplit.setDividerSize(1);
+        mainSplit.setContinuousLayout(true);
+        mainSplit.setBackground(DarkTheme.BORDER);
 
         return mainSplit;
     }
@@ -208,6 +230,9 @@ public class MainFrame extends JFrame {
         progressBar.setIndeterminate(false);
         progressBar.setStringPainted(true);
         progressBar.setString("Ready");
+        progressBar.setBackground(DarkTheme.BG_INPUT);
+        progressBar.setForeground(DarkTheme.ACCENT);
+        progressBar.setBorder(BorderFactory.createLineBorder(DarkTheme.BORDER));
         wrapper.add(progressBar, BorderLayout.NORTH);
 
         wrapper.add(buildCard("Results", buildResultTabs()), BorderLayout.CENTER);
@@ -229,6 +254,10 @@ public class MainFrame extends JFrame {
         browseTdb.setMargin(new Insets(1, 4, 1, 4));
         browseTdb.setToolTipText("Browse for TDB file");
         browseTdb.addActionListener(this::onBrowseTdb);
+        browseTdb.setBackground(DarkTheme.BG_INPUT);
+        browseTdb.setForeground(DarkTheme.FG_PRIMARY);
+        browseTdb.setFocusPainted(false);
+        browseTdb.setBorderPainted(false);
         gbc.gridx = 2; gbc.gridy = 0; gbc.weightx = 0;
         panel.add(browseTdb, gbc);
 
@@ -259,6 +288,9 @@ public class MainFrame extends JFrame {
         panel.add(methodLabel, gbc);
         methodCombo = new JComboBox<>(new String[]{"HM", "Gm", "G"}); // Will be updated dynamically if needed
         methodCombo.setEditable(false);
+        methodCombo.setBackground(DarkTheme.BG_INPUT);
+        methodCombo.setForeground(DarkTheme.FG_PRIMARY);
+        methodCombo.setRenderer(new DarkTheme.ComboRenderer());
         gbc.gridx = 1; gbc.gridy = 5; gbc.weightx = 1;
         panel.add(methodCombo, gbc);
 
@@ -288,6 +320,8 @@ public class MainFrame extends JFrame {
         JButton runBtn = smallButton("Run Calculation");
         runBtn.setBackground(ACCENT);
         runBtn.setForeground(Color.WHITE);
+        runBtn.setFocusPainted(false);
+        runBtn.setBorderPainted(false);
         runBtn.setToolTipText("Execute single-point calculation (validates inputs first)");
         runBtn.addActionListener(this::onRunCalculation);
 
@@ -352,6 +386,9 @@ public class MainFrame extends JFrame {
     private JComponent buildResultTabs() {
         JTabbedPane tabs = new JTabbedPane();
         tabs.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        tabs.setBackground(DarkTheme.CARD);
+        tabs.setForeground(DarkTheme.FG_SECOND);
+        tabs.setOpaque(true);
 
         // --- Text tab ---
         JPanel textTab = new JPanel(new BorderLayout(4, 4));
@@ -361,8 +398,12 @@ public class MainFrame extends JFrame {
         resultSummaryArea.setEditable(false);
         resultSummaryArea.setFont(new Font("Consolas", Font.PLAIN, 11));
         resultSummaryArea.setText("No run executed yet.");
+        resultSummaryArea.setBackground(DarkTheme.BG);
+        resultSummaryArea.setForeground(DarkTheme.FG_PRIMARY);
+        resultSummaryArea.setCaretColor(DarkTheme.FG_PRIMARY);
+        resultSummaryArea.setSelectionColor(DarkTheme.SEL_BG);
 
-        textTab.add(new JScrollPane(resultSummaryArea), BorderLayout.CENTER);
+        textTab.add(DarkTheme.scrollPane(resultSummaryArea), BorderLayout.CENTER);
 
         tabs.addTab("Text", textTab);
 
@@ -372,7 +413,7 @@ public class MainFrame extends JFrame {
         JLabel placeholder = new JLabel("Graphics output will appear here after a calculation run.",
                 SwingConstants.CENTER);
         placeholder.setFont(new Font("Segoe UI", Font.ITALIC, 12));
-        placeholder.setForeground(Color.GRAY);
+        placeholder.setForeground(DarkTheme.FG_SECOND);
         graphicsPanel.add(placeholder, BorderLayout.CENTER);
 
         tabs.addTab("Graphics", graphicsPanel);
@@ -394,6 +435,9 @@ public class MainFrame extends JFrame {
         toolbar.add(new JLabel("Level:"));
         logLevelCombo = new JComboBox<>(new String[]{"ERROR", "WARN", "RESULT", "FLOW", "ENGINE", "MODEL", "SOLVER", "ALL"});
         logLevelCombo.setSelectedItem("RESULT");
+        logLevelCombo.setBackground(DarkTheme.BG_INPUT);
+        logLevelCombo.setForeground(DarkTheme.FG_PRIMARY);
+        logLevelCombo.setRenderer(new DarkTheme.ComboRenderer());
         logLevelCombo.addActionListener(e -> onLogLevelChanged());
         toolbar.add(logLevelCombo);
 
@@ -409,12 +453,12 @@ public class MainFrame extends JFrame {
         logArea = new JTextArea();
         logArea.setEditable(false);
         logArea.setFont(new Font("Consolas", Font.PLAIN, 11));
-        logArea.setBackground(new Color(30, 30, 30));
-        logArea.setForeground(new Color(204, 204, 204));
-        logArea.setCaretColor(new Color(204, 204, 204));
+        logArea.setBackground(DarkTheme.BG);
+        logArea.setForeground(DarkTheme.FG_PRIMARY);
+        logArea.setCaretColor(DarkTheme.FG_PRIMARY);
 
         panel.add(toolbar, BorderLayout.NORTH);
-        panel.add(new JScrollPane(logArea), BorderLayout.CENTER);
+        panel.add(DarkTheme.scrollPane(logArea), BorderLayout.CENTER);
         return panel;
     }
 
@@ -930,7 +974,7 @@ public class MainFrame extends JFrame {
         JPanel outer = new JPanel(new BorderLayout());
         outer.setBackground(CARD);
         outer.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(220, 224, 230)),
+                BorderFactory.createLineBorder(DarkTheme.BORDER),
                 new EmptyBorder(6, 8, 6, 8)));
 
         JLabel cardTitle = new JLabel(title);
@@ -957,6 +1001,10 @@ public class MainFrame extends JFrame {
 
         JTextField f = new JTextField(defaultValue, 22);
         f.setFont(new Font("Consolas", Font.PLAIN, 11));
+        f.setBackground(DarkTheme.BG_INPUT);
+        f.setForeground(DarkTheme.FG_PRIMARY);
+        f.setCaretColor(DarkTheme.FG_PRIMARY);
+        f.setSelectionColor(DarkTheme.SEL_BG);
 
         gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0;
         panel.add(l, gbc);
@@ -970,6 +1018,11 @@ public class MainFrame extends JFrame {
         JButton btn = new JButton(text);
         btn.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         btn.setMargin(new Insets(2, 8, 2, 8));
+        btn.setFocusPainted(false);
+        btn.setBorderPainted(false);
+        btn.setBackground(DarkTheme.BG_INPUT);
+        btn.setForeground(DarkTheme.FG_PRIMARY);
+        btn.setOpaque(true);
         return btn;
     }
 
@@ -1032,5 +1085,16 @@ public class MainFrame extends JFrame {
             sb.append(String.format("%.6f", x[i]));
         }
         return sb.toString();
+    }
+
+    // ========== Menu Styling Helpers ==========
+    private void styleMenu(JMenu menu) {
+        menu.setBackground(DarkTheme.MENU_BG);
+        menu.setForeground(DarkTheme.FG_PRIMARY);
+    }
+
+    private void styleMenuItem(JMenuItem item) {
+        item.setBackground(DarkTheme.MENU_BG);
+        item.setForeground(DarkTheme.FG_PRIMARY);
     }
 }

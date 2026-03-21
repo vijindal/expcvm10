@@ -4,6 +4,7 @@ import application.service.CalculationService;
 import application.service.OptimizationService;
 import presentation.gui.controllers.MainController;
 import presentation.gui.views.MainFrame;
+import presentation.gui.theme.DarkTheme;
 
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
@@ -28,7 +29,10 @@ public class GuiApp {
     public void launch(String[] args) {
         SwingUtilities.invokeLater(() -> {
             try {
-                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+                // Use cross-platform Metal L&F (respects UIManager overrides)
+                UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
+                // Apply VS Code dark theme
+                DarkTheme.apply();
             } catch (Exception e) {
                 // fall back to default look and feel
             }
