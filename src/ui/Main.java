@@ -1,8 +1,7 @@
-
 /*
  * Composition root: wires all layers and selects entry point (GUI or CLI).
  */
-package gui;
+package ui;
 
 import service.CalculationService;
 import service.OptimizationService;
@@ -12,8 +11,8 @@ import infra.ConsoleLogger;
 import infra.LoggingConfig;
 import infra.OptimizationOutputAdapter;
 import infra.TdbParser;
-import gui.CliApp;
-import gui.GuiApp;
+import ui.cli.CliApp;
+import ui.gui.GuiApp;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -54,4 +53,3 @@ public class Main {
         }
     }
 }
-

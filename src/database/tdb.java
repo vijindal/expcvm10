@@ -866,6 +866,7 @@ public class tdb {
         String phaseName = tempList[0].trim();
         int phaseIndex = findPhase(phaseName);
         //Print.f("phaseIndex:" + phaseIndex, 0);
+        if (phaseIndex == -1) return;
         int numSubLat = phaseList.get(phaseIndex).getNumSubLat();
         String[] keywordString2 = keywordString1[1].trim().split(":");
         //Print.f("keywordString2: ", keywordString2, 0);
@@ -1609,8 +1610,8 @@ public class tdb {
         ss = ss.replace(" ", "");
         //drop pound symbols ('#') since they denote function names
         ss = ss.replace("#", "");
-        //Replace LN as lOG
-        ss = ss.replace("LN", "LOG");
+        //Replace LN( as LOG( to normalise natural-log syntax without mangling identifiers like ALNBB2
+        ss = ss.replace("LN(", "LOG(");
         //System.out.println("ss: " + ss);
         return (ss);
     }
@@ -1711,9 +1712,9 @@ public class tdb {
         tempStr = inputExp.trim();
         for (Function f : functionList) {
             tempSum = 0.0;
-            if (isContained(inputExp, f.funcName)) {
+            if (isContained(tempStr, f.funcName)) {
                 //System.out.println("found the the function:" + f.funcName + ", inputExp before process: " + tempStr);//split inputExp based on function name
-                tempList = tempStr.trim().split(f.funcName);
+                tempList = tempStr.trim().split(f.funcName, -1); // -1 preserves trailing empty strings
                 //System.out.println("tempList.length: " + tempList.length);
                 switch (tempList.length) {
                     case 0://input string is function name itself
@@ -1722,10 +1723,16 @@ public class tdb {
                         break;
                     case 1://function name is in the last position only first term to be searched
                     {//function name is in the last position
-                        //System.out.println("case 1 before readCoeff, tempList[0]:" + tempList[0]);
-                        tempSum = readCoeff(tempList, 0);
-                        //System.out.println("case 1 after readCoeff,tempList[0]:" + tempList[0]);
-                        tempStr = tempList[0];
+                        if (tempList[0].isEmpty()) {
+                            // whole tempStr was exactly the function name (Java split returns [""] for "X".split("X"))
+                            tempSum = 1;
+                            tempStr = "";
+                        } else {
+                            //System.out.println("case 1 before readCoeff, tempList[0]:" + tempList[0]);
+                            tempSum = readCoeff(tempList, 0);
+                            //System.out.println("case 1 after readCoeff,tempList[0]:" + tempList[0]);
+                            tempStr = tempList[0];
+                        }
                     }
                     break;
                     default:
@@ -1815,7 +1822,12 @@ public class tdb {
         }
         //System.out.println("expList: " + inputExp);
         if (inputExp.length() > 0) {//remaining expList is Constant
-            coeffList.set(0, Double.parseDouble(inputExp));
+            try {
+                coeffList.set(0, evalArith(inputExp));
+            } catch (NumberFormatException ex) {
+                System.err.println("readTerms: cannot parse constant: [" + inputExp + "]");
+                // leave as 0
+            }
         }
         //System.out.println("readTerms is ended");
     }
@@ -1845,12 +1857,34 @@ public class tdb {
         //System.out.println("funcList:" + funcList);
         inputExp = this.sympifyString(inputExp);
         //called readFunc method
-        inputExp = readFunc(inputExp, funcList, funcCoeffList);// this method finds all the functions in inputExp based on funcList and stores in funcCoeffList 
+        inputExp = readFunc(inputExp, funcList, funcCoeffList);// this method finds all the functions in inputExp based on funcList and stores in funcCoeffList
         readTerms(inputExp, coeffList);//this method reads coefficients in inputExp and stores in coeffList
         //System.out.println("funcList: " + funcList);
         //System.out.println("funcCoeffList: " + funcCoeffList);
         //System.out.println("coeffList: " + coeffList);
         //Print.f("readExpress is ended", 0);
+    }
+
+    /**
+     * Evaluates a purely numeric arithmetic expression such as "12000-2.08420E+04"
+     * that may contain multiple constant terms joined by + or -.
+     * Scientific notation (e.g. E+04, E-03) is handled correctly.
+     */
+    private double evalArith(String expr) {
+        if (expr == null || expr.isEmpty()) return 0.0;
+        // Ensure the string starts with a sign so we can split uniformly
+        if (expr.charAt(0) != '+' && expr.charAt(0) != '-') expr = "+" + expr;
+        double sum = 0.0;
+        int start = 0;
+        for (int i = 1; i < expr.length(); i++) {
+            char c = expr.charAt(i);
+            if ((c == '+' || c == '-') && expr.charAt(i - 1) != 'E') {
+                sum += Double.parseDouble(expr.substring(start, i));
+                start = i;
+            }
+        }
+        sum += Double.parseDouble(expr.substring(start));
+        return sum;
     }
 
     private boolean isInt(String in) {

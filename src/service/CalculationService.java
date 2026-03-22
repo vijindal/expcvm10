@@ -2,6 +2,7 @@ package service;
 
 import calbince.*;
 import database.tdb;
+import domain.EquilibriumResult;
 import domain.ThermoCondition;
 import domain.DatabasePort;
 import infra.AppLevel;
@@ -81,27 +82,25 @@ public class CalculationService {
         Trace.exit(LOG, AppLevel.FLOW, "CalculationService", "calculate.cal");
 
         // Map a numeric result into DTO for GUI/CLI display.
-        // Support single-point RK calculations for LIQUID phase
         double computedValue = Double.NaN;
         if (request.getPhases() != null && !request.getPhases().isEmpty()) {
             String primaryPhase = request.getPhases().get(0);
-            if ("LIQUID".equalsIgnoreCase(primaryPhase)) {
-                try {
-                    ArrayList<tdb.Parameter> params = systdb.getPhaseParam(request.getElements(), primaryPhase);
-                    if (params != null && !params.isEmpty()) {
-                        computedValue = calculateRKSinglePoint(
-                            params,
-                            request.getElements(),
-                            request.getT(),
-                            request.getP(),
-                            request.getCompositions(),
-                            request.getMethod()
-                        );
-                    }
-                } catch (Exception ex) {
-                    LOG.log(AppLevel.WARN, "RK calculation failed: {0}", ex.getMessage());
-                    computedValue = Double.NaN;
+            try {
+                ArrayList<tdb.Parameter> params = systdb.getPhaseParam(request.getElements(), primaryPhase);
+                if (params != null && !params.isEmpty()) {
+                    computedValue = calculateRKSinglePoint(
+                        params,
+                        request.getElements(),
+                        request.getT(),
+                        request.getP(),
+                        request.getCompositions(),
+                        request.getMethod()
+                    );
                 }
+            } catch (Exception ex) {
+                LOG.log(AppLevel.WARN, "RK calculation failed for phase {0}: {1}",
+                        new Object[]{primaryPhase, ex.getMessage()});
+                computedValue = Double.NaN;
             }
         }
         LOG.log(AppLevel.RESULT, "Computed value: {0}", computedValue);
@@ -122,6 +121,134 @@ public class CalculationService {
                 : "Calculation completed.");
         Trace.exit(LOG, AppLevel.FLOW, "CalculationService", "runCalculation");
         return result;
+    }
+
+    /**
+     * Run a property scan (STEP or MAP) over a range of T and/or composition.
+     * Reuses {@link #runCalculation} at each grid point.
+     */
+    public PropertyScanResult runPropertyScan(PropertyScanRequest req) {
+        PropertyScanResult result = new PropertyScanResult();
+        result.setMethod(req.getMethod());
+
+        boolean isStep = req.getScanType() == PropertyScanRequest.ScanType.STEP;
+
+        // Build axis value arrays
+        double[] a0 = buildRange(req.getAxis0Min(), req.getAxis0Max(), req.getAxis0Step());
+        double[] a1 = isStep ? null : buildRange(req.getAxis1Min(), req.getAxis1Max(), req.getAxis1Step());
+
+        result.setAxis0Values(a0);
+        result.setAxis1Values(a1);
+
+        // Axis labels
+        String a0Label = req.getAxis0Type() == PropertyScanRequest.AxisType.TEMPERATURE ? "T (K)" : "x(comp 2)";
+        String a1Label = (a1 == null) ? "" : (req.getAxis1Type() == PropertyScanRequest.AxisType.TEMPERATURE ? "T (K)" : "x(comp 2)");
+        result.setAxis0Label(a0Label);
+        result.setAxis1Label(a1Label);
+        result.setPropertyLabel(req.getMethod() + " (J/mol)");
+
+        if (a0 == null || a0.length == 0) {
+            result.setSuccess(false); result.setMessage("No axis 0 points."); return result;
+        }
+
+        // Build base CalculationRequest template
+        CalculationRequest template = new CalculationRequest();
+        template.setTdbFilePath(req.getTdbFilePath());
+        template.setElements(new ArrayList<>(req.getElements()));
+        template.setMethod(req.getMethod());
+        template.setPhases(new ArrayList<>(req.getPhases()));
+        template.setP(req.getFixedP());
+
+        int nComp = req.getElements().size();
+
+        java.util.function.Consumer<String> progress = req.getProgressCallback();
+        try {
+            if (isStep) {
+                double[] vals = new double[a0.length];
+                for (int i = 0; i < a0.length; i++) {
+                    if (Thread.currentThread().isInterrupted())
+                        throw new InterruptedException("Scan aborted");
+                    double v0 = a0[i];
+                    if (req.getAxis0Type() == PropertyScanRequest.AxisType.TEMPERATURE) {
+                        template.setT(v0);
+                        template.setCompositions(makeComposition(req.getFixedX(), nComp));
+                    } else {
+                        template.setT(req.getFixedT());
+                        template.setCompositions(makeComposition(v0, nComp));
+                    }
+                    CalculationResult r = runCalculation(template);
+                    vals[i] = r.getValue();
+                    if (progress != null) {
+                        String ax = req.getAxis0Type() == PropertyScanRequest.AxisType.TEMPERATURE
+                                ? String.format("T=%.1f K", v0)
+                                : String.format("x=%.4f", v0);
+                        progress.accept(String.format("[%d/%d] %s  →  %s = %.4g J/mol",
+                                i + 1, a0.length, ax, req.getMethod(), vals[i]));
+                    }
+                }
+                result.setStepValues(vals);
+            } else {
+                int n0 = a0.length, n1 = a1.length;
+                double[][] grid = new double[n1][n0];
+                int total = n0 * n1, done = 0;
+                for (int j = 0; j < n1; j++) {
+                    if (Thread.currentThread().isInterrupted())
+                        throw new InterruptedException("Scan aborted");
+                    double v1 = a1[j];
+                    for (int i = 0; i < n0; i++) {
+                        double v0 = a0[i];
+                        double T, x;
+                        if (req.getAxis0Type() == PropertyScanRequest.AxisType.COMPOSITION) {
+                            x = v0; T = v1;
+                        } else {
+                            T = v0; x = v1;
+                        }
+                        template.setT(T);
+                        template.setCompositions(makeComposition(x, nComp));
+                        CalculationResult r = runCalculation(template);
+                        grid[j][i] = r.getValue();
+                        done++;
+                        if (progress != null) {
+                            progress.accept(String.format("[%d/%d] T=%.1f K  x=%.4f  →  %s = %.4g J/mol",
+                                    done, total, T, x, req.getMethod(), grid[j][i]));
+                        }
+                    }
+                }
+                result.setMapValues(grid);
+            }
+            result.setSuccess(true);
+            result.setMessage("Property scan complete. Points: " + (isStep ? a0.length : a0.length * a1.length));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            result.setSuccess(false);
+            result.setMessage("Aborted");
+        } catch (Exception e) {
+            result.setSuccess(false);
+            result.setMessage("Scan failed: " + e.getMessage());
+        }
+        return result;
+    }
+
+    private static double[] buildRange(double min, double max, double step) {
+        if (step <= 0 || min > max) return new double[0];
+        int n = (int) Math.round((max - min) / step) + 1;
+        double[] arr = new double[n];
+        for (int i = 0; i < n; i++) arr[i] = min + i * step;
+        return arr;
+    }
+
+    private static ArrayList<ArrayList<Double>> makeComposition(double x2, int nComp) {
+        ArrayList<Double> comp = new ArrayList<>();
+        if (nComp >= 2) {
+            comp.add(1.0 - x2);
+            comp.add(x2);
+            for (int i = 2; i < nComp; i++) comp.add(0.0);
+        } else {
+            comp.add(1.0);
+        }
+        ArrayList<ArrayList<Double>> outer = new ArrayList<>();
+        outer.add(comp);
+        return outer;
     }
 
     /**
@@ -177,6 +304,60 @@ public class CalculationService {
         }
         Trace.exit(LOG, AppLevel.FLOW, "CalculationService", "inspectModel");
         return info;
+    }
+
+    /**
+     * Returns phase names whose constituents are a subset of the given elements.
+     */
+    public List<String> getPhasesForElements(String tdbPath, List<String> elements) {
+        if (elements == null || elements.isEmpty()) return Collections.emptyList();
+        try {
+            databasePort.load(tdbPath);
+            DatabasePort sub = databasePort.extractSystem(elements.toArray(new String[0]));
+            return sub.getPhaseNames();
+        } catch (Exception ex) {
+            LOG.log(AppLevel.WARN, "getPhasesForElements error", ex);
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * Returns the Parameter list for a given phase + element set from the loaded TDB.
+     */
+    public List<tdb.Parameter> getPhaseParameters(String tdbPath, List<String> elements, String phaseName) {
+        if (elements == null || elements.isEmpty() || phaseName == null) return Collections.emptyList();
+        try {
+            databasePort.load(tdbPath);
+            if (!(databasePort instanceof TdbParser)) return Collections.emptyList();
+            tdb db = ((TdbParser) databasePort).getUnderlyingTdb();
+            if (db == null) return Collections.emptyList();
+            ArrayList<String> elemList = new ArrayList<>(elements);
+            return db.getPhaseParam(elemList, phaseName);
+        } catch (Exception ex) {
+            LOG.log(AppLevel.WARN, "getPhaseParameters error", ex);
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * Execute a multi-phase equilibrium calculation using Algorithm A
+     * (Sundman et al. 2021).
+     *
+     * <p>Delegates to {@link EquilibriumUseCase} which loads the TDB, builds
+     * {@link domain.PhaseModelPort} adapters for each requested phase, and
+     * runs {@link thermocalc.equil.EquilibriumSolver}.
+     *
+     * @param request must supply tdbFilePath, elements, phases, T, P, compositions
+     * @return converged (or best-effort) multi-phase equilibrium result
+     */
+    public EquilibriumResult runEquilibrium(CalculationRequest request) throws IOException {
+        Trace.enter(LOG, AppLevel.FLOW, "CalculationService", "runEquilibrium");
+        EquilibriumResult result = new EquilibriumUseCase().execute(request);
+        LOG.log(AppLevel.RESULT, "runEquilibrium: converged={0}, iterations={1}, stable phases={2}",
+                new Object[]{result.isConverged(), result.getIterations(),
+                             result.getStablePhases().size()});
+        Trace.exit(LOG, AppLevel.FLOW, "CalculationService", "runEquilibrium");
+        return result;
     }
 
     /**

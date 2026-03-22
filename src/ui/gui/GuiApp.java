@@ -1,4 +1,4 @@
-package gui;
+package ui.gui;
 
 import service.CalculationService;
 import service.OptimizationService;

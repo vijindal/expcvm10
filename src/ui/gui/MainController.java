@@ -1,14 +1,23 @@
-package gui;
+package ui.gui;
 
 import service.CalculationRequest;
 import service.CalculationResult;
 import service.ModelInfo;
 import service.CalculationService;
+import service.PropertyScanRequest;
+import service.PropertyScanResult;
 import service.OptimizationService;
+import service.PhaseDiagramRequest;
+import service.PhaseDiagramResult;
+import service.PhaseDiagramUseCase;
+import thermocalc.diagram.AxisConfig;
 import infra.AppLevel;
 import infra.Trace;
 
+import database.tdb;
+
 import java.io.IOException;
+import java.util.List;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.logging.Level;
@@ -61,6 +70,27 @@ public class MainController {
     }
 
     /**
+     * Run a phase diagram calculation with the given request.
+     */
+    public PhaseDiagramResult runPhaseDiagram(PhaseDiagramRequest request) {
+        Trace.enter(LOG, AppLevel.FLOW, "MainController", "runPhaseDiagram");
+        try {
+            PhaseDiagramResult r = new PhaseDiagramUseCase().execute(request);
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "runPhaseDiagram");
+            return r;
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "Phase diagram calculation failed", e);
+            PhaseDiagramResult error = new PhaseDiagramResult(
+                    request.getAxes().size() == 0 ? new String[]{"Axis"} : new String[]{request.getAxes().get(0).name},
+                    new double[]{0}, new double[]{1});
+            error.setComplete(false);
+            error.setMessage("Error: " + e.getMessage());
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "runPhaseDiagram");
+            return error;
+        }
+    }
+
+    /**
      * Run optimization from the GUI.
      */
     public String runOptimization(String exptDataFile, String phaseDataFile,
@@ -97,12 +127,32 @@ public class MainController {
     }
 
     /**
-     * Inspect TDB and return model metadata for the Data & Model tab.
+     * Inspect TDB and return model metadata.
      */
     public ModelInfo inspectModel(String tdbPath, String[] elements) {
         Trace.enter(LOG, AppLevel.FLOW, "MainController", "inspectModel");
         ModelInfo info = calculationService.inspectModel(tdbPath, elements);
         Trace.exit(LOG, AppLevel.FLOW, "MainController", "inspectModel");
         return info;
+    }
+
+    public List<String> getPhasesForElements(String tdbPath, List<String> elements) {
+        return calculationService.getPhasesForElements(tdbPath, elements);
+    }
+
+    public List<tdb.Parameter> getPhaseParameters(String tdbPath, List<String> elements, String phaseName) {
+        return calculationService.getPhaseParameters(tdbPath, elements, phaseName);
+    }
+
+    public PropertyScanResult runPropertyScan(PropertyScanRequest request) {
+        try {
+            return calculationService.runPropertyScan(request);
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "Property scan failed", e);
+            PropertyScanResult err = new PropertyScanResult();
+            err.setSuccess(false);
+            err.setMessage("Error: " + e.getMessage());
+            return err;
+        }
     }
 }

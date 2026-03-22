@@ -1,7 +1,9 @@
-package gui;
+package ui.gui;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.plaf.basic.BasicSplitPaneDivider;
+import javax.swing.plaf.basic.BasicSplitPaneUI;
 import java.awt.*;
 
 /**
@@ -26,40 +28,34 @@ public class DarkTheme {
     public static final Color SEL_BG      = new Color(0x264F78);  // Selection background
     public static final Color SCROLL_THUMB= new Color(0x424242);  // Scrollbar thumb
     public static final Color MENU_BG     = new Color(0x252526);  // Menu bar/menus
+    public static final Color SIDEBAR_BG  = new Color(0x252526);  // Sidebar panel background
+    public static final Color SECTION_FG  = new Color(0xBBBBBB);  // Section/panel header text (VS Code style)
 
-    /**
-     * Apply the dark theme to the entire Swing application.
-     * Must be called after UIManager.setLookAndFeel() and before any component is constructed.
-     */
     public static void apply() {
-        // ========== Metal Gradient Suppression ==========
         String[] gradientKeys = {
             "Button.gradient", "CheckBox.gradient", "RadioButton.gradient",
             "ToggleButton.gradient", "ScrollBar.gradient", "Slider.gradient",
             "ProgressBar.gradient", "MenuBar.gradient", "InternalFrame.activeTitleGradient"
         };
-        for (String key : gradientKeys) {
-            UIManager.put(key, null);
-        }
+        for (String key : gradientKeys) UIManager.put(key, null);
 
-        // ========== Panel / Viewport ==========
         UIManager.put("Panel.background",           CARD);
         UIManager.put("Panel.foreground",           FG_PRIMARY);
         UIManager.put("Viewport.background",        CARD);
         UIManager.put("Viewport.foreground",        FG_PRIMARY);
-
-        // ========== Label ==========
         UIManager.put("Label.background",           CARD);
         UIManager.put("Label.foreground",           FG_PRIMARY);
         UIManager.put("Label.disabledForeground",   FG_SECOND);
-
-        // ========== TextField / TextArea / TextPane ==========
+        javax.swing.border.Border inputBorder = BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(0x555555), 1),
+            BorderFactory.createEmptyBorder(2, 5, 2, 5));
         UIManager.put("TextField.background",            BG_INPUT);
         UIManager.put("TextField.foreground",            FG_PRIMARY);
         UIManager.put("TextField.caretForeground",       FG_PRIMARY);
         UIManager.put("TextField.selectionBackground",   SEL_BG);
         UIManager.put("TextField.selectionForeground",   FG_PRIMARY);
         UIManager.put("TextField.inactiveForeground",    FG_SECOND);
+        UIManager.put("TextField.border",                inputBorder);
         UIManager.put("TextArea.background",             BG_INPUT);
         UIManager.put("TextArea.foreground",             FG_PRIMARY);
         UIManager.put("TextArea.caretForeground",        FG_PRIMARY);
@@ -70,26 +66,23 @@ public class DarkTheme {
         UIManager.put("TextPane.foreground",             FG_PRIMARY);
         UIManager.put("EditorPane.background",           BG_INPUT);
         UIManager.put("EditorPane.foreground",           FG_PRIMARY);
-
-        // ========== Button ==========
         UIManager.put("Button.background",          CARD);
         UIManager.put("Button.foreground",          FG_PRIMARY);
         UIManager.put("Button.select",              BORDER);
         UIManager.put("Button.focus",               BORDER);
         UIManager.put("ToggleButton.background",    CARD);
         UIManager.put("ToggleButton.foreground",    FG_PRIMARY);
-
-        // ========== ComboBox ==========
         UIManager.put("ComboBox.background",               BG_INPUT);
         UIManager.put("ComboBox.foreground",               FG_PRIMARY);
         UIManager.put("ComboBox.selectionBackground",      SEL_BG);
         UIManager.put("ComboBox.selectionForeground",      FG_PRIMARY);
-        UIManager.put("ComboBox.buttonBackground",         CARD);
-        UIManager.put("ComboBox.buttonShadow",             BORDER);
+        UIManager.put("ComboBox.buttonBackground",         BG_INPUT);
+        UIManager.put("ComboBox.buttonShadow",             BG_INPUT);
+        UIManager.put("ComboBox.buttonDarkShadow",         BG_INPUT);
+        UIManager.put("ComboBox.buttonHighlight",          BG_INPUT);
+        UIManager.put("ComboBox.border",                   BorderFactory.createLineBorder(new Color(0x4A4A4A), 1));
         UIManager.put("ComboBox.disabledBackground",       CARD);
         UIManager.put("ComboBox.disabledForeground",       FG_SECOND);
-
-        // ========== List / PopupMenu ==========
         UIManager.put("List.background",               MENU_BG);
         UIManager.put("List.foreground",               FG_PRIMARY);
         UIManager.put("List.selectionBackground",      SEL_BG);
@@ -97,8 +90,6 @@ public class DarkTheme {
         UIManager.put("PopupMenu.background",          MENU_BG);
         UIManager.put("PopupMenu.foreground",          FG_PRIMARY);
         UIManager.put("PopupMenu.border",              BorderFactory.createLineBorder(BORDER));
-
-        // ========== MenuBar / Menu / MenuItem ==========
         UIManager.put("MenuBar.background",             MENU_BG);
         UIManager.put("MenuBar.foreground",             FG_PRIMARY);
         UIManager.put("MenuBar.border",                 BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER));
@@ -113,8 +104,6 @@ public class DarkTheme {
         UIManager.put("MenuItem.acceleratorForeground", FG_SECOND);
         UIManager.put("Separator.background",           BORDER);
         UIManager.put("Separator.foreground",           BORDER);
-
-        // ========== ScrollPane / ScrollBar ==========
         UIManager.put("ScrollPane.background",      CARD);
         UIManager.put("ScrollPane.border",          BorderFactory.createLineBorder(BORDER));
         UIManager.put("ScrollBar.background",       BG);
@@ -124,13 +113,9 @@ public class DarkTheme {
         UIManager.put("ScrollBar.track",            BG);
         UIManager.put("ScrollBar.trackHighlight",   BG);
         UIManager.put("ScrollBar.width",            8);
-
-        // ========== SplitPane ==========
         UIManager.put("SplitPane.background",           BG);
         UIManager.put("SplitPaneDivider.border",        BorderFactory.createEmptyBorder());
         UIManager.put("SplitPaneDivider.draggingColor", ACCENT);
-
-        // ========== TabbedPane ==========
         UIManager.put("TabbedPane.background",              CARD);
         UIManager.put("TabbedPane.foreground",              FG_SECOND);
         UIManager.put("TabbedPane.selected",                BG);
@@ -144,15 +129,11 @@ public class DarkTheme {
         UIManager.put("TabbedPane.highlight",               BORDER);
         UIManager.put("TabbedPane.light",                   MENU_BG);
         UIManager.put("TabbedPane.contentBorderInsets",     new Insets(1, 0, 0, 0));
-
-        // ========== ProgressBar ==========
         UIManager.put("ProgressBar.background",         BG_INPUT);
         UIManager.put("ProgressBar.foreground",         ACCENT);
         UIManager.put("ProgressBar.selectionBackground",FG_PRIMARY);
         UIManager.put("ProgressBar.selectionForeground",BG);
         UIManager.put("ProgressBar.border",             BorderFactory.createLineBorder(BORDER));
-
-        // ========== Table / TableHeader ==========
         UIManager.put("Table.background",               CARD);
         UIManager.put("Table.foreground",               FG_PRIMARY);
         UIManager.put("Table.gridColor",                BORDER);
@@ -161,28 +142,18 @@ public class DarkTheme {
         UIManager.put("TableHeader.background",         MENU_BG);
         UIManager.put("TableHeader.foreground",         FG_SECOND);
         UIManager.put("TableHeader.cellBorder",         BorderFactory.createMatteBorder(0, 0, 1, 1, BORDER));
-
-        // ========== OptionPane / Dialogs ==========
         UIManager.put("OptionPane.background",          CARD);
         UIManager.put("OptionPane.messageForeground",   FG_PRIMARY);
         UIManager.put("OptionPane.messageFont",         new Font("Segoe UI", Font.PLAIN, 11));
         UIManager.put("OptionPane.buttonFont",          new Font("Segoe UI", Font.PLAIN, 11));
-
-        // ========== FileChooser ==========
         UIManager.put("FileChooser.background",         CARD);
         UIManager.put("FileChooser.foreground",         FG_PRIMARY);
-
-        // ========== Tooltip ==========
         UIManager.put("ToolTip.background",             MENU_BG);
         UIManager.put("ToolTip.foreground",             FG_PRIMARY);
         UIManager.put("ToolTip.border",                 BorderFactory.createLineBorder(BORDER));
         UIManager.put("ToolTip.font",                   new Font("Segoe UI", Font.PLAIN, 11));
     }
 
-    /**
-     * Custom renderer for JComboBox dropdowns with dark theme.
-     * Used by all combo boxes for consistent dark appearance.
-     */
     public static class ComboRenderer extends DefaultListCellRenderer {
         @Override
         public Component getListCellRendererComponent(
@@ -196,17 +167,71 @@ public class DarkTheme {
         }
     }
 
-    /**
-     * Create a styled JScrollPane with dark viewport and border.
-     * Reusable helper for consistent scroll pane appearance across the app.
-     *
-     * @param view the component to wrap in a scroll pane
-     * @return a JScrollPane with dark theme applied
-     */
     public static JScrollPane scrollPane(Component view) {
         JScrollPane sp = new JScrollPane(view);
-        sp.setBorder(BorderFactory.createLineBorder(BORDER));
+        // No top border — header bar above provides the visual top edge
+        sp.setBorder(BorderFactory.createMatteBorder(0, 1, 1, 1, BORDER));
         sp.getViewport().setBackground(BG);
         return sp;
+    }
+
+    /**
+     * Creates a JSplitPane with a flat 1-pixel BORDER-colour divider,
+     * matching the sleek MatteBorder used on the activity bar.
+     * The divider paint is completely overridden — no platform LAF rendering.
+     */
+    public static JSplitPane sleekSplit(int orientation) {
+        JSplitPane sp = new JSplitPane(orientation);
+        sp.setUI(new BasicSplitPaneUI() {
+            @Override
+            public BasicSplitPaneDivider createDefaultDivider() {
+                return new BasicSplitPaneDivider(this) {
+                    @Override
+                    public void paint(Graphics g) {
+                        g.setColor(BORDER);
+                        g.fillRect(0, 0, getWidth(), getHeight());
+                    }
+                };
+            }
+        });
+        sp.setBorder(null);
+        sp.setDividerSize(1);
+        sp.setContinuousLayout(true);
+        return sp;
+    }
+
+    /**
+     * VS Code-style panel header bar (OUTPUT, RESULTS, PHASES, PARAMETERS, …).
+     * Background matches the panel content (BG). Title in SECTION_FG (near-white).
+     * Toolbar components (buttons, combos) are appended to the right if provided.
+     */
+    public static JPanel panelHeader(String title, java.awt.Component... rightControls) {
+        JPanel bar = new JPanel(new java.awt.BorderLayout());
+        bar.setBackground(BG);
+        bar.setBorder(new javax.swing.border.EmptyBorder(0, 0, 0, 0));
+
+        JLabel lbl = new JLabel(title);
+        lbl.setFont(new java.awt.Font("Segoe UI", java.awt.Font.BOLD, 10));
+        lbl.setForeground(SECTION_FG);
+        lbl.setBorder(new javax.swing.border.EmptyBorder(3, 8, 3, 8));
+        bar.add(lbl, java.awt.BorderLayout.WEST);
+
+        if (rightControls != null && rightControls.length > 0) {
+            JPanel right = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 4, 1));
+            right.setOpaque(false);
+            for (java.awt.Component c : rightControls) right.add(c);
+            bar.add(right, java.awt.BorderLayout.EAST);
+        }
+        return bar;
+    }
+
+    /** 1-px bottom separator line for use between sidebar sections. */
+    public static JPanel separator() {
+        JPanel line = new JPanel();
+        line.setBackground(BORDER);
+        line.setPreferredSize(new Dimension(0, 1));
+        line.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+        line.setMinimumSize(new Dimension(0, 1));
+        return line;
     }
 }
