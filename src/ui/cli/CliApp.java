@@ -197,7 +197,7 @@ public class CliApp {
             switch (typeStr) {
                 case "TEMPERATURE": return new AxisConfig(name + " (K)", Type.TEMPERATURE, min, max, step);
                 case "PRESSURE":    return new AxisConfig(name + " (Pa)", Type.PRESSURE, min, max, step);
-                case "COMPOSITION": return new AxisConfig(name + " (X)", 1, min, max, step);
+                case "COMPOSITION": return new AxisConfig(name + " (X)", 0, min, max, step);  // index 0 = first component
                 default:            return null;
             }
         } catch (NumberFormatException e) { return null; }

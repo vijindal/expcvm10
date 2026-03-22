@@ -164,17 +164,18 @@ public class LineStepper {
             }
 
             // ── Driving-force check for excluded phases ───────────────────
-            double maxDF = maxExcludedDrivingForce(accepted, candidates,
-                    exit.fixedPhase, exit.forbiddenPhase);
+            // γ = G + Σmu·x:  γ < 0 means the excluded phase is MORE stable
+            // than the current equilibrium (below the tangent plane) and wants
+            // to re-enter → the ZPF line has ended → phase change detected.
+            double minDF = minExcludedDrivingForce(accepted, candidates,
+                    exit.fixedPhase, exit.forbiddenPhase, acceptedComp);
 
-            if (maxDF > DRIVING_FORCE_TOL) {
-                // A new phase wants to enter — record last accepted point
-                // and signal a phase change.  Phase 7 (PhaseChangeHandler) will
-                // bisect precisely and create the new node.
+            if (minDF < -DRIVING_FORCE_TOL) {
+                // Excluded phase became more stable → ZPF line ended
                 line.addPoint(accepted, acceptedAxes);
                 line.phaseChangeDetected = true;
-                LOG.fine("LineStepper: driving force " + maxDF
-                        + " > tol at step " + step + " — phase change detected.");
+                LOG.fine("LineStepper: driving force " + minDF
+                        + " < -tol at step " + step + " — phase change detected.");
                 return line;
             }
 
@@ -313,24 +314,39 @@ public class LineStepper {
     }
 
     /**
-     * Compute the maximum driving force of all excluded phases
-     * (fixedPhase + forbiddenPhase) at the current equilibrium.
+     * Compute the minimum driving force among excluded phases.
      *
-     * <p>Driving force γ = G + Σ μ_A · x_A; positive means the phase
-     * wants to enter the stable set.
+     * <p>γ = G + Σ μ_A · x_A:
+     * <ul>
+     *   <li>γ &gt; 0: phase is above the tangent plane (metastable, should NOT enter)</li>
+     *   <li>γ &lt; 0: phase is below the tangent plane (more stable, SHOULD enter)</li>
+     * </ul>
+     *
+     * <p>The fixedPhase is excluded from the active solver candidates, so it is
+     * never in the solver's metastable list.  We evaluate it manually here using
+     * the equilibrium's mu values and the current mass-average composition.
      */
-    private double maxExcludedDrivingForce(EquilibriumResult eq,
+    private double minExcludedDrivingForce(EquilibriumResult eq,
                                             List<PhaseModelPort> allCandidates,
                                             String fixedPhase,
-                                            String forbiddenPhase) {
-        double maxDF = Double.NEGATIVE_INFINITY;
+                                            String forbiddenPhase,
+                                            double[] comp) {
+        double minDF = Double.POSITIVE_INFINITY;
+        double[] mu  = eq.getMu();
+        double   T   = eq.getT();
 
-        // Check among metastable phases reported by the equilibrium result
-        for (EquilibriumResult.PhaseResult pr : eq.getMetastablePhases()) {
-            if (!pr.phaseName.equals(fixedPhase) && !pr.phaseName.equals(forbiddenPhase)) continue;
-            double df = pr.drivingForce;  // already computed by solver
-            if (df > maxDF) maxDF = df;
+        for (PhaseModelPort m : allCandidates) {
+            String name = m.phaseName();
+            if (!name.equals(fixedPhase) && !name.equals(forbiddenPhase)) continue;
+            try {
+                double G  = m.evaluateG(comp, T);
+                double df = G;
+                for (int i = 0; i < mu.length; i++) df += mu[i] * comp[i];
+                if (df < minDF) minDF = df;
+            } catch (Exception e) {
+                // ignore evaluation errors for this phase
+            }
         }
-        return maxDF == Double.NEGATIVE_INFINITY ? 0.0 : maxDF;
+        return minDF == Double.POSITIVE_INFINITY ? 0.0 : minDF;
     }
 }

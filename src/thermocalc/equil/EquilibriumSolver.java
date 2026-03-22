@@ -30,7 +30,11 @@ import java.util.List;
  */
 public class EquilibriumSolver {
 
-    private static final double CONVERGED_TOL  = 1e-10;
+    // Convergence tolerance on Newton corrections.
+    // mu corrections are in J/mol (O(1e4)), so 1e-10 is sub-machine-precision —
+    // use 1e-4 (0.1 mJ/mol accuracy) which is more than sufficient for
+    // thermodynamic calculations.
+    private static final double CONVERGED_TOL  = 1e-4;
     private static final double DRIVING_FORCE_TOL = 1e-6;
     private static final int    MAX_ITERATIONS = 200;
     private static final int    MAX_PHASE_SET_RESETS = 5;
@@ -55,6 +59,15 @@ public class EquilibriumSolver {
                                    double[] compOverAll,
                                    List<PhaseModelPort> candidates) {
         int nc = compOverAll.length;
+
+        // Clamp composition away from exact 0 to avoid log(0) in mixing entropy
+        compOverAll = compOverAll.clone();
+        double sum = 0;
+        for (int i = 0; i < nc; i++) {
+            compOverAll[i] = Math.max(compOverAll[i], 1e-9);
+            sum += compOverAll[i];
+        }
+        for (int i = 0; i < nc; i++) compOverAll[i] /= sum;
 
         // Get initial estimate from grid minimizer
         EquilibriumState state = gridMinimizer.initialize(candidates, T, P, compOverAll);

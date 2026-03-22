@@ -344,7 +344,7 @@ public class PhaseDiagramConfigPanel extends JPanel {
         if ("PRESSURE".equalsIgnoreCase(typeStr))
             return new AxisConfig(axisName + " (Pa)", Type.PRESSURE, min, max, step);
         if ("COMPOSITION".equalsIgnoreCase(typeStr))
-            return new AxisConfig(axisName + " (X)", 1, min, max, step);
+            return new AxisConfig(axisName + " (X)", 0, min, max, step);  // index 0 = first component
         return null;
     }
 

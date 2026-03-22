@@ -94,8 +94,14 @@ public class GridMinimizer {
                     double x0 = compOverAll[0];
                     if (x0 >= Math.min(est.x1, est.x2) &&
                         x0 <= Math.max(est.x1, est.x2)) {
-                        if (best2p == null || est.tangentG(x0) < singlePhaseG(candidates, x0, T)) {
-                            best2p = est;
+                        // Accept only if the tangent is more stable than single-phase G
+                        // (the null short-circuit was wrong: it accepted any first tangent
+                        //  regardless of thermodynamic stability)
+                        double singleG = singlePhaseG(candidates, x0, T);
+                        if (est.tangentG(x0) < singleG) {
+                            if (best2p == null || est.tangentG(x0) < best2p.tangentG(x0)) {
+                                best2p = est;
+                            }
                         }
                     }
                 }

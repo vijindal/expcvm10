@@ -323,10 +323,13 @@ public class DiagramTracer {
     private void addInitialExits(DiagramNode node,
                                   EquilibriumResult eq,
                                   AxisConfig[] axes) {
-        int axisIdx = 0;
-        for (EquilibriumResult.PhaseResult pr : eq.getStablePhases()) {
-            node.addExit(new DiagramExit(node, pr.phaseName, null, axisIdx, +1));
-            node.addExit(new DiagramExit(node, pr.phaseName, null, axisIdx, -1));
+        // Add exits in ALL axis directions so that both horizontal (x) and
+        // vertical (T) phase boundaries can be traced from the initial node.
+        for (int axisIdx = 0; axisIdx < axes.length; axisIdx++) {
+            for (EquilibriumResult.PhaseResult pr : eq.getStablePhases()) {
+                node.addExit(new DiagramExit(node, pr.phaseName, null, axisIdx, +1));
+                node.addExit(new DiagramExit(node, pr.phaseName, null, axisIdx, -1));
+            }
         }
         LOG.fine("addInitialExits: node " + node.id
                 + " → " + node.getExits().size() + " exits.");
