@@ -3,10 +3,11 @@ plugins {
     id 'application'
 }
 
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(8)
-    }
+// Configure source/target compatibility for Java 1.8
+// Note: On Java 25, Gradle may have compatibility issues.
+// If build fails, run with Java 21 or older: JAVA_HOME=/path/to/java21 ./gradlew
+tasks.withType(JavaCompile).configureEach {
+    options.release = 8
 }
 
 application {
