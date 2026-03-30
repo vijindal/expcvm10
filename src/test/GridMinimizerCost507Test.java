@@ -1,87 +1,109 @@
 package test;
 
 import infra.TdbParser;
+import infra.RkPhaseModelFactory;
+import infra.RkPhaseModelAdapter;
 import domain.DatabasePort;
+import domain.PhaseModelPort;
+import thermocalc.equil.GridMinimizer;
+import thermocalc.equil.EquilibriumState;
+import thermocalc.equil.PhaseRecord;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Integration test: Database exploration for Nb-Ti system in cost507.tdb
- * Shows available phases across temperature range 300K - 1000K
+ * Integration test: GridMinimizer with real RK phase models for Nb-Ti system.
+ * Temperature sweep from 300K to 1000K at 100K intervals using cost507.tdb.
  */
 public class GridMinimizerCost507Test {
 
     public static void main(String[] args) {
-        System.out.println("=== Exploring cost507.tdb (Nb-Ti system) ===\n");
+        System.out.println("=== GridMinimizer: Nb-Ti System (cost507.tdb) ===\n");
 
         try {
             // Load database
             System.out.println("Loading cost507.tdb...");
             TdbParser parser = new TdbParser();
             parser.load("data/cost507.tdb");
+            database.tdb db = parser.getUnderlyingTdb();
 
-            // Get all phase names
-            ArrayList<String> allPhases = parser.getPhaseNames();
-            System.out.println("Total phases in database: " + allPhases.size());
-            System.out.println("Phases: " + allPhases);
-            System.out.println();
+            // Elements of interest
+            List<String> elements = new ArrayList<>();
+            elements.add("NB");
+            elements.add("TI");
 
-            // Extract Nb-Ti subsystem
+            // Extract Nb-Ti phases
             System.out.println("Extracting Nb-Ti system...");
             DatabasePort system = parser.extractSystem(new String[]{"NB", "TI"});
-
             if (system == null) {
                 System.out.println("ERROR: Could not extract Nb-Ti system");
                 return;
             }
 
             ArrayList<String> nbTiPhases = system.getPhaseNames();
-            System.out.println("Phases available for Nb-Ti system: " + nbTiPhases.size());
+            System.out.println("Phases available: " + nbTiPhases.size());
             System.out.println("Phases: " + nbTiPhases);
             System.out.println();
 
-            // Get underlying tdb for detailed queries
-            database.tdb db = parser.getUnderlyingTdb();
-            ArrayList<String> elements = new ArrayList<>();
-            elements.add("NB");
-            elements.add("TI");
+            // ──── Temperature sweep: 300K to 1000K @ 100K intervals ────
+            System.out.println("Temperature sweep: 50% Nb - 50% Ti composition");
+            System.out.println("=".repeat(80));
 
-            System.out.println("Phase parameters for Nb-Ti system:");
-            System.out.println("-".repeat(75));
+            double[] composition = {0.5, 0.5};  // 50% Nb, 50% Ti
+            double P = 1e5;                     // 1 atm
+            GridMinimizer gm = new GridMinimizer(20);  // grid density
 
-            for (String phaseName : nbTiPhases) {
-                ArrayList<database.tdb.Parameter> params = db.getPhaseParam(elements, phaseName);
-                if (params != null && !params.isEmpty()) {
-                    System.out.printf("%-20s: %d parameter entries\n", phaseName, params.size());
+            int[] temperatures = {300, 400, 500, 600, 700, 800, 900, 1000};
 
-                    // Show temperature ranges from first parameter
-                    if (params.size() > 0) {
-                        database.tdb.Parameter p = params.get(0);
-                        ArrayList<database.tdb.Exp> exps = p.getExpList();
-                        if (exps != null) {
-                            System.out.print("  Temperature ranges: ");
-                            for (database.tdb.Exp exp : exps) {
-                                ArrayList<Double> tRange = exp.getTempRange();
-                                if (tRange != null && tRange.size() >= 2) {
-                                    System.out.printf("%.0f-%.0f K  ", tRange.get(0), tRange.get(1));
-                                }
-                            }
-                            System.out.println();
+            for (int T : temperatures) {
+                System.out.printf("\n[%4d K] ", T);
+
+                try {
+                    // Build phase models for this temperature
+                    List<PhaseModelPort> models = new ArrayList<>();
+                    for (String phaseName : nbTiPhases) {
+                        try {
+                            RkPhaseModelAdapter model = RkPhaseModelFactory.build(phaseName, elements, db);
+                            models.add(model);
+                        } catch (Exception e) {
+                            // Skip phases that fail to build
+                            System.out.printf("[%s: skipped] ", phaseName);
                         }
                     }
-                } else {
-                    System.out.printf("%-20s: NO PARAMETERS\n", phaseName);
+
+                    if (models.isEmpty()) {
+                        System.out.println("ERROR: No phase models could be built");
+                        continue;
+                    }
+
+                    // Run GridMinimizer
+                    EquilibriumState state = gm.initialize(models, T, P, composition);
+
+                    // Report stable phases
+                    List<PhaseRecord> stablePhases = state.stablePhases();
+                    System.out.printf("Stable phases: ");
+                    if (stablePhases.isEmpty()) {
+                        System.out.print("(none)");
+                    } else {
+                        for (int i = 0; i < stablePhases.size(); i++) {
+                            PhaseRecord pr = stablePhases.get(i);
+                            if (i > 0) System.out.print(" + ");
+                            System.out.printf("%s (%.1f%%)", pr.model.phaseName(), pr.amount * 100);
+                        }
+                    }
+                    System.out.println();
+
+                } catch (Exception e) {
+                    System.out.printf("ERROR at %dK: %s\n", T, e.getMessage());
                 }
             }
 
-            System.out.println("-".repeat(75));
-            System.out.println("\nNote: GridMinimizer with real phase models requires RkPhaseModelFactory");
-            System.out.println("which creates actual thermodynamic model instances from the TDB.");
-            System.out.println("For complete testing, use EquilibriumUseCase or PhaseDiagramUseCase.");
+            System.out.println("\n" + "=".repeat(80));
+            System.out.println("Temperature sweep complete.");
 
         } catch (Exception e) {
-            System.err.println("ERROR: " + e.getMessage());
+            System.err.println("FATAL ERROR: " + e.getMessage());
             e.printStackTrace();
         }
     }
