@@ -150,10 +150,11 @@ public class MainFrame extends JFrame {
         activityBar.addActivity("STEP Calc",      new ActivityBar.LineIcon(),     () -> switchActivity("stepcalc"));
         activityBar.addActivity("MAP Calc",       new ActivityBar.SquareIcon(),   () -> switchActivity("mapcalc"));
         activityBar.addActivity("Phase Diagram",  new ActivityBar.DiamondIcon(),  () -> switchActivity("phasediagram"));
-        activityBar.addActivity("Inspect Model",  new ActivityBar.InfoIcon(),     () -> switchActivity("inspector"));
+        activityBar.addActivity("Inspect Database",  new ActivityBar.InfoIcon(),     () -> switchActivity("inspector"));
 
         JPanel root = new JPanel(new BorderLayout(0, 0));
         root.setBackground(BG);
+        root.add(activityBar,    BorderLayout.WEST);
         root.add(activityBar,    BorderLayout.WEST);
         root.add(workspaceSplit, BorderLayout.CENTER);
         return root;
@@ -599,10 +600,11 @@ public class MainFrame extends JFrame {
 
     private String buildParamText(String phaseName, java.util.List<tdb.Parameter> params) {
         if (params == null || params.isEmpty()) return "No parameters found for " + phaseName + ".";
-        String[] termLabels = {"constant","*T","*T·ln(T)","*T²","*T³","*T⁴","*T⁷","*T⁻¹","*T⁻²","*T⁻³","*T⁻⁹","*T⁻¹¹"};
+        String[] termLabels = {"", "·T", "·T·ln(T)", "·T²", "·T³", "·T⁴", "·T⁷", "·T⁻¹", "·T⁻²", "·T⁻³", "·T⁻⁹", "·T⁻¹¹"};
+        String[] termSymbols = {"(constant)", "*T", "*T·ln(T)", "*T²", "*T³", "*T⁴", "*T⁷", "*T⁻¹", "*T⁻²", "*T⁻³", "*T⁻⁹", "*T⁻¹¹"};
         StringBuilder sb = new StringBuilder();
         sb.append("Parameters for ").append(phaseName).append("  (").append(params.size()).append(" total)\n");
-        sb.append("─".repeat(60)).append("\n");
+        sb.append("─".repeat(80)).append("\n");
         for (tdb.Parameter p : params) {
             StringBuilder header = new StringBuilder();
             header.append(p.getType()).append("(").append(phaseName).append(",  ");
@@ -618,17 +620,27 @@ public class MainFrame extends JFrame {
             java.util.ArrayList<tdb.Exp> exps = p.getExpList();
             if (exps != null) {
                 for (tdb.Exp exp : exps) {
-                    java.util.ArrayList<Double> tRange = exp.getTempRange();
-                    if (tRange != null && tRange.size() >= 2)
-                        sb.append(String.format("  %.2f – %.2f K\n", tRange.get(0), tRange.get(1)));
                     java.util.ArrayList<Double> coeffs = exp.getSubCoeffList();
                     if (coeffs != null) {
+                        StringBuilder line = new StringBuilder();
+                        // Temperature range
+                        java.util.ArrayList<Double> tRange = exp.getTempRange();
+                        if (tRange != null && tRange.size() >= 2)
+                            line.append(String.format("  %.2f – %.2f K: ", tRange.get(0), tRange.get(1)));
+                        else
+                            line.append("  ");
+
+                        // All non-zero coefficients on one line
+                        boolean first = true;
                         for (int i = 0; i < coeffs.size(); i++) {
                             double c = coeffs.get(i);
                             if (c == 0.0) continue;
-                            String label = i < termLabels.length ? termLabels[i] : "*T^" + i;
-                            sb.append(String.format("    %+.6e  (%s)\n", c, label));
+                            if (!first) line.append("  ");
+                            first = false;
+                            String sig = c >= 0 ? "+" : "";
+                            line.append(String.format("%s%.5e%s", sig, c, i < termLabels.length ? termLabels[i] : "·T^" + i));
                         }
+                        sb.append(line).append("\n");
                     }
                 }
             }
