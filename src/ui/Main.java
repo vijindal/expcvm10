@@ -22,8 +22,8 @@ public class Main {
 
     public static void main(String[] args) throws IOException {
         // --- Initialize logging subsystem ---
-        String logDir = System.getProperty("user.dir") + "/data/";
-        LoggingConfig.init(Level.INFO, logDir + "expcvm.log", Level.ALL);
+        // NOTE: File logging temporarily disabled to reduce log file size
+        LoggingConfig.init(Level.INFO, null, Level.ALL);
         Runtime.getRuntime().addShutdownHook(new Thread() {
             @Override
             public void run() {
