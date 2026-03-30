@@ -1,0 +1,65 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(8)
+    }
+}
+
+application {
+    mainClass = 'ui.Main'
+}
+
+sourceSets {
+    main {
+        java { srcDirs = ['src'] }
+        resources { srcDirs = [] }
+    }
+    test {
+        java { srcDirs = ['src'] }
+        resources { srcDirs = [] }
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.3'
+}
+
+tasks.named('test', Test) {
+    useJUnitPlatform()
+    filter {
+        includeTestsMatching 'test.RkGibbsTest'
+        includeTestsMatching 'thermocalc.cef.CefGibbsTest'
+        includeTestsMatching 'thermocalc.cvm.CvmGibbsTest'
+    }
+    workingDir = project.projectDir
+    systemProperties System.properties.findAll { k, v ->
+        k.toString().startsWith('sgte.') || k.toString().startsWith('tdb.')
+    }
+}
+
+tasks.named('run') {
+    workingDir = project.projectDir
+}
+
+tasks.register('fatJar', Jar) {
+    group       = 'build'
+    description = 'Assembles an executable JAR with Main-Class manifest.'
+    destinationDirectory = layout.projectDirectory.dir('dist')
+    archiveFileName      = 'expcvm10.jar'
+    manifest {
+        attributes('Main-Class': 'ui.Main', 'Implementation-Title': 'expcvm10')
+    }
+    from sourceSets.main.output
+    dependsOn classes
+}
+
+tasks.named('build') { dependsOn fatJar }
+tasks.named('clean') { delete 'dist' }
