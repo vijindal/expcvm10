@@ -43,7 +43,21 @@ public class GridMinimizerCost507Test {
 
             ArrayList<String> nbTiPhases = system.getPhaseNames();
             System.out.println("Phases available: " + nbTiPhases.size());
-            System.out.println("Phases: " + nbTiPhases);
+            System.out.println("All phases: " + nbTiPhases);
+            System.out.println();
+
+            // Filter to main phases only
+            ArrayList<String> mainPhases = new ArrayList<>();
+            for (String phase : nbTiPhases) {
+                if (phase.equalsIgnoreCase("LIQUID") ||
+                    phase.equalsIgnoreCase("BCC_A2") ||
+                    phase.equalsIgnoreCase("HCP_A3")) {
+                    mainPhases.add(phase);
+                }
+            }
+
+            System.out.println("Selected phases: " + mainPhases.size());
+            System.out.println("Phases: " + mainPhases);
             System.out.println();
 
             // ──── Temperature sweep: 300K to 1000K @ 100K intervals ────
@@ -62,7 +76,7 @@ public class GridMinimizerCost507Test {
                 try {
                     // Build phase models for this temperature
                     List<PhaseModelPort> models = new ArrayList<>();
-                    for (String phaseName : nbTiPhases) {
+                    for (String phaseName : mainPhases) {
                         try {
                             RkPhaseModelAdapter model = RkPhaseModelFactory.build(phaseName, elements, db);
                             models.add(model);
