@@ -146,11 +146,11 @@ public class MainFrame extends JFrame {
 
         // Activity bar — 5 activities
         activityBar = new ActivityBar();
-        activityBar.addActivity("Single Point",   "◉", () -> switchActivity("singlepoint"));
-        activityBar.addActivity("STEP Calc",      "─", () -> switchActivity("stepcalc"));
-        activityBar.addActivity("MAP Calc",       "⊞", () -> switchActivity("mapcalc"));
-        activityBar.addActivity("Phase Diagram",  "◇", () -> switchActivity("phasediagram"));
-        activityBar.addActivity("Inspect Model",  "ℹ", () -> switchActivity("inspector"));
+        activityBar.addActivity("Single Point",   new ActivityBar.CircleIcon(),   () -> switchActivity("singlepoint"));
+        activityBar.addActivity("STEP Calc",      new ActivityBar.LineIcon(),     () -> switchActivity("stepcalc"));
+        activityBar.addActivity("MAP Calc",       new ActivityBar.SquareIcon(),   () -> switchActivity("mapcalc"));
+        activityBar.addActivity("Phase Diagram",  new ActivityBar.DiamondIcon(),  () -> switchActivity("phasediagram"));
+        activityBar.addActivity("Inspect Model",  new ActivityBar.InfoIcon(),     () -> switchActivity("inspector"));
 
         JPanel root = new JPanel(new BorderLayout(0, 0));
         root.setBackground(BG);
