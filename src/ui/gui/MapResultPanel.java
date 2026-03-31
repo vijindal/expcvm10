@@ -1,6 +1,6 @@
 package ui.gui;
 
-import service.PropertyScanResult;
+import ui.result.PropertyScanResult;
 
 import javax.swing.*;
 import java.awt.*;

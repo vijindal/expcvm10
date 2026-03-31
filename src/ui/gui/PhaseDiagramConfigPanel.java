@@ -1,8 +1,8 @@
 package ui.gui;
 
-import service.PhaseDiagramRequest;
-import thermocalc.diagram.AxisConfig;
-import thermocalc.diagram.AxisConfig.Type;
+import ui.request.PhaseDiagramRequest;
+import calc.diagram.AxisConfig;
+import calc.diagram.AxisConfig.Type;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -297,7 +297,7 @@ public class PhaseDiagramConfigPanel extends JPanel {
     // ── Public API ─────────────────────────────────────────────────────
 
     public PhaseDiagramRequest buildRequest() {
-        service.DatabaseSelection sel = dbPanel.getSelection();
+        ui.request.DatabaseSelection sel = dbPanel.getSelection();
 
         PhaseDiagramRequest request = new PhaseDiagramRequest();
         request.setTdbFilePath(sel.getTdbPath() != null ? sel.getTdbPath() : "");
@@ -352,7 +352,7 @@ public class PhaseDiagramConfigPanel extends JPanel {
         statusLabel.setText("Validating inputs...");
         statusLabel.setForeground(DarkTheme.FG_SECOND);
 
-        service.DatabaseSelection sel = dbPanel.getSelection();
+        ui.request.DatabaseSelection sel = dbPanel.getSelection();
         if (!sel.hasTdb()) {
             setStatus("Error: TDB file required", DarkTheme.ERROR_COLOR); return;
         }

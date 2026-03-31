@@ -1,9 +1,9 @@
 package ui.gui;
 
-import service.DatabaseSelection;
-import service.PropertyScanRequest;
-import service.PropertyScanRequest.AxisType;
-import service.PropertyScanRequest.ScanType;
+import ui.request.DatabaseSelection;
+import ui.request.PropertyScanRequest;
+import ui.request.PropertyScanRequest.AxisType;
+import ui.request.PropertyScanRequest.ScanType;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -398,7 +398,7 @@ public class PropertyCalcConfigPanel extends JPanel {
     // ── Public API ────────────────────────────────────────────────────
 
     public PropertyScanRequest buildRequest() {
-        service.DatabaseSelection sel = dbPanel.getSelection();
+        ui.request.DatabaseSelection sel = dbPanel.getSelection();
 
         PropertyScanRequest req = new PropertyScanRequest();
         req.setTdbFilePath(sel.getTdbPath() != null ? sel.getTdbPath() : "");
@@ -442,7 +442,7 @@ public class PropertyCalcConfigPanel extends JPanel {
     }
 
     private void fireCalculate() {
-        service.DatabaseSelection sel = dbPanel.getSelection();
+        ui.request.DatabaseSelection sel = dbPanel.getSelection();
         if (!sel.hasTdb())      { setStatus("Error: TDB required",      DarkTheme.ERROR_COLOR); return; }
         if (!sel.hasElements()) { setStatus("Error: Elements required",  DarkTheme.ERROR_COLOR); return; }
         if (!sel.hasPhases())   { setStatus("Error: No phases",          DarkTheme.ERROR_COLOR); return; }

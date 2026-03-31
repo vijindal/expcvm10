@@ -1,8 +1,8 @@
 package ui.gui;
 
-import service.PhaseDiagramResult;
-import service.PhaseDiagramResult.LineSegment;
-import service.PhaseDiagramResult.NodePoint;
+import ui.result.PhaseDiagramResult;
+import ui.result.PhaseDiagramResult.LineSegment;
+import ui.result.PhaseDiagramResult.NodePoint;
 
 import javax.swing.JPanel;
 import java.awt.BasicStroke;

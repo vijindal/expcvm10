@@ -1,6 +1,6 @@
 package ui.gui;
 
-import service.DatabaseSelection;
+import ui.request.DatabaseSelection;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -89,7 +89,7 @@ public class ModelInspectorSidebarPanel extends JPanel {
         statusLabel.setForeground(color);
     }
 
-    public void showStatus(service.ModelInfo info) {
+    public void showStatus(ui.result.ModelInfo info) {
         if (info == null) { statusLabel.setText("No info"); return; }
         if (info.isFileExists()) {
             int nPhases = info.getAvailablePhases() != null ? info.getAvailablePhases().size() : 0;

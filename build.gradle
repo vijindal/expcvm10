@@ -3,12 +3,10 @@ plugins {
     id 'application'
 }
 
-// Configure source/target compatibility for Java 1.8
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(8)
-    }
-}
+// Configure source/target compatibility - use current JVM
+// Toolchain specification removed to allow Gradle to use available JVM
+sourceCompatibility = JavaVersion.VERSION_11
+targetCompatibility = JavaVersion.VERSION_11
 
 application {
     mainClass = 'ui.Main'

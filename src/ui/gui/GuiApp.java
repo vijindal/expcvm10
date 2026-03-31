@@ -1,7 +1,9 @@
 package ui.gui;
 
-import service.CalculationService;
-import service.OptimizationService;
+import ui.layer.SinglePointUseCase;
+import ui.layer.OptimizationUseCase;
+import ui.layer.PhaseDiagramUseCase;
+import ui.layer.ModelInspectionService;
 
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
@@ -12,12 +14,17 @@ import javax.swing.UIManager;
  */
 public class GuiApp {
 
-    private final CalculationService calculationService;
-    private final OptimizationService optimizationService;
+    private final SinglePointUseCase singlePointUseCase;
+    private final OptimizationUseCase optimizationUseCase;
+    private final PhaseDiagramUseCase phaseDiagramUseCase;
+    private final ModelInspectionService modelInspectionService;
 
-    public GuiApp(CalculationService calculationService, OptimizationService optimizationService) {
-        this.calculationService = calculationService;
-        this.optimizationService = optimizationService;
+    public GuiApp(SinglePointUseCase singlePointUseCase, OptimizationUseCase optimizationUseCase,
+                  PhaseDiagramUseCase phaseDiagramUseCase, ModelInspectionService modelInspectionService) {
+        this.singlePointUseCase = singlePointUseCase;
+        this.optimizationUseCase = optimizationUseCase;
+        this.phaseDiagramUseCase = phaseDiagramUseCase;
+        this.modelInspectionService = modelInspectionService;
     }
 
     /**
@@ -33,7 +40,8 @@ public class GuiApp {
             } catch (Exception e) {
                 // fall back to default look and feel
             }
-            MainController controller = new MainController(calculationService, optimizationService);
+            MainController controller = new MainController(singlePointUseCase, optimizationUseCase,
+                                                          phaseDiagramUseCase, modelInspectionService);
             MainFrame frame = new MainFrame(controller);
             frame.setVisible(true);
         });

@@ -1,7 +1,7 @@
 package util;
 
-import calbince.ExptData;
-import calbince.PhaseData;
+import legacy.calbince.ExptData;
+import legacy.calbince.PhaseData;
 import java.io.*;
 import java.util.StringTokenizer;
 

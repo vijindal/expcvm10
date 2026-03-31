@@ -1,7 +1,7 @@
 package ui.gui;
 
-import service.DatabaseSelection;
-import service.ModelInfo;
+import ui.request.DatabaseSelection;
+import ui.result.ModelInfo;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;

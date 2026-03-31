@@ -1,20 +1,21 @@
 package ui.gui;
 
-import service.CalculationRequest;
-import service.CalculationResult;
-import service.ModelInfo;
-import service.CalculationService;
-import service.PropertyScanRequest;
-import service.PropertyScanResult;
-import service.OptimizationService;
-import service.PhaseDiagramRequest;
-import service.PhaseDiagramResult;
-import service.PhaseDiagramUseCase;
-import thermocalc.diagram.AxisConfig;
-import infra.AppLevel;
-import infra.Trace;
-
-import database.tdb;
+import ui.request.CalculationRequest;
+import ui.result.CalculationResult;
+import ui.result.ModelInfo;
+import ui.layer.SinglePointUseCase;
+import ui.request.PropertyScanRequest;
+import ui.result.PropertyScanResult;
+import ui.layer.OptimizationUseCase;
+import ui.request.PhaseDiagramRequest;
+import ui.result.PhaseDiagramResult;
+import ui.layer.PhaseDiagramUseCase;
+import ui.layer.ModelInspectionService;
+import calc.diagram.AxisConfig;
+import util.AppLevel;
+import util.Trace;
+import contracts.LoggingPort;
+import contracts.OptimizationOutputPort;
 
 import java.io.IOException;
 import java.util.List;
@@ -29,19 +30,25 @@ import java.util.logging.Logger;
 public class MainController {
 
     private static final Logger LOG = Logger.getLogger(MainController.class.getName());
-    private final CalculationService calculationService;
-    private final OptimizationService optimizationService;
+    private final SinglePointUseCase singlePointUseCase;
+    private final OptimizationUseCase optimizationUseCase;
+    private final PhaseDiagramUseCase phaseDiagramUseCase;
+    private final ModelInspectionService modelInspectionService;
 
-    public MainController(CalculationService calculationService,
-                          OptimizationService optimizationService) {
-        this.calculationService = calculationService;
-        this.optimizationService = optimizationService;
+    public MainController(SinglePointUseCase singlePointUseCase,
+                          OptimizationUseCase optimizationUseCase,
+                          PhaseDiagramUseCase phaseDiagramUseCase,
+                          ModelInspectionService modelInspectionService) {
+        this.singlePointUseCase = singlePointUseCase;
+        this.optimizationUseCase = optimizationUseCase;
+        this.phaseDiagramUseCase = phaseDiagramUseCase;
+        this.modelInspectionService = modelInspectionService;
     }
 
     /**
      * Run a single-point calculation with the given parameters.
      */
-    public CalculationResult runSinglePoint(String tdbPath, String[] elements,
+    public contracts.EquilibriumResult runSinglePoint(String tdbPath, String[] elements,
                                             String method, String[] phases,
                                             double T, double P,
                                             ArrayList<ArrayList<Double>> compositions) {
@@ -56,16 +63,13 @@ public class MainController {
         request.setCompositions(compositions);
 
         try {
-            CalculationResult r = calculationService.runCalculation(request);
+            contracts.EquilibriumResult r = singlePointUseCase.execute(request);
             Trace.exit(LOG, AppLevel.FLOW, "MainController", "runSinglePoint");
             return r;
         } catch (Exception e) {
             LOG.log(Level.WARNING, "Single-point calculation failed", e);
-            CalculationResult error = new CalculationResult();
-            error.setSuccess(false);
-            error.setMessage("Error: " + e.getMessage());
             Trace.exit(LOG, AppLevel.FLOW, "MainController", "runSinglePoint");
-            return error;
+            throw new RuntimeException("Single-point calculation failed: " + e.getMessage(), e);
         }
     }
 
@@ -75,7 +79,7 @@ public class MainController {
     public PhaseDiagramResult runPhaseDiagram(PhaseDiagramRequest request) {
         Trace.enter(LOG, AppLevel.FLOW, "MainController", "runPhaseDiagram");
         try {
-            PhaseDiagramResult r = new PhaseDiagramUseCase().execute(request);
+            PhaseDiagramResult r = phaseDiagramUseCase.execute(request);
             Trace.exit(LOG, AppLevel.FLOW, "MainController", "runPhaseDiagram");
             return r;
         } catch (Exception e) {
@@ -97,7 +101,7 @@ public class MainController {
                                   String filePrefix, int maxIterations) {
         Trace.enter(LOG, AppLevel.FLOW, "MainController", "runOptimization");
         try {
-            optimizationService.runOptimization(exptDataFile, phaseDataFile, filePrefix, maxIterations);
+            optimizationUseCase.runOptimization(exptDataFile, phaseDataFile, filePrefix, maxIterations);
             Trace.exit(LOG, AppLevel.FLOW, "MainController", "runOptimization");
             return "Optimization completed successfully.";
         } catch (IOException e) {
@@ -109,21 +113,16 @@ public class MainController {
 
     /**
      * Run CalModel-based validation from the GUI.
+     * NOTE: Requires ModelInspectionService to be injected separately.
      */
     public CalculationResult runCalModel(String exptDataFile, String phaseDataFile) {
+        // TODO: Wire to ModelInspectionService in constructor
         Trace.enter(LOG, AppLevel.FLOW, "MainController", "runCalModel");
-        try {
-            CalculationResult r = calculationService.runCalModel(exptDataFile, phaseDataFile);
-            Trace.exit(LOG, AppLevel.FLOW, "MainController", "runCalModel");
-            return r;
-        } catch (Exception e) {
-            LOG.log(Level.WARNING, "CalModel run failed", e);
-            CalculationResult error = new CalculationResult();
-            error.setSuccess(false);
-            error.setMessage("Error: " + e.getMessage());
-            Trace.exit(LOG, AppLevel.FLOW, "MainController", "runCalModel");
-            return error;
-        }
+        CalculationResult error = new CalculationResult();
+        error.setSuccess(false);
+        error.setMessage("CalModel support requires ModelInspectionService injection");
+        Trace.exit(LOG, AppLevel.FLOW, "MainController", "runCalModel");
+        return error;
     }
 
     /**
@@ -131,28 +130,50 @@ public class MainController {
      */
     public ModelInfo inspectModel(String tdbPath, String[] elements) {
         Trace.enter(LOG, AppLevel.FLOW, "MainController", "inspectModel");
-        ModelInfo info = calculationService.inspectModel(tdbPath, elements);
-        Trace.exit(LOG, AppLevel.FLOW, "MainController", "inspectModel");
-        return info;
+        try {
+            ModelInfo info = modelInspectionService.inspectModel(tdbPath, elements);
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "inspectModel");
+            return info;
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "Model inspection failed", e);
+            ModelInfo error = new ModelInfo();
+            error.setError("Model inspection failed: " + e.getMessage());
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "inspectModel");
+            return error;
+        }
     }
 
     public List<String> getPhasesForElements(String tdbPath, List<String> elements) {
-        return calculationService.getPhasesForElements(tdbPath, elements);
+        Trace.enter(LOG, AppLevel.FLOW, "MainController", "getPhasesForElements");
+        try {
+            List<String> phases = modelInspectionService.getPhasesForElements(tdbPath, elements);
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "getPhasesForElements");
+            return phases;
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "Phase retrieval failed", e);
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "getPhasesForElements");
+            return new ArrayList<>();
+        }
     }
 
-    public List<tdb.Parameter> getPhaseParameters(String tdbPath, List<String> elements, String phaseName) {
-        return calculationService.getPhaseParameters(tdbPath, elements, phaseName);
+    public List<?> getPhaseParameters(String tdbPath, List<String> elements, String phaseName) {
+        Trace.enter(LOG, AppLevel.FLOW, "MainController", "getPhaseParameters");
+        try {
+            List<?> parameters = modelInspectionService.getPhaseParameters(tdbPath, elements, phaseName);
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "getPhaseParameters");
+            return parameters;
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "Parameter retrieval failed", e);
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "getPhaseParameters");
+            return new ArrayList<>();
+        }
     }
 
     public PropertyScanResult runPropertyScan(PropertyScanRequest request) {
-        try {
-            return calculationService.runPropertyScan(request);
-        } catch (Exception e) {
-            LOG.log(Level.WARNING, "Property scan failed", e);
-            PropertyScanResult err = new PropertyScanResult();
-            err.setSuccess(false);
-            err.setMessage("Error: " + e.getMessage());
-            return err;
-        }
+        // TODO: Wire to PropertyScanUseCase in constructor
+        PropertyScanResult err = new PropertyScanResult();
+        err.setSuccess(false);
+        err.setMessage("Property scan requires PropertyScanUseCase injection");
+        return err;
     }
 }

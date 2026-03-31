@@ -7,8 +7,8 @@ package util;
  *
  * @author Shivam
  */
-import calbince.ExptData;
-import calbince.PhaseData;
+import legacy.calbince.ExptData;
+import legacy.calbince.PhaseData;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.text.DateFormat;

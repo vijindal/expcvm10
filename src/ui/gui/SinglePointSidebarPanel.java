@@ -1,6 +1,6 @@
 package ui.gui;
 
-import service.DatabaseSelection;
+import ui.request.DatabaseSelection;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;

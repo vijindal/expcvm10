@@ -1,19 +1,20 @@
 package ui.cli;
 
-import service.CalculationRequest;
-import service.CalculationResult;
-import service.FitParametersUseCase;
-import service.ModelInfo;
-import service.ValidateModelUseCase;
-import service.SinglePointUseCase;
-import service.StepCalculationUseCase;
-import service.CalculationService;
-import service.OptimizationService;
-import service.PhaseDiagramRequest;
-import service.PhaseDiagramResult;
-import service.PhaseDiagramUseCase;
-import thermocalc.diagram.AxisConfig;
-import thermocalc.diagram.AxisConfig.Type;
+import ui.request.CalculationRequest;
+import ui.layer.FitParametersUseCase;
+import ui.result.ModelInfo;
+import ui.layer.ValidateModelUseCase;
+import ui.layer.SinglePointUseCase;
+import ui.layer.StepCalculationUseCase;
+import ui.layer.OptimizationUseCase;
+import ui.layer.PhaseDiagramUseCase;
+import ui.layer.ModelInspectionService;
+import ui.request.PhaseDiagramRequest;
+import ui.result.PhaseDiagramResult;
+import contracts.DatabasePort;
+import calc.diagram.AxisConfig;
+import calc.diagram.AxisConfig.Type;
+import system.database.TdbParser;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -34,12 +35,17 @@ public class CliApp {
 
     private static final Logger LOG = Logger.getLogger(CliApp.class.getName());
 
-    private final CalculationService  calculationService;
-    private final OptimizationService optimizationService;
+    private final SinglePointUseCase singlePointUseCase;
+    private final OptimizationUseCase optimizationUseCase;
+    private final PhaseDiagramUseCase phaseDiagramUseCase;
+    private final ModelInspectionService modelInspectionService;
 
-    public CliApp(CalculationService calculationService, OptimizationService optimizationService) {
-        this.calculationService  = calculationService;
-        this.optimizationService = optimizationService;
+    public CliApp(SinglePointUseCase singlePointUseCase, OptimizationUseCase optimizationUseCase,
+                  PhaseDiagramUseCase phaseDiagramUseCase) {
+        this.singlePointUseCase = singlePointUseCase;
+        this.optimizationUseCase = optimizationUseCase;
+        this.phaseDiagramUseCase = phaseDiagramUseCase;
+        this.modelInspectionService = new ModelInspectionService(new TdbParser());
     }
 
     public void run(String[] args) throws IOException {
@@ -86,29 +92,28 @@ public class CliApp {
     // ──────────────────────────────────────────────────────────────────
 
     private void runDefaultCalculation(String cwd) throws IOException {
-        String tdbPath = cwd + "/data/tizr_kum_cvm.tdb";
-        String[] elements = {"TI", "ZR"};
+        String tdbPath = cwd + "/data/cost507.tdb";
+        String[] elements = {"NB", "TI"};
 
         CalculationRequest request = new CalculationRequest();
         request.setTdbFilePath(tdbPath);
         request.setElements(new ArrayList<>(Arrays.asList(elements)));
         request.setMethod("HM");
         ArrayList<String> phases = new ArrayList<>();
-        phases.add("LIQUID");
+        phases.add("BCC_A2");
         request.setPhases(phases);
-        request.setT(500.0);
+        request.setT(1000.0);
         request.setP(10000.0);
 
         ArrayList<Double> x = new ArrayList<>();
-        double temp = 1.0 / 3;
+        double temp = 1.0 / 2;
         x.add(temp); x.add(temp); x.add(temp);
         ArrayList<ArrayList<Double>> condX = new ArrayList<>();
         condX.add(x);
         request.setCompositions(condX);
 
-        SinglePointUseCase useCase = new SinglePointUseCase(calculationService);
-        CalculationResult result = useCase.execute(request);
-        System.out.println("Result: " + result.getMessage());
+        contracts.EquilibriumResult result = singlePointUseCase.execute(request);
+        System.out.println("Result: converged=" + result.isConverged());
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -171,7 +176,7 @@ public class CliApp {
         request.setAxes(axes);
 
         try {
-            PhaseDiagramResult result = new PhaseDiagramUseCase().execute(request);
+            PhaseDiagramResult result = phaseDiagramUseCase.execute(request);
             if (result.isComplete()) {
                 System.out.println("✓ Calculation complete");
                 System.out.printf("  Lines:  %d%n", result.getLines().size());
@@ -234,7 +239,7 @@ public class CliApp {
         System.out.println("─── TDB Inspection ──────────────────────────────────");
         System.out.println("File: " + tdbPath);
 
-        ModelInfo info = calculationService.inspectModel(tdbPath, new String[]{});
+        ModelInfo info = modelInspectionService.inspectModel(tdbPath, new String[]{});
 
         System.out.println("Exists:   " + info.isFileExists());
         if (info.getAvailableElements() != null) {
@@ -255,12 +260,12 @@ public class CliApp {
     // ──────────────────────────────────────────────────────────────────
 
     private void runOptimization(String expIn, String phaseIn, String filePrefix) throws IOException {
-        FitParametersUseCase useCase = new FitParametersUseCase(optimizationService);
+        FitParametersUseCase useCase = new FitParametersUseCase(optimizationUseCase);
         useCase.execute(expIn, phaseIn, filePrefix, 50);
     }
 
     private void runCalModel(String expIn, String phaseIn, String filePrefix) throws IOException {
-        ValidateModelUseCase useCase = new ValidateModelUseCase(calculationService);
+        ValidateModelUseCase useCase = new ValidateModelUseCase(modelInspectionService);
         useCase.execute(expIn, phaseIn);
     }
 
