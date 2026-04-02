@@ -1,7 +1,7 @@
 package ui.layer;
 
-import contracts.DatabasePort;
-import contracts.EquilibriumResult;
+import system.ports.DatabasePort;
+import system.ports.EquilibriumResult;
 import system.model.GibbsEnergyModel;
 import calc.equil.EquilibriumSolver;
 import ui.request.CalculationRequest;

@@ -11,7 +11,7 @@ import ui.layer.PhaseDiagramUseCase;
 import ui.layer.ModelInspectionService;
 import ui.request.PhaseDiagramRequest;
 import ui.result.PhaseDiagramResult;
-import contracts.DatabasePort;
+import system.ports.DatabasePort;
 import calc.diagram.AxisConfig;
 import calc.diagram.AxisConfig.Type;
 import system.database.TdbParser;
@@ -112,7 +112,7 @@ public class CliApp {
         condX.add(x);
         request.setCompositions(condX);
 
-        contracts.EquilibriumResult result = singlePointUseCase.execute(request);
+        system.ports.EquilibriumResult result = singlePointUseCase.execute(request);
         System.out.println("Result: converged=" + result.isConverged());
     }
 

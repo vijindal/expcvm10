@@ -14,8 +14,8 @@ import ui.layer.ModelInspectionService;
 import calc.diagram.AxisConfig;
 import util.AppLevel;
 import util.Trace;
-import contracts.LoggingPort;
-import contracts.OptimizationOutputPort;
+import system.ports.LoggingPort;
+import system.ports.OptimizationOutputPort;
 
 import java.io.IOException;
 import java.util.List;
@@ -48,7 +48,7 @@ public class MainController {
     /**
      * Run a single-point calculation with the given parameters.
      */
-    public contracts.EquilibriumResult runSinglePoint(String tdbPath, String[] elements,
+    public system.ports.EquilibriumResult runSinglePoint(String tdbPath, String[] elements,
                                             String method, String[] phases,
                                             double T, double P,
                                             ArrayList<ArrayList<Double>> compositions) {
@@ -63,7 +63,7 @@ public class MainController {
         request.setCompositions(compositions);
 
         try {
-            contracts.EquilibriumResult r = singlePointUseCase.execute(request);
+            system.ports.EquilibriumResult r = singlePointUseCase.execute(request);
             Trace.exit(LOG, AppLevel.FLOW, "MainController", "runSinglePoint");
             return r;
         } catch (Exception e) {

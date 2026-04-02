@@ -1,6 +1,6 @@
 package calc.diagram;
 
-import contracts.EquilibriumResult;
+import system.ports.EquilibriumResult;
 import system.model.GibbsEnergyModel;
 import calc.equil.EquilibriumSolver;
 import util.Constants;

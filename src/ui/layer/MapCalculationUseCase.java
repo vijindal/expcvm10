@@ -1,7 +1,7 @@
 package ui.layer;
 
 import calc.diagram.DiagramTracer;
-import contracts.DatabasePort;
+import system.ports.DatabasePort;
 import system.model.GibbsEnergyModel;
 import ui.request.PhaseDiagramRequest;
 import ui.result.PhaseDiagramResult;

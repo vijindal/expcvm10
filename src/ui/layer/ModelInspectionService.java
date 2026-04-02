@@ -2,7 +2,7 @@ package ui.layer;
 
 import legacy.calbince.*;
 import system.database.tdb;
-import contracts.DatabasePort;
+import system.ports.DatabasePort;
 import util.AppLevel;
 import util.Trace;
 import system.database.TdbParser;

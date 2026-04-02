@@ -1,6 +1,6 @@
 package ui.gui;
 
-import contracts.EquilibriumResult;
+import system.ports.EquilibriumResult;
 import ui.result.CalculationResult;
 import ui.result.PhaseDiagramResult;
 import ui.result.PropertyScanResult;

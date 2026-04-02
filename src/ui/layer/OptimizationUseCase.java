@@ -1,8 +1,8 @@
 package ui.layer;
 
 import legacy.calbince.*;
-import contracts.LoggingPort;
-import contracts.OptimizationOutputPort;
+import system.ports.LoggingPort;
+import system.ports.OptimizationOutputPort;
 import util.AppLevel;
 import util.Trace;
 

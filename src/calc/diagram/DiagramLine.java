@@ -1,6 +1,6 @@
 package calc.diagram;
 
-import contracts.EquilibriumResult;
+import system.ports.EquilibriumResult;
 
 import java.util.ArrayList;
 import java.util.Collections;

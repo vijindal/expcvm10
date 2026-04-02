@@ -1,6 +1,6 @@
 package legacy;
 
-import contracts.LegacyFitPort;
+import system.ports.LegacyFitPort;
 import legacy.phase.C15Phase;
 
 /**

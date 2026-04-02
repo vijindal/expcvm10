@@ -4,11 +4,12 @@ package system.database;
 import system.database.tdb;
 import system.model.GibbsEnergyModel;
 import system.model.rk.RkPhaseModelFactory;
-import contracts.DatabasePort;
+import system.ports.DatabasePort;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -61,17 +62,51 @@ public class TdbParser implements DatabasePort {
     }
 
     @Override
-    public List<?> buildPhaseModels(List<String> elements, List<String> phaseNames) throws IOException {
-        List<GibbsEnergyModel> models = new ArrayList<>();
-        DatabasePort sub = extractSystem(elements.toArray(new String[0]));
-        tdb systdb = ((TdbParser) sub).getUnderlyingTdb();
+    public List<?> buildPhaseModels(List<String> elements,
+                                    List<String> phaseNames) throws IOException {
 
+        List<system.model.PhaseModelFactory.PhaseModel> models = new ArrayList<>();
+
+        // Step 1: extract affMap and pMap from TYPE_DEFINITION records
+        // These contain MAGNETIC parameters: aff (value1) and p (value2)
+        Map<String, Double> affMap = new java.util.HashMap<>();
+        Map<String, Double> pMap   = new java.util.HashMap<>();
+
+        tdb systdb = this.getUnderlyingTdb();
+        if (systdb != null) {
+            for (tdb.TypeDefinition td : systdb.getTypeDefinitions()) {
+                if ("MAGNETIC".equalsIgnoreCase(td.property)
+                        && td.phasename != null
+                        && !td.phasename.isEmpty()) {
+                    affMap.put(td.phasename, td.value1);
+                    pMap.put(td.phasename, td.value2);
+                    LOG.fine("Magnetic phase: " + td.phasename
+                           + " aff=" + td.value1 + " p=" + td.value2);
+                }
+            }
+        }
+
+        // Step 2: extract system tdb filtered for selected elements
+        DatabasePort filteredDb = extractSystem(elements.toArray(new String[0]));
+        tdb filteredTdb = ((TdbParser) filteredDb).getUnderlyingTdb();
+
+        // Step 3: build a PhaseModel for each requested phase
         for (String phaseName : phaseNames) {
             try {
-                models.add(RkPhaseModelFactory.build(phaseName, elements, systdb));
-                LOG.fine("Built model: " + phaseName);
+                system.model.PhaseModelFactory.PhaseModel model =
+                    system.model.PhaseModelFactory.build(
+                        phaseName,
+                        filteredTdb,
+                        elements,
+                        affMap,
+                        pMap
+                    );
+                models.add(model);
+                LOG.fine("Built CEF model: " + phaseName
+                       + (model.hasMagnetic() ? " [MAGNETIC]" : ""));
             } catch (Exception ex) {
-                LOG.warning("Skipping phase " + phaseName + ": " + ex.getMessage());
+                LOG.warning("Skipping phase " + phaseName
+                          + ": " + ex.getMessage());
             }
         }
         return models;

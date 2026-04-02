@@ -54,7 +54,7 @@ public class PhaseDiagram {
      * @param axisValues   axis coordinates (length = numAxes)
      * @return the new node
      */
-    public DiagramNode addNode(contracts.EquilibriumResult equilibrium,
+    public DiagramNode addNode(system.ports.EquilibriumResult equilibrium,
                                double[] axisValues) {
         DiagramNode node = new DiagramNode(nodeIdSeq.getAndIncrement(),
                                            equilibrium, axisValues);

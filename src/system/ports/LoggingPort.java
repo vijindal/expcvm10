@@ -1,4 +1,4 @@
-package contracts;
+package system.ports;
 
 /**
  * Port interface for application logging.

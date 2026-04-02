@@ -3,7 +3,7 @@ package ui.layer;
 import calc.diagram.AxisConfig;
 import calc.diagram.DiagramTracer;
 import calc.diagram.PhaseDiagram;
-import contracts.DatabasePort;
+import system.ports.DatabasePort;
 import system.model.GibbsEnergyModel;
 import ui.request.PhaseDiagramRequest;
 import ui.result.PhaseDiagramResult;

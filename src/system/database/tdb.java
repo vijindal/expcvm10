@@ -1281,12 +1281,26 @@ public class tdb {
         String secondaryKeyword;
 
         TypeDefinition(String keywordLine) throws IOException {
-            String endmarkSpace = " ";
-            String[] tempList = splitString(keywordLine, endmarkSpace);
-            this.dataTypeCode = tempList[0];
-            this.secondaryKeyword = tempList[1];//Processing of secondaryKeyword is to be done !
-            //Print.f("dataTypeCode: " + dataTypeCode, 0);
-            //Print.f("secondaryKeyword: " + secondaryKeyword, 0);
+            // Input example: "& GES A_P_D BCC_A2 MAGNETIC  -1.0    4.00000E-01"
+            // Fields:          [0] [1] [2]  [3]   [4]        [5]     [6]
+            String[] tempList = splitString(keywordLine, " ");
+            // Filter empty tokens from multiple spaces
+            ArrayList<String> tokens = new ArrayList<>();
+            for (String t : tempList) {
+                if (t != null && !t.trim().isEmpty()) tokens.add(t.trim());
+            }
+            this.dataTypeCode    = tokens.size() > 0 ? tokens.get(0) : "";
+            this.secondaryKeyword= tokens.size() > 1 ? tokens.get(1) : "";
+            // secondaryKeyword is typically "GES"
+            // tokens[2] is "A_P_D"
+            this.phasename       = tokens.size() > 3 ? tokens.get(3) : "";
+            this.property        = tokens.size() > 4 ? tokens.get(4) : "";
+            this.value1 = 0.0;
+            this.value2 = 0.0;
+            try { if (tokens.size() > 5) this.value1 = Double.parseDouble(tokens.get(5)); }
+            catch (NumberFormatException e) { /* leave 0.0 */ }
+            try { if (tokens.size() > 6) this.value2 = Double.parseDouble(tokens.get(6)); }
+            catch (NumberFormatException e) { /* leave 0.0 */ }
         }
     };
 
@@ -1381,6 +1395,15 @@ public class tdb {
             names.add(phase.getPhaseName());
         }
         return names;
+    }
+
+    /**
+     * Returns all TypeDefinition records in this database.
+     * Used by TdbParser to extract MAGNETIC model parameters.
+     */
+    public ArrayList<TypeDefinition> getTypeDefinitions() {
+        if (typeDefinitionList == null) return new ArrayList<>();
+        return new ArrayList<>(typeDefinitionList);
     }
 
     public HashMap countElements(String formula) {

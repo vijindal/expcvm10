@@ -1,6 +1,6 @@
 package util;
 
-import contracts.LoggingPort;
+import system.ports.LoggingPort;
 import util.Print;
 
 import java.util.logging.Logger;

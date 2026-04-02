@@ -1,6 +1,6 @@
 package ui.layer;
 
-import contracts.LegacyFitPort;
+import system.ports.LegacyFitPort;
 
 import java.io.IOException;
 import java.util.logging.Logger;

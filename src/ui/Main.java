@@ -10,7 +10,7 @@ import util.OptimizationOutputAdapter;
 import system.database.TdbParser;
 import ui.cli.CliApp;
 import ui.gui.GuiApp;
-import contracts.DatabasePort;
+import system.ports.DatabasePort;
 
 import java.io.IOException;
 import java.util.Arrays;

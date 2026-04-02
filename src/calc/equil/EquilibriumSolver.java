@@ -1,7 +1,7 @@
 package calc.equil;
 
-import contracts.EquilibriumResult;
-import contracts.EquilibriumResult.PhaseResult;
+import system.ports.EquilibriumResult;
+import system.ports.EquilibriumResult.PhaseResult;
 import system.model.PhaseEquilData;
 import system.model.GibbsEnergyModel;
 import util.Matrix;

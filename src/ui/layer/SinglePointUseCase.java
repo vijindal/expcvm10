@@ -1,6 +1,6 @@
 package ui.layer;
 
-import contracts.EquilibriumResult;
+import system.ports.EquilibriumResult;
 import ui.request.CalculationRequest;
 
 import java.io.IOException;
