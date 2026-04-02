@@ -5,128 +5,115 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Compound Energy Formalism (CEF) Gibbs energy evaluator for C15 Laves phases.
- *
- * <h2>Mathematica correspondence</h2>
- * Direct translation of {@code calGC15[paramList]} in clusGen_25, extended with
- * full analytical first and second derivatives needed by {@link CefPhaseModel}.
- *
- * <h2>Crystal structure: C15 Laves (A,B,...)₂(A,B,...)₁</h2>
- * <pre>
- *   ns = 2 sublattices,  a = {2, 1} stoichiometric coefficients
- *   nc = number of components (2, 3, or 4)
- *   nip = 2·nc internal parameters: y = {y[0][0]..y[0][nc-1], y[1][0]..y[1][nc-1]}
- * </pre>
- * Component mole numbers:  {@code n[k] = 2·y[0][k] + 1·y[1][k]}   (from the n-vector)
+ * Compound Energy Formalism (CEF) Gibbs energy evaluator for general ns sublattices.
  *
  * <h2>Gibbs energy formula</h2>
  * <pre>
  *   G = G₀ + G_id + G_Em
  *
- *   G₀   = Σᵢ Σⱼ y[0][i]·y[1][j]·G[i][j](T)                        (end-member reference)
+ *   G₀   = Σ over all end members em: (∏ₛ y[offset[s]+idx_em[s]]) · G_em(T)
  *
- *   G_id = R·T·(2·Σᵢ y[0][i]·ln(y[0][i])  +  1·Σⱼ y[1][j]·ln(y[1][j]))
- *                ↑ sublattice-1 weighted by a₁=2      ↑ sublattice-2 weighted by a₂=1
+ *   G_id = R·T · Σₛ a[s] · Σᵢ y[offset[s]+i] · ln(y[offset[s]+i])
  *
- *   G_Em = Σ over all L params: y[pairSL][pA]·y[pairSL][pB]·y[otherSL][k]·L(T)
+ *   G_Em = Σ_interactions y[pSL][pA]·y[pSL][pB]·y[oSL][k]·L(T)
  * </pre>
+ *
+ * <p><b>Known limitation</b>: {@code CefInteractionParam} uses
+ * {@code oSL = 1 - pSL}, which assumes each interaction parameter
+ * pairs exactly two sublattices. This covers all standard TDB databases.</p>
  *
  * <h2>Internal parameter layout</h2>
- * {@code y[s][i]} is stored in a flat array of length {@code 2·nc}:
+ * The flat index for sublattice s, constituent i is:
  * <pre>
- *   flat index: s*nc + i   (s=0: sublattice 1, s=1: sublattice 2)
- * </pre>
- * This matches the Mathematica flattening {@code ipl = {y11,y12,...,y21,y22,...}}.
- *
- * <h2>Analytical derivatives — derivation</h2>
- *
- * Let {@code m = s·nc + i} be the flat index for sublattice {@code s}, component {@code i}.
- *
- * <b>∂G₀/∂y[s][i]</b>:
- * <pre>
- *   if s=0: ∂/∂y[0][i] Σₐ Σ_b y[0][a]·y[1][b]·G[a][b] = Σ_b y[1][b]·G[i][b]
- *   if s=1: ∂/∂y[1][j] Σₐ Σ_b y[0][a]·y[1][b]·G[a][b] = Σₐ y[0][a]·G[a][j]
+ *   m = offset[s] + i
+ *   where offset[0] = 0,  offset[s] = offset[s-1] + nc[s-1]
+ *   nip = offset[ns-1] + nc[ns-1]  = Σₛ nc[s]
  * </pre>
  *
- * <b>∂G_id/∂y[s][i]</b>:
+ * <h2>End-member radix ordering</h2>
+ * End member em is decoded by:
  * <pre>
- *   = R·T·a[s]·(ln(y[s][i]) + 1)
+ *   stride[0] = 1
+ *   stride[s] = stride[s-1] * nc[s-1]
+ *   idx[s] = (em / stride[s]) % nc[s]
  * </pre>
- *
- * <b>∂G_Em/∂y[s][i]</b>: for each interaction param p:
- * <pre>
- *   Type 1 (pair on SL 0): contribution y[0][pA]·y[0][pB]·y[1][k]·L
- *     ∂/∂y[0][pA] = y[0][pB]·y[1][k]·L
- *     ∂/∂y[0][pB] = y[0][pA]·y[1][k]·L
- *     ∂/∂y[1][k]  = y[0][pA]·y[0][pB]·L
- *   Type 2 (pair on SL 1): contribution y[1][pA]·y[1][pB]·y[0][k]·L
- *     ∂/∂y[1][pA] = y[1][pB]·y[0][k]·L
- *     ∂/∂y[1][pB] = y[1][pA]·y[0][k]·L
- *     ∂/∂y[0][k]  = y[1][pA]·y[1][pB]·L
- * </pre>
- *
- * <b>∂²G/∂y[s][i]·∂y[t][j]</b>:
- * <pre>
- *   G₀ cross terms:
- *     s=0,t=1: ∂²G₀/∂y[0][i]∂y[1][j] = G[i][j]
- *     s=1,t=0: G[i][j]  (symmetric)
- *     same-sublattice: 0
- *   G_id diagonal only:
- *     s=t, i=j: R·T·a[s]/y[s][i]
- *     otherwise: 0
- *   G_Em: differentiate Gx_Em[m] w.r.t. y[t][j] — three-variable product, second deriv is simpler.
- * </pre>
- *
- * <b>∂²G/∂y[s][i]∂T (GxT)</b>:
- * <pre>
- *   G₀:   Σ_b y[1][b]·dG[i][b]/dT  (s=0) or Σₐ y[0][a]·dG[a][j]/dT (s=1)
- *   G_id: R·a[s]·(ln(y[s][i]) + 1)
- *   G_Em: same structure as ∂G_Em/∂y[s][i] but with dL/dT instead of L
- * </pre>
+ * so sublattice 0 is the least-significant digit.
  */
 public class CefGibbs {
 
     // ------------------------------------------------------------------
-    // Constants
+    // Class-level constants
     // ------------------------------------------------------------------
+
+    /** Maximum number of sublattices supported. */
+    public static final int MAX_SUBLATTICES = 9;
 
     /** Universal gas constant J/(mol·K). */
     public static final double R = 8.3144598;
 
-    /** Stoichiometric coefficients: a[0]=2 (sublattice 1), a[1]=1 (sublattice 2). */
-    private static final double[] A = {2.0, 1.0};
-
     // ------------------------------------------------------------------
-    // State
+    // Fields
     // ------------------------------------------------------------------
 
-    private final int nc;   // number of components
-    private final int nip;  // 2·nc internal parameters
+    /** Number of sublattices. */
+    private final int ns;
 
-    /**
-     * End-member energies G[i][j], stored as flat array indexed by i*nc + j.
-     * i = sublattice-1 species (0..nc-1), j = sublattice-2 species (0..nc-1).
-     */
+    /** Stoichiometric coefficients, length ns. */
+    private final double[] a;
+
+    /** Constituents per sublattice, length ns. */
+    private final int[] nc;
+
+    /** Flat-index offset for each sublattice: offset[s] = sum of nc[0..s-1], length ns. */
+    private final int[] offset;
+
+    /** Total site fractions = sum of nc[s]. */
+    private final int nip;
+
+    /** End members; length = product of nc[s]; indexed in mixed-radix order (SL0 least significant). */
     private final CefEndMember[] g0;
 
+    /** Interaction parameters (unmodifiable). */
     private final List<CefInteractionParam> interactions;
 
     // ------------------------------------------------------------------
-    // Construction
+    // Constructor
     // ------------------------------------------------------------------
 
     /**
-     * Constructs a CEF Gibbs evaluator.
+     * Constructs a general ns-sublattice CEF Gibbs evaluator.
      *
-     * @param nc           number of components (2, 3, or 4)
-     * @param g0           end-member energies, flat array length nc² indexed [i*nc+j]
-     * @param interactions CEF interaction parameters (may be empty if all zero)
+     * @param sublatticeCoeffs         stoichiometric coefficients a[s], length ns
+     * @param constituentsPerSublattice nc[s], length ns
+     * @param g0                        end-member array, length = ∏ nc[s], in mixed-radix order
+     * @param interactions              CEF interaction parameters (may be empty)
      */
-    public CefGibbs(int nc, CefEndMember[] g0, List<CefInteractionParam> interactions) {
-        if (g0.length != nc * nc)
-            throw new IllegalArgumentException("g0 must have length nc²=" + nc * nc);
-        this.nc           = nc;
-        this.nip          = 2 * nc;
+    public CefGibbs(double[] sublatticeCoeffs,
+                    int[] constituentsPerSublattice,
+                    CefEndMember[] g0,
+                    List<CefInteractionParam> interactions) {
+        if (sublatticeCoeffs.length != constituentsPerSublattice.length)
+            throw new IllegalArgumentException(
+                "sublatticeCoeffs.length=" + sublatticeCoeffs.length
+                + " != constituentsPerSublattice.length=" + constituentsPerSublattice.length);
+        if (sublatticeCoeffs.length > MAX_SUBLATTICES)
+            throw new IllegalArgumentException(
+                "Number of sublattices " + sublatticeCoeffs.length
+                + " exceeds MAX_SUBLATTICES=" + MAX_SUBLATTICES);
+        int prod = 1;
+        for (int n : constituentsPerSublattice) prod *= n;
+        if (g0.length != prod)
+            throw new IllegalArgumentException(
+                "g0.length=" + g0.length + " but product of nc[s]=" + prod);
+
+        this.ns     = sublatticeCoeffs.length;
+        this.a      = sublatticeCoeffs.clone();
+        this.nc     = constituentsPerSublattice.clone();
+        this.offset = new int[ns];
+        offset[0]   = 0;
+        for (int s = 1; s < ns; s++)
+            offset[s] = offset[s - 1] + nc[s - 1];
+        this.nip          = offset[ns - 1] + nc[ns - 1];
         this.g0           = g0.clone();
         this.interactions = Collections.unmodifiableList(new ArrayList<>(interactions));
     }
@@ -137,10 +124,8 @@ public class CefGibbs {
 
     /**
      * Evaluates G(y, T) = G₀ + G_id + G_Em.
-     * Translation of {@code calGC15[paramList][[1]]} (returns full G, not Gmix).
      *
-     * @param y  internal parameter vector, length 2·nc:
-     *           {y[0][0]..y[0][nc-1], y[1][0]..y[1][nc-1]}
+     * @param y  flat site-fraction vector, length nip
      * @param T  temperature in Kelvin
      * @return   molar Gibbs energy in J/mol
      */
@@ -150,128 +135,135 @@ public class CefGibbs {
     }
 
     /**
-     * Composition gradient ∂G/∂y[s][i] for all flat indices m = s·nc + i.
-     * Corresponds to {@code Gx = Table[D[G, ipl[[i]]], {i, nip}]} in Mathematica.
+     * Composition gradient ∂G/∂y[m] for all flat indices m = offset[s] + i.
      *
-     * @param y  internal parameter vector
-     * @param T  temperature
-     * @return   gradient vector, length nip = 2·nc
+     * @param y  flat site-fraction vector
+     * @param T  temperature in Kelvin
+     * @return   gradient vector, length nip
      */
     public double[] gradient(double[] y, double T) {
         checkY(y);
         double[] gx = new double[nip];
 
-        // ── G₀ contribution ──────────────────────────────────────────
-        // ∂G₀/∂y[0][i] = Σ_j y[1][j]·G[i][j]
-        for (int i = 0; i < nc; i++) {
-            double sum = 0.0;
-            for (int j = 0; j < nc; j++) {
-                sum += y[nc + j] * g0[i * nc + j].G(T);
-            }
-            gx[i] += sum;    // flat index for SL1: 0*nc + i = i
-        }
-        // ∂G₀/∂y[1][j] = Σ_i y[0][i]·G[i][j]
-        for (int j = 0; j < nc; j++) {
-            double sum = 0.0;
-            for (int i = 0; i < nc; i++) {
-                sum += y[i] * g0[i * nc + j].G(T);
-            }
-            gx[nc + j] += sum;  // flat index for SL2: 1*nc + j = nc+j
-        }
+        // ── G₀ contribution ──────────────────────────────────────────────
+        // For each end member em, ∂G₀/∂y[m] = (∏_{t≠s} y[offset[t]+idx[t]]) · G_em(T)
+        // where m = offset[s] + idx[s]
+        int totalEM = totalEndMembers();
+        int[] stride = computeStrides();
 
-        // ── G_id contribution ─────────────────────────────────────────
-        // ∂G_id/∂y[s][i] = R·T·a[s]·(ln(y[s][i]) + 1)
-        for (int s = 0; s < 2; s++) {
-            double aS = A[s];
-            for (int i = 0; i < nc; i++) {
-                int m = s * nc + i;
-                gx[m] += R * T * aS * (Math.log(y[m]) + 1.0);
+        for (int em = 0; em < totalEM; em++) {
+            int[] idx = decodeEM(em, stride);
+            double yProd = 1.0;
+            for (int s = 0; s < ns; s++)
+                yProd *= y[offset[s] + idx[s]];
+            double gVal = g0[em].G(T);
+            for (int s = 0; s < ns; s++) {
+                int m = offset[s] + idx[s];
+                gx[m] += (yProd / y[m]) * gVal;
             }
         }
 
-        // ── G_Em contribution ─────────────────────────────────────────
+        // ── G_id contribution ─────────────────────────────────────────────
+        // ∂G_id/∂y[m] = R·T·a[s]·(ln(y[m]) + 1)
+        for (int s = 0; s < ns; s++) {
+            for (int i = 0; i < nc[s]; i++) {
+                int m = offset[s] + i;
+                gx[m] += R * T * a[s] * (Math.log(y[m]) + 1.0);
+            }
+        }
+
+        // ── G_Em contribution ─────────────────────────────────────────────
         addGEmGradient(y, T, gx, false);
 
         return gx;
     }
 
     /**
-     * Hessian ∂²G/∂y[s][i]∂y[t][j], returned as (nip × nip) matrix.
-     * Corresponds to {@code Gxx = Table[D[G, ipl[[j]], ipl[[i]]], {j,nip},{i,nip}]}.
+     * Hessian ∂²G/∂y[m]∂y[n], returned as (nip × nip) matrix.
      *
-     * @param y  internal parameter vector
-     * @param T  temperature
+     * @param y  flat site-fraction vector
+     * @param T  temperature in Kelvin
      * @return   symmetric nip×nip Hessian
+     * <p>Note: cross-sublattice terms are skipped when any site fraction
+     * y[m] &lt; 1e-300 to avoid Inf/NaN at boundary compositions.</p>
      */
     public double[][] hessian(double[] y, double T) {
         checkY(y);
         double[][] gxx = new double[nip][nip];
 
-        // ── G₀: cross-sublattice terms only ──────────────────────────
-        // ∂²G₀/∂y[0][i]∂y[1][j] = G[i][j]
-        for (int i = 0; i < nc; i++) {
-            for (int j = 0; j < nc; j++) {
-                double gij = g0[i * nc + j].G(T);
-                int mi = i;          // SL1 flat index
-                int mj = nc + j;     // SL2 flat index
-                gxx[mi][mj] += gij;
-                gxx[mj][mi] += gij;  // symmetric
+        // ── G₀: cross-sublattice terms ───────────────────────────────────
+        int totalEM = totalEndMembers();
+        int[] stride = computeStrides();
+
+        for (int em = 0; em < totalEM; em++) {
+            int[] idx = decodeEM(em, stride);
+            double yProd = 1.0;
+            for (int s = 0; s < ns; s++)
+                yProd *= y[offset[s] + idx[s]];
+            double gVal = g0[em].G(T);
+            for (int s1 = 0; s1 < ns; s1++) {
+                for (int s2 = s1 + 1; s2 < ns; s2++) {
+                    int m1 = offset[s1] + idx[s1];
+                    int m2 = offset[s2] + idx[s2];
+                    if (y[m1] < 1e-300 || y[m2] < 1e-300) continue;
+                    double partialProduct = yProd / (y[m1] * y[m2]);
+                    gxx[m1][m2] += partialProduct * gVal;
+                    gxx[m2][m1] += partialProduct * gVal;
+                }
             }
         }
 
-        // ── G_id: diagonal only ───────────────────────────────────────
-        // ∂²G_id/∂y[s][i]² = R·T·a[s]/y[s][i]
-        for (int s = 0; s < 2; s++) {
-            for (int i = 0; i < nc; i++) {
-                int m = s * nc + i;
-                gxx[m][m] += R * T * A[s] / y[m];
+        // ── G_id: diagonal only ───────────────────────────────────────────
+        // ∂²G_id/∂y[m]² = R·T·a[s]/y[m]
+        for (int s = 0; s < ns; s++) {
+            for (int i = 0; i < nc[s]; i++) {
+                int m = offset[s] + i;
+                gxx[m][m] += R * T * a[s] / y[m];
             }
         }
 
-        // ── G_Em: differentiate gradient w.r.t. each y ────────────────
+        // ── G_Em ──────────────────────────────────────────────────────────
         addGEmHessian(y, T, gxx, false);
 
         return gxx;
     }
 
     /**
-     * Mixed derivative ∂²G/∂y[s][i]∂T = ∂(Gx)/∂T (GxT vector).
-     * Corresponds to {@code GxT = D[Gx, T]} in Mathematica.
+     * Mixed derivative ∂²G/∂y[m]∂T (GxT vector).
      *
-     * @param y  internal parameter vector
-     * @param T  temperature
+     * @param y  flat site-fraction vector
+     * @param T  temperature in Kelvin
      * @return   GxT vector, length nip
      */
     public double[] gradientDT(double[] y, double T) {
         checkY(y);
         double[] gxt = new double[nip];
 
-        // ── G₀: ∂/∂T of (∂G₀/∂y[0][i]) = Σ_j y[1][j]·dG[i][j]/dT ──
-        for (int i = 0; i < nc; i++) {
-            double sum = 0.0;
-            for (int j = 0; j < nc; j++) {
-                sum += y[nc + j] * g0[i * nc + j].dGdT(T);
-            }
-            gxt[i] += sum;
-        }
-        for (int j = 0; j < nc; j++) {
-            double sum = 0.0;
-            for (int i = 0; i < nc; i++) {
-                sum += y[i] * g0[i * nc + j].dGdT(T);
-            }
-            gxt[nc + j] += sum;
-        }
+        // ── G₀: use dGdT instead of G ─────────────────────────────────────
+        int totalEM = totalEndMembers();
+        int[] stride = computeStrides();
 
-        // ── G_id: ∂/∂T of R·T·a[s]·(ln(y)+1) = R·a[s]·(ln(y)+1) ───
-        for (int s = 0; s < 2; s++) {
-            double aS = A[s];
-            for (int i = 0; i < nc; i++) {
-                int m = s * nc + i;
-                gxt[m] += R * aS * (Math.log(y[m]) + 1.0);
+        for (int em = 0; em < totalEM; em++) {
+            int[] idx = decodeEM(em, stride);
+            double yProd = 1.0;
+            for (int s = 0; s < ns; s++)
+                yProd *= y[offset[s] + idx[s]];
+            double dGdT = g0[em].dGdT(T);
+            for (int s = 0; s < ns; s++) {
+                int m = offset[s] + idx[s];
+                gxt[m] += (yProd / y[m]) * dGdT;
             }
         }
 
-        // ── G_Em: same structure but dL/dT instead of L ──────────────
+        // ── G_id: ∂/∂T of R·T·a[s]·(ln(y)+1) = R·a[s]·(ln(y)+1) ─────────
+        for (int s = 0; s < ns; s++) {
+            for (int i = 0; i < nc[s]; i++) {
+                int m = offset[s] + i;
+                gxt[m] += R * a[s] * (Math.log(y[m]) + 1.0);
+            }
+        }
+
+        // ── G_Em: same structure but dL/dT instead of L ───────────────────
         addGEmGradient(y, T, gxt, true);
 
         return gxt;
@@ -282,29 +274,34 @@ public class CefGibbs {
     // ------------------------------------------------------------------
 
     /**
-     * Reference energy G₀ = Σᵢ Σⱼ y[0][i]·y[1][j]·G[i][j](T).
+     * Reference energy G₀ using iterative mixed-radix enumeration over all end members.
      */
     public double g0Ref(double[] y, double T) {
+        int totalEM = totalEndMembers();
+        int[] stride = computeStrides();
         double g = 0.0;
-        for (int i = 0; i < nc; i++)
-            for (int j = 0; j < nc; j++)
-                g += y[i] * y[nc + j] * g0[i * nc + j].G(T);
+        for (int em = 0; em < totalEM; em++) {
+            int[] idx = decodeEM(em, stride);
+            double yProd = 1.0;
+            for (int s = 0; s < ns; s++)
+                yProd *= y[offset[s] + idx[s]];
+            g += yProd * g0[em].G(T);
+        }
         return g;
     }
 
     /**
-     * Ideal mixing entropy:
-     * G_id = R·T·(2·Σᵢ y[0][i]·ln(y[0][i]) + 1·Σⱼ y[1][j]·ln(y[1][j])).
+     * Ideal mixing entropy contribution G_id = R·T · Σₛ a[s] · Σᵢ y[m]·ln(y[m]).
      */
     public double gId(double[] y, double T) {
         double g = 0.0;
-        for (int s = 0; s < 2; s++) {
+        for (int s = 0; s < ns; s++) {
             double sub = 0.0;
-            for (int i = 0; i < nc; i++) {
-                double yi = y[s * nc + i];
-                sub += yi * Math.log(yi);
+            for (int i = 0; i < nc[s]; i++) {
+                double yi = y[offset[s] + i];
+                if (yi > 1e-300) sub += yi * Math.log(yi);
             }
-            g += A[s] * sub;
+            g += a[s] * sub;
         }
         return R * T * g;
     }
@@ -315,51 +312,93 @@ public class CefGibbs {
     public double gEm(double[] y, double T) {
         double g = 0.0;
         for (CefInteractionParam p : interactions) {
-            int pSL  = p.pairSublattice;
-            int oSL  = 1 - pSL;
-            g += y[pSL * nc + p.pairA]
-               * y[pSL * nc + p.pairB]
-               * y[oSL * nc + p.singleIdx]
+            int pSL = p.pairSublattice;
+            int oSL = 1 - pSL;
+            g += y[offset[pSL] + p.pairA]
+               * y[offset[pSL] + p.pairB]
+               * y[offset[oSL] + p.singleIdx]
                * p.L(T);
         }
         return g;
     }
 
-    /** Returns number of components. */
-    public int nc() { return nc; }
+    // ------------------------------------------------------------------
+    // Accessors
+    // ------------------------------------------------------------------
 
-    /** Returns number of internal parameters (2·nc). */
+    /** Returns number of sublattices. */
+    public int ns() { return ns; }
+
+    /** Returns number of constituents on sublattice 0 (backward-compatible single-nc accessor). */
+    public int nc() { return nc[0]; }
+
+    /** Returns total number of internal parameters (Σ nc[s]). */
     public int nip() { return nip; }
 
-    /** Returns stoichiometric coefficients {a₁, a₂}. */
-    public double[] stoichiometry() { return A.clone(); }
+    /** Returns a copy of stoichiometric coefficients. */
+    public double[] stoichiometry() { return a.clone(); }
+
+    /** Returns a copy of constituents-per-sublattice array. */
+    public int[] constituentsPerSublattice() { return nc.clone(); }
+
+    /** Returns a copy of the sublattice offsets array. */
+    public int[] offsets() { return offset.clone(); }
 
     /** Returns the interaction parameter list (unmodifiable). */
     public List<CefInteractionParam> interactions() { return interactions; }
 
     /**
-     * Returns G[i][j] end-member at (i, j) — sublattice 1 species i, sublattice 2 species j.
-     * Both indices 0-based.
+     * Returns end member at (sublattice-0 species i, sublattice-1 species j).
+     * Uses mixed-radix index: em = i + j * nc[0].
      */
-    public CefEndMember endMember(int i, int j) { return g0[i * nc + j]; }
+    public CefEndMember endMember(int i, int j) { return g0[i + j * nc[0]]; }
 
     // ------------------------------------------------------------------
     // Private helpers
     // ------------------------------------------------------------------
 
+    /** Total number of end members = ∏ nc[s]. */
+    private int totalEndMembers() {
+        int total = 1;
+        for (int s = 0; s < ns; s++) total *= nc[s];
+        return total;
+    }
+
     /**
-     * Accumulates ∂G_Em/∂y[s][i] into gx[] for all flat indices.
+     * Computes mixed-radix strides: stride[0]=1, stride[s]=stride[s-1]*nc[s-1].
+     */
+    private int[] computeStrides() {
+        int[] stride = new int[ns];
+        stride[0] = 1;
+        for (int s = 1; s < ns; s++)
+            stride[s] = stride[s - 1] * nc[s - 1];
+        return stride;
+    }
+
+    /**
+     * Decodes end-member index em into constituent indices idx[0..ns-1].
+     * idx[s] = (em / stride[s]) % nc[s]
+     */
+    private int[] decodeEM(int em, int[] stride) {
+        int[] idx = new int[ns];
+        for (int s = 0; s < ns; s++)
+            idx[s] = (em / stride[s]) % nc[s];
+        return idx;
+    }
+
+    /**
+     * Accumulates ∂G_Em/∂y[m] into gx[] for all flat indices.
      * If {@code useDerivL = true}, uses dL/dT instead of L (for GxT computation).
      *
      * For each interaction param p:
      *   Type pairSL=0: term = y[0][pA]·y[0][pB]·y[1][k]·L
-     *     ∂/∂y[0][pA] += y[0][pB]·y[1][k]·L   at flat index pA
-     *     ∂/∂y[0][pB] += y[0][pA]·y[1][k]·L   at flat index pB
-     *     ∂/∂y[1][k]  += y[0][pA]·y[0][pB]·L  at flat index nc+k
+     *     ∂/∂y[0][pA] += y[0][pB]·y[1][k]·L   at flat index offset[0]+pA
+     *     ∂/∂y[0][pB] += y[0][pA]·y[1][k]·L   at flat index offset[0]+pB
+     *     ∂/∂y[1][k]  += y[0][pA]·y[0][pB]·L  at flat index offset[1]+k
      *   Type pairSL=1: term = y[1][pA]·y[1][pB]·y[0][k]·L
-     *     ∂/∂y[1][pA] += y[1][pB]·y[0][k]·L   at flat index nc+pA
-     *     ∂/∂y[1][pB] += y[1][pA]·y[0][k]·L   at flat index nc+pB
-     *     ∂/∂y[0][k]  += y[1][pA]·y[1][pB]·L  at flat index k
+     *     ∂/∂y[1][pA] += y[1][pB]·y[0][k]·L   at flat index offset[1]+pA
+     *     ∂/∂y[1][pB] += y[1][pA]·y[0][k]·L   at flat index offset[1]+pB
+     *     ∂/∂y[0][k]  += y[1][pA]·y[1][pB]·L  at flat index offset[0]+k
      */
     private void addGEmGradient(double[] y, double T, double[] gx, boolean useDerivL) {
         for (CefInteractionParam p : interactions) {
@@ -368,9 +407,9 @@ public class CefGibbs {
             double L = useDerivL ? p.dLdT() : p.L(T);
             if (L == 0.0) continue;
 
-            int mpA = pSL * nc + p.pairA;
-            int mpB = pSL * nc + p.pairB;
-            int mk  = oSL * nc + p.singleIdx;
+            int mpA = offset[pSL] + p.pairA;
+            int mpB = offset[pSL] + p.pairB;
+            int mk  = offset[oSL] + p.singleIdx;
 
             double ypA = y[mpA], ypB = y[mpB], yk = y[mk];
 
@@ -397,9 +436,9 @@ public class CefGibbs {
             double L = useDerivL ? p.dLdT() : p.L(T);
             if (L == 0.0) continue;
 
-            int mpA = pSL * nc + p.pairA;
-            int mpB = pSL * nc + p.pairB;
-            int mk  = oSL * nc + p.singleIdx;
+            int mpA = offset[pSL] + p.pairA;
+            int mpB = offset[pSL] + p.pairB;
+            int mk  = offset[oSL] + p.singleIdx;
 
             double ypA = y[mpA], ypB = y[mpB], yk = y[mk];
 
