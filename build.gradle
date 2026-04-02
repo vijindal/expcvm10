@@ -14,7 +14,7 @@ application {
 
 sourceSets {
     main {
-        java { srcDirs = ['src'] }
+        java { srcDirs = ['src', 'legacy-archive'] }
         resources { srcDirs = [] }
     }
     test {
