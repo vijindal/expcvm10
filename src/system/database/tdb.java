@@ -650,7 +650,7 @@ public class tdb {
         private String model;
         private String dataTypeCode;
         private int numSubLat; //Number of sublattices
-        private int[] numSites; //Number of sites of each of the sublattices 
+        private double[] numSites; //Number of sites of each of the sublattices
         private ArrayList<ArrayList<String>> constituentList;
         private ArrayList<Parameter> paramList; //List of parameters objects
 
@@ -701,9 +701,9 @@ public class tdb {
             //Print.f("dataTypeCode:" + keywordStringList[1], 0);
             numSubLat = Integer.parseInt(keywordStringList[2]);
             //Print.f("numSubLat:" + numSubLat, 0);
-            numSites = new int[numSubLat];
+            numSites = new double[numSubLat];
             for (int i = 0; i < numSubLat; i++) {
-                numSites[i] = (int) (Float.parseFloat(keywordStringList[3 + i]));
+                numSites[i] = Double.parseDouble(keywordStringList[3 + i]);
             }
             //Print.f("numSites:", numSites, 0);
         }
@@ -724,7 +724,7 @@ public class tdb {
             return (numSubLat);
         }
 
-        public int[] getNumSites() {
+        public double[] getNumSites() {
             return (numSites);
         }
 
@@ -1281,25 +1281,25 @@ public class tdb {
         String secondaryKeyword;
 
         TypeDefinition(String keywordLine) throws IOException {
-            // Input example: "& GES A_P_D BCC_A2 MAGNETIC  -1.0    4.00000E-01"
-            // Fields:          [0] [1] [2]  [3]   [4]        [5]     [6]
-            String[] tempList = splitString(keywordLine, " ");
-            // Filter empty tokens from multiple spaces
-            ArrayList<String> tokens = new ArrayList<>();
-            for (String t : tempList) {
-                if (t != null && !t.trim().isEmpty()) tokens.add(t.trim());
-            }
-            this.dataTypeCode    = tokens.size() > 0 ? tokens.get(0) : "";
-            this.secondaryKeyword= tokens.size() > 1 ? tokens.get(1) : "";
-            // secondaryKeyword is typically "GES"
-            // tokens[2] is "A_P_D"
-            this.phasename       = tokens.size() > 3 ? tokens.get(3) : "";
-            this.property        = tokens.size() > 4 ? tokens.get(4) : "";
+            // Split on any whitespace sequence, remove leading/trailing blanks
+            String[] tokens = keywordLine.trim().split("\\s+");
+            // tokens[0] = "&"         dataTypeCode
+            // tokens[1] = "GES"       secondaryKeyword
+            // tokens[2] = "A_P_D"     command
+            // tokens[3] = "BCC_A2"    phasename
+            // tokens[4] = "MAGNETIC"  property
+            // tokens[5] = "-1.0"      value1
+            // tokens[6] = "4.00000E-01" value2
+            this.dataTypeCode     = tokens.length > 0 ? tokens[0] : "";
+            this.secondaryKeyword = tokens.length > 1 ? tokens[1] : "";
+            this.command          = tokens.length > 2 ? tokens[2] : "";
+            this.phasename        = tokens.length > 3 ? tokens[3] : "";
+            this.property         = tokens.length > 4 ? tokens[4] : "";
             this.value1 = 0.0;
             this.value2 = 0.0;
-            try { if (tokens.size() > 5) this.value1 = Double.parseDouble(tokens.get(5)); }
+            try { if (tokens.length > 5) this.value1 = Double.parseDouble(tokens[5]); }
             catch (NumberFormatException e) { /* leave 0.0 */ }
-            try { if (tokens.size() > 6) this.value2 = Double.parseDouble(tokens.get(6)); }
+            try { if (tokens.length > 6) this.value2 = Double.parseDouble(tokens[6]); }
             catch (NumberFormatException e) { /* leave 0.0 */ }
         }
     };

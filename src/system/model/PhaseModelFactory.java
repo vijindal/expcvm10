@@ -60,7 +60,7 @@ public class PhaseModelFactory {
 
         // 2. Read sublattice structure
         int ns = phase.getNumSubLat();
-        int[] numSites = phase.getNumSites();          // stoichiometric coefficients
+        double[] numSites = phase.getNumSites();        // stoichiometric coefficients
         ArrayList<ArrayList<String>> constituentList = phase.getConstituentList();
 
         double[] a = new double[ns];
@@ -140,9 +140,15 @@ public class PhaseModelFactory {
             // G(T) = a + b*T  (simplified — use first temperature range only)
             double coeffA = 0.0, coeffB = 0.0;
             if (!param.getExpList().isEmpty()) {
-                ArrayList<Double> coeffs = param.getExpList().get(0).getCoeffList();
-                if (coeffs.size() > 0) coeffA = coeffs.get(0);  // constant
-                if (coeffs.size() > 1) coeffB = coeffs.get(1);  // *T coefficient
+                system.database.tdb.Exp exp = param.getExpList().get(0);
+                // Try subCoeffList first (used by CEF/multi-sublattice params),
+                // fall back to coeffList (used by single-sublattice params)
+                ArrayList<Double> coeffs = exp.getSubCoeffList();
+                if (coeffs == null || coeffs.isEmpty()) {
+                    coeffs = exp.getCoeffList();
+                }
+                if (coeffs != null && coeffs.size() > 0) coeffA = coeffs.get(0);
+                if (coeffs != null && coeffs.size() > 1) coeffB = coeffs.get(1);
             }
 
             if (isEndMember) {
