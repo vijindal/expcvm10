@@ -3,9 +3,11 @@ package system.model;
 import system.database.tdb;
 import system.database.tdb.Phase;
 import system.database.tdb.Parameter;
+import system.model.GibbsEnergyModel;
 import system.model.cef.CefEndMember;
 import system.model.cef.CefGibbs;
 import system.model.cef.CefInteractionParam;
+import system.model.cef.CefPhaseModelAdapter;
 import system.model.cef.MagneticContribution;
 import system.model.cef.SgtePolynomial;
 
@@ -218,5 +220,21 @@ public class PhaseModelFactory {
         }
 
         return new PhaseModel(phaseName, gibbs, magnetic, affVal, pVal);
+    }
+
+    /**
+     * Convert a PhaseModel to a GibbsEnergyModel for use by EquilibriumSolver.
+     *
+     * @param pm       the PhaseModel result from build()
+     * @param elements list of element symbols for this phase
+     * @return CefPhaseModelAdapter wrapping the CEF model
+     */
+    public static GibbsEnergyModel toGibbsModel(PhaseModel pm,
+                                                List<String> elements) {
+        return new CefPhaseModelAdapter(
+            pm.gibbs,
+            pm.magnetic,
+            pm.phaseName,
+            new ArrayList<>(elements));
     }
 }
