@@ -7,6 +7,7 @@ import system.model.cef.CefEndMember;
 import system.model.cef.CefGibbs;
 import system.model.cef.CefInteractionParam;
 import system.model.cef.MagneticContribution;
+import system.model.cef.SgtePolynomial;
 
 import java.util.*;
 
@@ -136,19 +137,19 @@ public class PhaseModelFactory {
                 if (sl.size() != 1) { isEndMember = false; break; }
             }
 
-            // Extract a and b coefficients from the first Exp in expList
-            // G(T) = a + b*T  (simplified — use first temperature range only)
+            // Build full multi-range SGTE polynomial
+            SgtePolynomial paramPoly = SgtePolynomial.fromExpList(param.getExpList());
+            // Extract a and b at reference T=298.15 for fallback storage
+            // CefEndMember stores the polynomial directly via constructor
             double coeffA = 0.0, coeffB = 0.0;
-            if (!param.getExpList().isEmpty()) {
-                system.database.tdb.Exp exp = param.getExpList().get(0);
-                // Try subCoeffList first (used by CEF/multi-sublattice params),
-                // fall back to coeffList (used by single-sublattice params)
-                ArrayList<Double> coeffs = exp.getSubCoeffList();
-                if (coeffs == null || coeffs.isEmpty()) {
-                    coeffs = exp.getCoeffList();
-                }
-                if (coeffs != null && coeffs.size() > 0) coeffA = coeffs.get(0);
-                if (coeffs != null && coeffs.size() > 1) coeffB = coeffs.get(1);
+            if (paramPoly != null) {
+                // Evaluate at two points to extract effective a + b*T
+                // This is a temporary approximation —
+                // CefEndMember will store the full polynomial when available
+                double T1 = 298.15, T2 = 299.15;
+                double G1 = paramPoly.G(T1), G2 = paramPoly.G(T2);
+                coeffB = (G2 - G1) / (T2 - T1);
+                coeffA = G1 - coeffB * T1;
             }
 
             if (isEndMember) {
@@ -167,7 +168,13 @@ public class PhaseModelFactory {
                     int[] idxArr = new int[ns];
                     for (int s = 0; s < ns; s++)
                         idxArr[s] = (em / stride[s]) % nc[s];
-                    endMembers[em] = new CefEndMember(idxArr, coeffA, coeffB);
+                    SgtePolynomial poly =
+                        SgtePolynomial.fromExpList(param.getExpList());
+                    if (poly != null) {
+                        endMembers[em] = new CefEndMember(idxArr, poly);
+                    } else {
+                        endMembers[em] = new CefEndMember(idxArr, coeffA, coeffB);
+                    }
                 } else if (type.equals("TC")) {
                     tcA[em] += coeffA; tcB[em] += coeffB;
                 } else if (type.equals("BMAGN")) {

@@ -2,43 +2,55 @@ package system.model.cef;
 
 /**
  * A single end-member in the CEF surface of reference.
- * Stores the polynomial G(T) = a + b*T evaluated at runtime.
- *
- * The constituent index array identifies which constituent occupies
- * each sublattice for this end member, in the same mixed-radix order
- * used by CefGibbs (sublattice 0 = least significant).
+ * Stores either a full multi-range SGTE polynomial or a simple a+b*T form.
  */
 public final class CefEndMember {
 
     /** Constituent index per sublattice, length = ns. */
     public final int[] constituentIdx;
 
-    /** Constant term in G(T) = a + b*T  (J/mol) */
+    /** Full SGTE polynomial (preferred). Null if using simple form. */
+    private final SgtePolynomial poly;
+
+    /** Fallback constant term when poly is null. */
     private final double a;
 
-    /** Linear T term in G(T) = a + b*T  (J/(mol·K)) */
+    /** Fallback linear coefficient when poly is null. */
     private final double b;
 
     /**
-     * @param constituentIdx  constituent index per sublattice, length ns
-     * @param a               constant term
-     * @param b               linear temperature coefficient
+     * Construct with full SGTE polynomial (preferred constructor).
+     */
+    public CefEndMember(int[] constituentIdx, SgtePolynomial poly) {
+        this.constituentIdx = constituentIdx.clone();
+        this.poly = poly;
+        this.a    = 0.0;
+        this.b    = 0.0;
+    }
+
+    /**
+     * Construct with simple a+b*T form (fallback for interactions/missing data).
      */
     public CefEndMember(int[] constituentIdx, double a, double b) {
         this.constituentIdx = constituentIdx.clone();
-        this.a = a;
-        this.b = b;
+        this.poly = null;
+        this.a    = a;
+        this.b    = b;
     }
 
-    /** G(T) = a + b*T */
-    public double G(double T) { return a + b * T; }
+    /** G(T) — uses full polynomial if available, else a+b*T. */
+    public double G(double T) {
+        return poly != null ? poly.G(T) : a + b * T;
+    }
 
-    /** dG/dT = b */
-    public double dGdT(double T) { return b; }
+    /** dG/dT — uses full polynomial if available, else b. */
+    public double dGdT(double T) {
+        return poly != null ? poly.dGdT(T) : b;
+    }
 
-    /** Constant term. */
-    public double a() { return a; }
+    public double a() { return poly != null ? 0.0 : a; }
+    public double b() { return poly != null ? 0.0 : b; }
 
-    /** Linear coefficient. */
-    public double b() { return b; }
+    /** True if this end-member has a full SGTE polynomial. */
+    public boolean hasPoly() { return poly != null; }
 }
