@@ -3,6 +3,7 @@ package test;
 import system.database.TdbParser;
 import system.model.PhaseModelFactory.PhaseModel;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -146,5 +147,36 @@ public class CefBuildTest {
         System.out.println("BCC_A2  : ns=2, nip=3, a=[1.0,3.0],   nc=[2,1], magnetic=true (aff=-1.0 p=0.4)");
         System.out.println("HCP_A3  : ns=2, nip=3, a=[1.0,0.5],   nc=[2,1], magnetic=true (aff=-3.0 p=0.28)");
         System.out.println("V2ZR    : ns=2, nip=4, a=[2.0,1.0],   nc=[2,2], magnetic=false");
+
+        // ── End-to-end equilibrium test ───────────────────────────────
+        System.out.println("\n=== Equilibrium test: V-Zr at 1000K x_V=0.5 ===");
+        try {
+            List<system.model.GibbsEnergyModel> gibbsModels = new ArrayList<>();
+            for (PhaseModel m : models) {
+                gibbsModels.add(system.model.PhaseModelFactory.toGibbsModel(
+                    m, elements));
+            }
+
+            calc.equil.EquilibriumSolver solver =
+                new calc.equil.EquilibriumSolver();
+
+            double[] comp = {0.5, 0.5};  // x_V=0.5, x_Zr=0.5
+            system.ports.EquilibriumResult result =
+                solver.solve(1000.0, 101325.0, comp, gibbsModels);
+
+            System.out.println("Converged : " + result.isConverged());
+            System.out.println("Iterations: " + result.getIterations());
+            double[] mu = result.getMu();
+            System.out.println("mu[V]     : " + String.format("%.2f", mu[0]));
+            System.out.println("mu[Zr]    : " + String.format("%.2f", mu[1]));
+            System.out.println("Stable phases:");
+            for (system.ports.EquilibriumResult.PhaseResult pr : result.getStablePhases()) {
+                System.out.printf("  %-10s amount=%.4f  x=[%.4f, %.4f]%n",
+                    pr.phaseName, pr.amount, pr.x[0], pr.x[1]);
+            }
+        } catch (Exception e) {
+            System.out.println("ERROR: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 }

@@ -265,11 +265,13 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
         }
 
         // Step 5: linearised composition change
+        // Map chemical potentials (length nc) to site-fraction space (length nip)
+        double[] muMapped = mapMuToSiteFractions(mu, y);
         double[] delyN = new double[nip];
         for (int i = 0; i < nip; i++) {
             delyN[i] = cG[i] + cT[i] * deltaT + cP[i] * deltaP;
             for (int j = 0; j < nip; j++) {
-                delyN[i] += eMat[i][j] * mu[j];
+                delyN[i] += eMat[i][j] * muMapped[j];
             }
         }
 
@@ -316,6 +318,32 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
             eList[i] = y[i];
         }
         return eList;
+    }
+
+    /**
+     * Map chemical potentials (length nc) to site-fraction space (length nip).
+     * Only maps constituents that correspond to actual elements (not VA).
+     * VA sites get mu=0 (chemical potential of vacancy is zero by convention).
+     */
+    private double[] mapMuToSiteFractions(double[] mu, double[] y) {
+        int nip  = gibbs.nip();
+        int nc   = elementNames_value.size();
+        int[]    offs = gibbs.offsets();
+        int[]    ncSL = gibbs.constituentsPerSublattice();
+        double[] muY  = new double[nip];
+
+        for (int s = 0; s < gibbs.ns(); s++) {
+            for (int i = 0; i < ncSL[s]; i++) {
+                int flatIdx = offs[s] + i;
+                // Only map if this constituent index is within the element list
+                // VA constituents (index >= nc) get mu = 0
+                if (i < nc) {
+                    muY[flatIdx] = mu[i];
+                }
+                // else: muY[flatIdx] stays 0.0 (VA convention)
+            }
+        }
+        return muY;
     }
 
     /** Compute Tc from end-member TC parameters. Placeholder. */
