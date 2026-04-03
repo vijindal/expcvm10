@@ -24,6 +24,9 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
     private final String phaseName_value;
     private final ArrayList<String> elementNames_value;
 
+    /** True once y has been set to a valid non-zero state. */
+    private boolean yInitialized = false;
+
     public CefPhaseModelAdapter(CefGibbs gibbs,
                                 MagneticContribution magnetic,
                                 String phaseName,
@@ -36,7 +39,6 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
         // Initialize state arrays from CefGibbs
         int nip = gibbs.nip();
         int nc = elements.size();
-        this.y = new double[nip];
         this.x = new double[nc];
         this.g0List = new double[nc];
         this.g0TList = new double[nc];
@@ -52,6 +54,17 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
             this.g0List[i] = 0.0;
             this.g0TList[i] = 0.0;
             this.g0PList[i] = 0.0;
+        }
+    }
+
+    @Override
+    public void setInternalVars(double[] y) {
+        super.setInternalVars(y);
+        // Mark as initialized only if y contains non-zero values
+        if (y != null) {
+            for (double v : y) {
+                if (v > 1e-15) { yInitialized = true; break; }
+            }
         }
     }
 
@@ -91,7 +104,8 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
 
     @Override
     public double evaluateG(double[] x, double T) {
-        double[] yLocal = (y != null && y.length == gibbs.nip()) ? y : getInitialInternalVars(x);
+        double[] yLocal = (yInitialized && y != null && y.length == gibbs.nip())
+                        ? y : getInitialInternalVars(x);
         double G = gibbs.evaluate(yLocal, T);
         if (magnetic != null) {
             double Tc = computeTc();
@@ -103,23 +117,37 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
 
     @Override
     public double[] gradient(double[] x, double T) {
-        double[] yLocal = (y != null && y.length == gibbs.nip()) ? y : getInitialInternalVars(x);
-        return gibbs.gradient(yLocal, T);
+        double[] yLocal = (yInitialized && y != null && y.length == gibbs.nip())
+                        ? y : getInitialInternalVars(x);
+        double[] gxSite = gibbs.gradient(yLocal, T);
+        return projectToMoleFractions(gxSite);
     }
 
     @Override
     public double[][] hessian(double[] x, double T) {
-        double[] yLocal = (y != null && y.length == gibbs.nip()) ? y : getInitialInternalVars(x);
+        double[] yLocal = (yInitialized && y != null && y.length == gibbs.nip())
+                        ? y : getInitialInternalVars(x);
         return gibbs.hessian(yLocal, T);
     }
 
     @Override
     public double evaluateGT() {
-        double[] yLocal = y != null ? y : new double[gibbs.nip()];
-        double[] gxt = gibbs.gradientDT(yLocal, T);
-        double sum = 0.0;
-        for (double v : gxt) sum += v;
-        return sum;
+        double[] yLocal = yInitialized && y != null ? y : getInitialInternalVars(
+            x != null ? x : new double[elementNames_value.size()]);
+        double[] gxtSite = gibbs.gradientDT(yLocal, T);
+        // dG/dT at fixed composition = weighted sum over sublattices
+        double dGdT = 0.0;
+        double[] a    = gibbs.stoichiometry();
+        int[]    offs = gibbs.offsets();
+        int[]    ncSL = gibbs.constituentsPerSublattice();
+        double   nfu  = nfu();
+        for (int s = 0; s < gibbs.ns(); s++) {
+            for (int i = 0; i < ncSL[s]; i++) {
+                double yi = yLocal[offs[s] + i];
+                dGdT += a[s] * yi * gxtSite[offs[s] + i];
+            }
+        }
+        return nfu > 0 ? dGdT / nfu : dGdT;
     }
 
     @Override
@@ -129,14 +157,18 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
 
     @Override
     public double[] evaluateGx() {
-        double[] yLocal = y != null ? y : new double[gibbs.nip()];
-        return gibbs.gradient(yLocal, T);
+        double[] yLocal = yInitialized && y != null ? y : getInitialInternalVars(
+            x != null ? x : new double[elementNames_value.size()]);
+        double[] gxSite = gibbs.gradient(yLocal, T);
+        return projectToMoleFractions(gxSite);
     }
 
     @Override
     public double[] evaluateGTx() {
-        double[] yLocal = y != null ? y : new double[gibbs.nip()];
-        return gibbs.gradientDT(yLocal, T);
+        double[] yLocal = yInitialized && y != null ? y : getInitialInternalVars(
+            x != null ? x : new double[elementNames_value.size()]);
+        double[] gxtSite = gibbs.gradientDT(yLocal, T);
+        return projectToMoleFractions(gxtSite);
     }
 
     @Override
@@ -146,7 +178,8 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
 
     @Override
     public double[][] evaluateGxx() {
-        double[] yLocal = y != null ? y : new double[gibbs.nip()];
+        double[] yLocal = yInitialized && y != null ? y : getInitialInternalVars(
+            x != null ? x : new double[elementNames_value.size()]);
         return gibbs.hessian(yLocal, T);
     }
 
@@ -344,6 +377,37 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
             }
         }
         return muY;
+    }
+
+    /**
+     * Projects site-fraction gradient (length nip) to
+     * mole-fraction gradient (length nc) using the chain rule:
+     *   dG/dx_k = Σ_s a[s] * dG/dy_{s,k}  for k < nc[s]
+     * normalized by nfu = Σ a[s].
+     *
+     * This is the dominant-sublattice approximation:
+     * element k on sublattice s contributes a[s] * gxSite[offset[s]+k].
+     * VA sites (constituent index >= nc) do not contribute.
+     */
+    private double[] projectToMoleFractions(double[] gxSite) {
+        int nc   = elementNames_value.size();
+        double[] gxMole = new double[nc];
+        double[] a    = gibbs.stoichiometry();
+        int[]    offs = gibbs.offsets();
+        int[]    ncSL = gibbs.constituentsPerSublattice();
+        double   nfu  = nfu();
+
+        for (int s = 0; s < gibbs.ns(); s++) {
+            for (int i = 0; i < ncSL[s] && i < nc; i++) {
+                gxMole[i] += a[s] * gxSite[offs[s] + i];
+            }
+        }
+        // Normalize by nfu so gradient is per mole of atoms
+        if (nfu > 0)
+            for (int k = 0; k < nc; k++)
+                gxMole[k] /= nfu;
+
+        return gxMole;
     }
 
     /** Compute Tc from end-member TC parameters. Placeholder. */

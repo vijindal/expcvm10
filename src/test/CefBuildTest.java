@@ -93,7 +93,6 @@ public class CefBuildTest {
         // Also print the GHSERVV function from the database
         // to see if it was parsed
         System.out.println("\n--- Functions in rawDb ---");
-        system.database.tdb filteredDb = rawDb.gettdb(new String[]{"V","ZR"});
         // We cannot access functionList directly, but we can
         // check by loading a fresh tdb and calling printtdb()
         // Instead just print the raw expStr for V params above
