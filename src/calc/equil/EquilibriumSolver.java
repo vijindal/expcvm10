@@ -213,6 +213,42 @@ public class EquilibriumSolver {
                     break;
                 }
 
+                // ------- Step-F diagnostics: monitor the actual nonlinear residuals -------
+                if (LOG.isLoggable(java.util.logging.Level.INFO)) {
+
+                    double maxGibbsResidual = 0.0;
+                    double maxMassResidual = 0.0;
+
+                    for (PhaseRecord pr : state.stablePhases()) {
+                        double residual = pr.G + dot(state.mu, pr.mA);
+
+                        maxGibbsResidual =
+                                Math.max(maxGibbsResidual, Math.abs(residual));
+                    }
+
+                    for (int A = 0; A < nc; A++) {
+                        double calculated = 0.0;
+
+                        for (PhaseRecord pr : state.stablePhases()) {
+                            calculated += pr.amount * pr.mA[A];
+                        }
+
+                        double residual =
+                                calculated - state.compOverAll[A];
+
+                        maxMassResidual =
+                                Math.max(maxMassResidual, Math.abs(residual));
+                    }
+
+                    LOG.info(String.format(
+                            "Algorithm-A iter=%d  max|Gibbs residual|=%.6e  "
+                          + "max|mass residual|=%.6e  mu=%s",
+                            iter,
+                            maxGibbsResidual,
+                            maxMassResidual,
+                            java.util.Arrays.toString(state.mu)));
+                }
+
                 // Damped Newton step with analytical step-limit for negative amounts
                 // (§2.3.1 / standard CALPHAD practice):
                 //   λ_max = 0.9 × min over phases where ΔN<0 of (ℵ^α / |ΔN^α|)
@@ -318,18 +354,39 @@ public class EquilibriumSolver {
                     break;
                 }
 
-                /*
-                 * Diagnostic: explicit residual check at accepted state.
-                 */
-                for (PhaseRecord pr : stableNow) {
-                    pr.computeDrivingForce(state.mu);
+                // ------- Step-F diagnostics: residual after Newton update -------
+                if (LOG.isLoggable(java.util.logging.Level.INFO)) {
 
-                    System.out.printf(
-                        "Algorithm A: phase=%s, G=%.12f, drivingForce=%.12f%n",
-                        pr.phaseName(),
-                        pr.G,
-                        pr.drivingForce
-                    );
+                    double maxGibbsResidual = 0.0;
+                    double maxMassResidual = 0.0;
+
+                    for (PhaseRecord pr : stableNow) {
+                        double residual = pr.G + dot(state.mu, pr.mA);
+                        maxGibbsResidual =
+                                Math.max(maxGibbsResidual, Math.abs(residual));
+                    }
+
+                    for (int A = 0; A < nc; A++) {
+                        double calculated = 0.0;
+
+                        for (PhaseRecord pr : stableNow) {
+                            calculated += pr.amount * pr.mA[A];
+                        }
+
+                        double residual =
+                                calculated - state.compOverAll[A];
+
+                        maxMassResidual =
+                                Math.max(maxMassResidual, Math.abs(residual));
+                    }
+
+                    LOG.info(String.format(
+                            "Algorithm-A iter=%d AFTER update: "
+                          + "max|Gibbs residual|=%.6e  "
+                          + "max|mass residual|=%.6e",
+                            iter,
+                            maxGibbsResidual,
+                            maxMassResidual));
                 }
 
                 // Convergence test (§2.3.1, Fig. 1), extended per M2 Step 6/7:
@@ -498,141 +555,262 @@ public class EquilibriumSolver {
     // ------------------------------------------------------------------
 
     /**
-     * Solves the initial phase amounts from the component mass-balance
-     * equations
+     * Solves for initial phase amounts N_alpha from the component
+     * mass-balance equations
      *
-     *     sum_alpha N_alpha M_A^alpha = N_A
+     *     sum_alpha N_alpha M_A^alpha = N_A(overall)
      *
-     * using the same M_A definition as the Newton mass-balance block.
+     * using the actual Sundman M_A values, not normalized mole fractions.
      *
-     * No additional constraint such as sum(N_alpha) = 1 is imposed:
-     * Sundman's phase amounts are amounts of phase formula units and need
-     * not sum to unity.
+     * For np <= nc, np linearly independent component equations are selected.
+     * There is deliberately NO artificial sum(N_alpha) = 1 constraint because
+     * N_alpha is an amount of formula units and phases may have different nfu.
      */
-    private void solveInitialFractions(
-            EquilibriumState state,
-            double T,
-            double P) {
+    private void solveInitialFractions(EquilibriumState state, double T, double P) {
+        List<PhaseRecord> phases = state.stablePhases();
 
-        int np = state.stablePhases().size();
+        int np = phases.size();
         int nc = state.numComponents();
 
-        /*
-         * Refresh M_A for the current phase constitutions.
-         */
-        for (PhaseRecord pr : state.stablePhases()) {
-            pr.updateFromModel(
-                T,
-                P,
-                0.0,
-                0.0,
-                new double[nc]
-            );
+        // Refresh M_A for every stable phase.
+        // M_A depends on the current constitution y, not directly on mu.
+        double[] zeroMu = new double[nc];
+
+        for (PhaseRecord pr : phases) {
+            pr.updateFromModel(T, P, 0, 0, zeroMu);
         }
 
-        /*
-         * One stable phase:
-         *
-         * The overall composition determines its constitution, while
-         * the amount is one formula-unit-normalized system amount for
-         * the present solver convention.
-         */
+        if (np == 0) {
+            return;
+        }
+
         if (np == 1) {
-            state.stablePhases().get(0).amount = 1.0;
+            /*
+             * For a single phase the normalized overall composition is already
+             * represented by the phase constitution. Its formula-unit amount
+             * is therefore fixed by the total number of components represented
+             * by one normalized system mole.
+             *
+             * For the present solver convention the existing value 1.0 is
+             * retained for the single-phase case.
+             */
+            phases.get(0).amount = 1.0;
             return;
         }
 
         /*
-         * There cannot be more independent phase amounts than there are
-         * independent component-balance equations.
+         * At fixed T,P the initial amounts are determined from
+         *
+         *       M_matrix * N = N_overall
+         *
+         * We need np independent component equations for np unknown phase
+         * amounts. Do NOT append sum(N)=1: that is only valid for phases
+         * having the same one-mole normalization.
          */
         if (np > nc) {
             throw new IllegalStateException(
-                "Too many stable phases (" + np
-                + ") for " + nc
-                + " component mass-balance equations"
-            );
+                    "Too many stable phases for independent component balances: "
+                    + np + " phases, " + nc + " components");
         }
 
-        /*
-         * Select np independent component equations.
-         *
-         * For the present binary/two-phase case this simply gives:
-         *
-         *   [ M_Fe^alpha ] N_alpha = N_Fe
-         *   [ M_Cr^alpha ] N_alpha = N_Cr
-         *
-         * For a future general implementation, row selection should be
-         * replaced by rank-revealing selection if necessary.
-         */
+        int[] rows = selectIndependentComponentRows(phases, nc, np);
+
+        if (rows == null) {
+            LOG.warning("Could not find " + np
+                    + " independent component balances for initial phase amounts. "
+                    + "Using a positive fallback estimate.");
+
+            setFallbackPhaseAmounts(phases);
+            return;
+        }
+
         double[][] A = new double[np][np];
         double[] b = new double[np];
 
-        for (int row = 0; row < np; row++) {
+        for (int ir = 0; ir < np; ir++) {
+            int component = rows[ir];
 
-            int component = row;
-
-            b[row] = state.compOverAll[component];
+            b[ir] = state.compOverAll[component];
 
             for (int ip = 0; ip < np; ip++) {
-                A[row][ip] =
-                    state.stablePhases().get(ip).mA[component];
+                A[ir][ip] = phases.get(ip).mA[component];
             }
         }
 
         try {
-
             Matrix matA = new Matrix(A);
             Matrix matB = new Matrix(b, np);
             Matrix matN = matA.solve(matB);
 
-            for (int ip = 0; ip < np; ip++) {
+            boolean valid = true;
 
+            for (int ip = 0; ip < np; ip++) {
                 double amount = matN.get(ip, 0);
 
-                if (!Double.isFinite(amount)) {
-                    throw new IllegalStateException(
-                        "Non-finite initial amount for phase "
-                        + state.stablePhases().get(ip).phaseName()
-                    );
+                if (!Double.isFinite(amount) || amount <= 0.0) {
+                    valid = false;
+                    break;
                 }
-
-                /*
-                 * Do not silently turn a negative solution into zero.
-                 * A negative solution means that this phase set cannot
-                 * represent the specified overall composition with the
-                 * current phase constitutions.
-                 */
-                if (amount < -Constants.MIN_PHASE_AMOUNT) {
-                    throw new IllegalStateException(
-                        "Negative initial phase amount for "
-                        + state.stablePhases().get(ip).phaseName()
-                        + ": " + amount
-                    );
-                }
-
-                state.stablePhases().get(ip).amount =
-                    Math.max(0.0, amount);
             }
 
-        } catch (RuntimeException e) {
+            if (!valid) {
+                LOG.warning(
+                        "Initial component-balance solution contains "
+                        + "non-positive phase amount; using positive fallback.");
+                setFallbackPhaseAmounts(phases);
+                return;
+            }
 
-            /*
-             * Initial phase amounts are only an initial guess.
-             * If the selected component equations are singular, let the
-             * Newton phase-set machinery start from a neutral positive
-             * guess rather than silently claiming that mass balance was
-             * satisfied.
-             */
+            for (int ip = 0; ip < np; ip++) {
+                phases.get(ip).amount = matN.get(ip, 0);
+            }
+
+            if (LOG.isLoggable(java.util.logging.Level.FINE)) {
+                double maxResidual = 0.0;
+
+                for (int Acomp = 0; Acomp < nc; Acomp++) {
+                    double calculated = 0.0;
+
+                    for (PhaseRecord pr : phases) {
+                        calculated += pr.amount * pr.mA[Acomp];
+                    }
+
+                    double residual = calculated - state.compOverAll[Acomp];
+                    maxResidual = Math.max(maxResidual, Math.abs(residual));
+                }
+
+                LOG.fine("Initial phase amounts: "
+                        + java.util.Arrays.toString(
+                            phases.stream().mapToDouble(p -> p.amount).toArray())
+                        + ", max mass-balance residual = "
+                        + maxResidual);
+            }
+
+        } catch (Exception e) {
             LOG.warning(
-                "Could not solve initial phase amounts: "
-                + e.getMessage()
-                + " -- using equal positive initial amounts."
-            );
+                    "Could not solve initial component-balance system: "
+                    + e.getMessage()
+                    + ". Using positive fallback.");
 
-            for (PhaseRecord pr : state.stablePhases()) {
-                pr.amount = 1.0 / np;
+            setFallbackPhaseAmounts(phases);
+        }
+    }
+
+    /**
+     * Selects np linearly independent rows from the nc x np phase-composition
+     * matrix
+     *
+     *        B[A][alpha] = M_A^alpha.
+     *
+     * A simple modified Gram-Schmidt procedure is sufficient here because
+     * this is only an initial phase-amount calculation. The actual Newton
+     * iteration subsequently uses the full component mass-balance system.
+     */
+    private int[] selectIndependentComponentRows(
+            List<PhaseRecord> phases, int nc, int np) {
+
+        int[] selected = new int[np];
+
+        // Orthonormal basis vectors in phase-space (dimension np).
+        double[][] basis = new double[np][np];
+
+        // Determine a scale for the rank tolerance.
+        double maxNorm = 0.0;
+
+        for (int A = 0; A < nc; A++) {
+            double norm2 = 0.0;
+
+            for (int ip = 0; ip < np; ip++) {
+                double v = phases.get(ip).mA[A];
+                norm2 += v * v;
             }
+
+            maxNorm = Math.max(maxNorm, Math.sqrt(norm2));
+        }
+
+        double tol = 1e-12 * Math.max(1.0, maxNorm);
+
+        int rank = 0;
+
+        for (int A = 0; A < nc && rank < np; A++) {
+
+            double[] v = new double[np];
+
+            for (int ip = 0; ip < np; ip++) {
+                v[ip] = phases.get(ip).mA[A];
+            }
+
+            // Orthogonalize against previously selected rows.
+            for (int k = 0; k < rank; k++) {
+                double projection = 0.0;
+
+                for (int ip = 0; ip < np; ip++) {
+                    projection += v[ip] * basis[k][ip];
+                }
+
+                for (int ip = 0; ip < np; ip++) {
+                    v[ip] -= projection * basis[k][ip];
+                }
+            }
+
+            double norm2 = 0.0;
+
+            for (int ip = 0; ip < np; ip++) {
+                norm2 += v[ip] * v[ip];
+            }
+
+            double norm = Math.sqrt(norm2);
+
+            if (norm > tol) {
+                selected[rank] = A;
+
+                for (int ip = 0; ip < np; ip++) {
+                    basis[rank][ip] = v[ip] / norm;
+                }
+
+                rank++;
+            }
+        }
+
+        return rank == np ? selected : null;
+    }
+
+    /**
+     * Positive fallback for an initial phase-amount estimate.
+     *
+     * This is only used if the selected component-balance system is singular
+     * or produces a non-positive amount. The subsequent Newton iterations
+     * enforce the actual component balances.
+     */
+    private void setFallbackPhaseAmounts(List<PhaseRecord> phases) {
+        int np = phases.size();
+
+        double totalFormulaUnits = 0.0;
+
+        for (PhaseRecord pr : phases) {
+            double nfu = pr.model.nfu();
+
+            if (Double.isFinite(nfu) && nfu > 0.0) {
+                totalFormulaUnits += nfu;
+            }
+        }
+
+        if (!(totalFormulaUnits > 0.0)) {
+            totalFormulaUnits = np;
+        }
+
+        /*
+         * Give each phase a positive amount while keeping the total number
+         * of represented component moles approximately normalized to one.
+         */
+        for (PhaseRecord pr : phases) {
+            double nfu = pr.model.nfu();
+
+            if (!(Double.isFinite(nfu) && nfu > 0.0)) {
+                nfu = 1.0;
+            }
+
+            pr.amount = 1.0 / totalFormulaUnits;
         }
     }
 
@@ -751,5 +929,16 @@ public class EquilibriumSolver {
                 return null;
             }
         }
+    }
+
+    private double dot(double[] a, double[] b) {
+        int n = Math.min(a.length, b.length);
+        double sum = 0.0;
+
+        for (int i = 0; i < n; i++) {
+            sum += a[i] * b[i];
+        }
+
+        return sum;
     }
 }
