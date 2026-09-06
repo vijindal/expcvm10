@@ -121,20 +121,54 @@ public class CefGibbs {
         }
 
         AD2 pow(int exponent) {
-            if (exponent < 0)
-                throw new IllegalArgumentException("AD2 power must be non-negative");
+            if (exponent < 0) {
+                throw new IllegalArgumentException(
+                        "AD2 power must be non-negative"
+                );
+            }
 
-            if (exponent == 0)
-                return constant(1.0, grad.length);
+            int n = grad.length;
 
-            if (exponent == 1)
+            if (exponent == 0) {
+                return constant(1.0, n);
+            }
+
+            if (exponent == 1) {
                 return this;
+            }
 
-            AD2 result = constant(1.0, grad.length);
-            for (int k = 0; k < exponent; k++)
-                result = result.multiply(this);
+            double x = value;
 
-            return result;
+            double valuePow = Math.pow(x, exponent);
+            double firstFactor = exponent * Math.pow(x, exponent - 1);
+
+            double secondFactor =
+                    exponent * (exponent - 1)
+                    * Math.pow(x, exponent - 2);
+
+            double[] g = new double[n];
+            double[][] h = new double[n][n];
+
+            for (int i = 0; i < n; i++) {
+
+                g[i] =
+                        firstFactor * grad[i];
+
+                for (int j = 0; j < n; j++) {
+
+                    h[i][j] =
+                            firstFactor * hess[i][j]
+                            + secondFactor
+                            * grad[i]
+                            * grad[j];
+                }
+            }
+
+            return new AD2(
+                    valuePow,
+                    g,
+                    h
+            );
         }
     }
 
