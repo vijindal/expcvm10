@@ -76,7 +76,8 @@ public class CefSinglePhaseIntegrationTest {
         test.diagnoseFccHessianFiniteDifference();
         test.diagnoseFccConstrainedDirectionalSecondDerivative();
         test.fccSinglePhaseAlgorithmAConverges();
-        test.fccBccTwoPhaseAlgorithmAConverges();
+        test.fccBccCandidateSetConverges();
+        test.fccBccAlgorithmAReportsEquilibriumState();
 
         System.out.println("\n=== All tests completed ===");
     }
@@ -1073,7 +1074,7 @@ public class CefSinglePhaseIntegrationTest {
         System.out.println("Driving force = " + stable.drivingForce);
     }
 
-    void fccBccTwoPhaseAlgorithmAConverges() throws Exception {
+    void fccBccCandidateSetConverges() throws Exception {
 
         final double T = 1000.0;
         final double P = 101325.0;
@@ -1198,6 +1199,91 @@ public class CefSinglePhaseIntegrationTest {
         }
 
         System.out.println("Iterations = " + result.getIterations());
+    }
+
+    void fccBccAlgorithmAReportsEquilibriumState() throws Exception {
+
+        final double T = 1000.0;
+        final double P = 101325.0;
+
+        final double[] x = {
+            0.50,   // Fe
+            0.50    // Cr
+        };
+
+        List<PhaseModelFactory.PhaseModel> phaseModels = Arrays.asList(
+            buildPhase("BCC_A2"),
+            buildPhase("FCC_A1")
+        );
+
+        ArrayList<String> elements = new ArrayList<>(
+                Arrays.asList("FE", "CR"));
+
+        List<GibbsEnergyModel> phases = new ArrayList<>();
+        for (PhaseModelFactory.PhaseModel pm : phaseModels) {
+            phases.add(pm.toGibbsModel(elements));
+        }
+
+        EquilibriumSolver solver = new EquilibriumSolver();
+        EquilibriumResult result =
+                solver.solve(T, P, x, phases);
+
+        if (!result.isConverged()) {
+            throw new AssertionError("Algorithm A did not converge");
+        }
+
+        System.out.println();
+        System.out.println("=== Algorithm A equilibrium ===");
+        System.out.println("T          = " + result.getT());
+        System.out.println("P          = " + result.getP());
+        System.out.println("iterations = " + result.getIterations());
+        System.out.println("mu         = " + Arrays.toString(result.getMu()));
+
+        System.out.println("--- stable phases ---");
+
+        for (EquilibriumResult.PhaseResult phase :
+                result.getStablePhases()) {
+
+            System.out.println(
+                phase.phaseName
+                + "  amount=" + phase.amount
+                + "  G=" + phase.G
+                + "  drivingForce=" + phase.drivingForce
+            );
+
+            System.out.println(
+                "    x = " + Arrays.toString(phase.x)
+            );
+
+            System.out.println(
+                "    y = " + Arrays.toString(phase.y)
+            );
+        }
+
+        System.out.println("--- metastable phases ---");
+
+        for (EquilibriumResult.PhaseResult phase :
+                result.getMetastablePhases()) {
+
+            System.out.println(
+                phase.phaseName
+                + "  amount=" + phase.amount
+                + "  G=" + phase.G
+                + "  drivingForce=" + phase.drivingForce
+            );
+
+            System.out.println(
+                "    x = " + Arrays.toString(phase.x)
+            );
+
+            System.out.println(
+                "    y = " + Arrays.toString(phase.y)
+            );
+        }
+
+        if (result.getStablePhases().isEmpty()) {
+            throw new AssertionError("No stable phases returned");
+        }
     }
 
     /**
