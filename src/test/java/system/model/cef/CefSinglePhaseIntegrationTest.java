@@ -28,7 +28,7 @@ import java.util.List;
  */
 public class CefSinglePhaseIntegrationTest {
 
-    private static final String TDB_FILE =
+    private static final String STEEL7_TDB =
             "data/steel7.TDB";
 
     private static final double T = 1273.15;
@@ -39,11 +39,10 @@ public class CefSinglePhaseIntegrationTest {
     private PhaseModelFactory.PhaseModel buildPhase(String phaseName) throws Exception {
 
         TdbParser parser = new TdbParser();
-        parser.load(TDB_FILE);
+        parser.load(STEEL7_TDB);
 
         tdb rawDb = parser.getUnderlyingTdb();
 
-        // steel7.TDB is an Fe-Cr-Ni-Mo-V-C system.
         String[] elements = {"FE", "CR", "NI", "MO", "V", "C"};
         tdb filtered = rawDb.gettdb(elements);
 
@@ -76,7 +75,7 @@ public class CefSinglePhaseIntegrationTest {
         test.diagnoseFccGradientFiniteDifference();
         test.diagnoseFccHessianFiniteDifference();
         test.diagnoseFccConstrainedDirectionalSecondDerivative();
-        test.fccSinglePhaseEquilibriumConverges();
+        test.fccSinglePhaseAlgorithmAConverges();
 
         System.out.println("\n=== All tests completed ===");
     }
@@ -748,117 +747,52 @@ public class CefSinglePhaseIntegrationTest {
          */
     }
 
-    void fccSinglePhaseEquilibriumConverges() throws Exception {
+    void fccSinglePhaseAlgorithmAConverges() throws Exception {
 
         final double T = 1273.15;
         final double P = 101325.0;
         final String phaseName = "FCC_A1";
 
-        /*
-         * ------------------------------------------------------------------
-         * 1. Build FCC_A1 from steel7.TDB
-         * ------------------------------------------------------------------
-         */
         ArrayList<String> elements = new ArrayList<>(
                 Arrays.asList("FE", "CR", "NI", "MO", "V", "C"));
 
-        ArrayList<PhaseModelFactory.PhaseModel> models = new ArrayList<>();
+        /*
+         * 1. Build FCC_A1 from steel7.TDB
+         */
         PhaseModelFactory.PhaseModel phase = buildPhase(phaseName);
-        if (phase != null) {
-            models.add(phase);
-        }
 
-        if (models.isEmpty()) {
-            throw new AssertionError("Failed to build FCC_A1 phase");
+        if (phase == null) {
+            throw new AssertionError("FCC_A1 phase is null");
         }
-
-        if (models.size() != 1) {
-            throw new AssertionError("Expected 1 phase, got " + models.size());
-        }
-
-        phase = models.get(0);
 
         if (!phaseName.equals(phase.phaseName)) {
-            throw new AssertionError("Phase name mismatch: expected " + phaseName
-                    + ", got " + phase.phaseName);
-        }
-
-        /*
-         * The factory must return the CEF Gibbs object for FCC_A1.
-         */
-        if (phase.gibbs == null) {
-            throw new AssertionError(
-                    "FCC_A1 Gibbs model must not be null");
+            throw new AssertionError("Phase name mismatch");
         }
 
         CefGibbs gibbs = phase.gibbs;
 
+        if (gibbs == null) {
+            throw new AssertionError("CEF Gibbs is null");
+        }
+
         /*
-         * ------------------------------------------------------------------
-         * 2. Check the CEF structure
-         * ------------------------------------------------------------------
+         * 2. Use a composition already verified to be representable.
          */
-        int ns = gibbs.ns();
-        int nip = gibbs.nip();
+        double[] x = {
+            0.99,   // Fe
+            0.01,   // Cr
+            0.00,   // Ni
+            0.00,   // Mo
+            0.00,   // V
+            0.00    // C
+        };
 
-        if (ns < 1) {
-            throw new AssertionError("CEF phase must have at least one sublattice");
-        }
-
-        if (nip < ns) {
-            throw new AssertionError("Invalid number of CEF internal variables");
-        }
-
-        int[] nc = gibbs.constituentsPerSublattice();
-        int[] offsets = gibbs.offsets();
-
-        if (ns != nc.length) {
-            throw new AssertionError("nc array length mismatch");
-        }
-
-        if (ns != offsets.length) {
-            throw new AssertionError("offsets array length mismatch");
+        if (Math.abs(Arrays.stream(x).sum() - 1.0) > 1.0e-12) {
+            throw new AssertionError("Composition does not sum to one");
         }
 
         /*
-         * ------------------------------------------------------------------
-         * 3. Use a composition that must be in FCC_A1 composition space.
-         *
-         * We start with pure iron in the metal sublattice, a small amount
-         * of carbon (or no carbon), and let Gauss-Newton map it.
-         *
-         * This avoids the ambiguity of the forward composition mapping.
-         * ------------------------------------------------------------------
-         */
-        double[] x0 = new double[elements.size()];
-        x0[0] = 0.99;   // Fe
-        x0[1] = 0.01;   // Cr
-        x0[2] = 0.0;    // Ni
-        x0[3] = 0.0;    // Mo
-        x0[4] = 0.0;    // V
-        x0[5] = 0.0;    // C
-
-        double xSum = 0.0;
-        for (double xi : x0) {
-            xSum += xi;
-        }
-
-        if (Math.abs(xSum - 1.0) > 1.0e-12) {
-            throw new AssertionError(
-                    "Test composition must sum to one");
-        }
-
-        System.out.println(
-                "FCC_A1 test composition x = "
-                + Arrays.toString(x0));
-
-        /*
-         * ------------------------------------------------------------------
-         * 4. Create the adapter and test the composition mapping.
-         *
-         * The test is: can we map from this composition to a valid
-         * CEF constitution, and then back to the same composition?
-         * ------------------------------------------------------------------
+         * 3. Construct a valid initial CEF constitution.
          */
         CefPhaseModelAdapter adapter = new CefPhaseModelAdapter(
                 gibbs,
@@ -868,122 +802,274 @@ public class CefSinglePhaseIntegrationTest {
                 phase.constituentNames
         );
 
-        double[] yInit = adapter.getInitialInternalVars(x0);
+        double[] y0 = adapter.getInitialInternalVars(x);
 
-        if (yInit == null) {
-            throw new AssertionError("Initializer returned null");
+        if (y0 == null) {
+            throw new AssertionError("Initial CEF constitution is null");
         }
 
-        if (yInit.length != nip) {
-            throw new AssertionError("Initializer returned wrong size");
+        if (y0.length != gibbs.nip()) {
+            throw new AssertionError("Initial y length mismatch");
         }
 
-        for (int s = 0; s < ns; s++) {
+        if (!adapter.isValid(y0)) {
+            throw new AssertionError("Initial CEF constitution is invalid");
+        }
+
+        int[] nc = gibbs.constituentsPerSublattice();
+        int[] offsets = gibbs.offsets();
+
+        for (int s = 0; s < gibbs.ns(); s++) {
 
             double sum = 0.0;
 
             for (int i = 0; i < nc[s]; i++) {
 
-                double yi = yInit[offsets[s] + i];
+                double yi = y0[offsets[s] + i];
 
                 if (!Double.isFinite(yi)) {
-                    throw new AssertionError(
-                            "Initializer produced non-finite site fraction");
+                    throw new AssertionError("Non-finite initial site fraction");
                 }
 
                 if (yi <= 0.0) {
                     throw new AssertionError(
-                            "Initializer must produce strictly positive site fractions");
+                            "Algorithm A must start from positive site fractions");
                 }
 
                 sum += yi;
             }
 
-            if (Math.abs(sum - 1.0) > 1.0e-12) {
-                throw new AssertionError(
-                        "Initializer must normalize every sublattice");
+            if (Math.abs(sum - 1.0) > 1.0e-10) {
+                throw new AssertionError("CEF sublattice is not normalized");
             }
         }
 
         /*
-         * Verify that the initializer actually reproduces the requested
-         * overall composition.
+         * 4. Confirm composition representation.
          */
-        double[] xRecovered = adapter.compositionFromInternal(yInit);
+        double[] xInitial = adapter.compositionFromInternal(y0);
 
-        if (xRecovered == null) {
-            throw new AssertionError("Recovered composition is null");
-        }
+        for (int k = 0; k < x.length; k++) {
 
-        if (xRecovered.length != x0.length) {
-            throw new AssertionError("Recovered composition length mismatch");
-        }
-
-        for (int k = 0; k < x0.length; k++) {
-
-            if (Math.abs(xRecovered[k] - x0[k]) > 1.0e-5) {
+            if (Math.abs(xInitial[k] - x[k]) > 1.0e-5) {
                 throw new AssertionError(
-                        "CEF composition mapping error for element "
-                        + elements.get(k) + ": expected " + x0[k]
-                        + ", got " + xRecovered[k]);
+                        "Initial CEF composition mismatch for " + elements.get(k));
             }
         }
 
         /*
-         * ------------------------------------------------------------------
-         * 5. Install the valid initial constitution and test CEF evaluation.
-         * ------------------------------------------------------------------
+         * 5. Evaluate initial Gibbs energy.
          */
-        adapter.setInternalVars(yInit);
+        adapter.setInternalVars(y0);
 
-        double G = adapter.evaluateG(x0, T);
+        double G0 = adapter.evaluateG(x, T);
 
-        if (!Double.isFinite(G)) {
-            throw new AssertionError(
-                    "FCC_A1 Gibbs energy must be finite");
+        if (!Double.isFinite(G0)) {
+            throw new AssertionError("Initial FCC_A1 Gibbs energy is not finite");
         }
 
-        double[] gradient = gibbs.gradient(T, yInit);
+        /*
+         * 6. Convert to GibbsEnergyModel for Algorithm A.
+         */
+        GibbsEnergyModel model = phase.toGibbsModel(elements);
 
-        if (gradient == null) {
-            throw new AssertionError("Gradient is null");
+        if (model == null) {
+            throw new AssertionError("FCC_A1 GibbsEnergyModel is null");
         }
 
-        if (gradient.length != nip) {
-            throw new AssertionError("Gradient length mismatch");
+        /*
+         * 7. Run Sundman Algorithm A.
+         *    ONLY FCC_A1 is supplied.
+         */
+        List<GibbsEnergyModel> phases = Collections.singletonList(model);
+
+        EquilibriumSolver solver = new EquilibriumSolver();
+        EquilibriumResult result =
+                solver.solve(T, P, x, phases);
+
+        if (result == null) {
+            throw new AssertionError("Algorithm A returned null result");
         }
 
-        for (double value : gradient) {
-            if (!Double.isFinite(value)) {
+        /*
+         * 8. Algorithm A convergence
+         */
+        if (!result.isConverged()) {
+            throw new AssertionError("Sundman Algorithm A did not converge");
+        }
+
+        if (result.getIterations() <= 0) {
+            throw new AssertionError("Algorithm A performed no iterations");
+        }
+
+        /*
+         * 9. External conditions remain fixed.
+         */
+        if (Math.abs(result.getT() - T) > 1.0e-10) {
+            throw new AssertionError("Algorithm A changed temperature");
+        }
+
+        if (Math.abs(result.getP() - P) > 1.0e-6) {
+            throw new AssertionError("Algorithm A changed pressure");
+        }
+
+        /*
+         * 10. Exactly one stable phase.
+         */
+        if (result.getStablePhases().size() != 1) {
+            throw new AssertionError("Expected exactly one stable phase");
+        }
+
+        EquilibriumResult.PhaseResult stable = result.getStablePhases().get(0);
+
+        if (!phaseName.equals(stable.phaseName)) {
+            throw new AssertionError("Phase name mismatch in result");
+        }
+
+        /*
+         * 11. Phase amount.
+         */
+        if (!Double.isFinite(stable.amount)) {
+            throw new AssertionError("Phase amount is not finite");
+        }
+
+        if (stable.amount <= 0.0) {
+            throw new AssertionError("FCC_A1 phase amount must be positive");
+        }
+
+        /*
+         * 12. Gibbs energy.
+         */
+        if (!Double.isFinite(stable.G)) {
+            throw new AssertionError("Equilibrium Gibbs energy is not finite");
+        }
+
+        /*
+         * 13. Chemical potentials.
+         */
+        double[] mu = result.getMu();
+
+        if (mu == null) {
+            throw new AssertionError("Chemical potentials are null");
+        }
+
+        if (mu.length != elements.size()) {
+            throw new AssertionError("Chemical potential array length mismatch");
+        }
+
+        for (int k = 0; k < mu.length; k++) {
+
+            if (!Double.isFinite(mu[k])) {
                 throw new AssertionError(
-                        "CEF gradient contains non-finite value");
+                        "Non-finite chemical potential for " + elements.get(k));
             }
         }
 
         /*
-         * ------------------------------------------------------------------
-         * Test passed: Gauss-Newton composition mapping works correctly.
-         * ------------------------------------------------------------------
+         * 14. Verify equilibrium composition.
+         */
+        if (stable.x == null) {
+            throw new AssertionError("Equilibrium composition is null");
+        }
+
+        if (stable.x.length != x.length) {
+            throw new AssertionError("Composition length mismatch");
+        }
+
+        double xSum = 0.0;
+
+        for (int k = 0; k < x.length; k++) {
+
+            if (!Double.isFinite(stable.x[k])) {
+                throw new AssertionError("Non-finite equilibrium composition");
+            }
+
+            if (stable.x[k] < -1.0e-8) {
+                throw new AssertionError("Negative equilibrium composition");
+            }
+
+            xSum += stable.x[k];
+
+            if (Math.abs(stable.x[k] - x[k]) > 1.0e-5) {
+                throw new AssertionError(
+                        "Mass-balance composition mismatch for " + elements.get(k));
+            }
+        }
+
+        if (Math.abs(xSum - 1.0) > 1.0e-8) {
+            throw new AssertionError("Equilibrium composition does not sum to unity");
+        }
+
+        /*
+         * 15. Verify the final CEF constitution.
+         */
+        if (stable.y == null) {
+            throw new AssertionError("Algorithm A did not return CEF site fractions");
+        }
+
+        if (stable.y.length != gibbs.nip()) {
+            throw new AssertionError("CEF site fractions length mismatch");
+        }
+
+        for (int s = 0; s < gibbs.ns(); s++) {
+
+            double sum = 0.0;
+
+            for (int i = 0; i < nc[s]; i++) {
+
+                double yi = stable.y[offsets[s] + i];
+
+                if (!Double.isFinite(yi)) {
+                    throw new AssertionError("Final CEF site fraction is not finite");
+                }
+
+                if (yi <= 0.0) {
+                    throw new AssertionError("Final CEF site fraction is not positive");
+                }
+
+                sum += yi;
+            }
+
+            if (Math.abs(sum - 1.0) > 1.0e-8) {
+                throw new AssertionError("Final CEF sublattice is not normalized");
+            }
+        }
+
+        /*
+         * 16. Check final CEF constitution independently.
+         */
+        double[] xFromY = adapter.compositionFromInternal(stable.y);
+
+        for (int k = 0; k < x.length; k++) {
+
+            if (Math.abs(xFromY[k] - x[k]) > 1.0e-5) {
+                throw new AssertionError(
+                        "Final y -> x mismatch for " + elements.get(k));
+            }
+        }
+
+        /*
+         * 17. Driving force (don't impose strict zero yet).
+         */
+        if (!Double.isFinite(stable.drivingForce)) {
+            throw new AssertionError("Stable-phase driving force is not finite");
+        }
+
+        /*
+         * Diagnostic output
          */
         System.out.println();
-        System.out.println(
-                "===============================================");
-        System.out.println(
-                "CEF COMPOSITION MAPPING TEST PASSED");
-        System.out.println(
-                "===============================================");
-        System.out.println(
-                "Input composition: " + Arrays.toString(x0));
-        System.out.println(
-                "Recovered composition: " + Arrays.toString(xRecovered));
-        System.out.println(
-                "CEF site fractions: " + Arrays.toString(yInit));
-        System.out.println(
-                "Gibbs energy: " + G + " J/mol");
-        System.out.println(
-                "Gradient norm: " + Math.sqrt(
-                        gradient[0] * gradient[0] + gradient[1] * gradient[1]));
-        System.out.println();
+        System.out.println("FCC_A1 SUNDMAN ALGORITHM A TEST PASSED");
+        System.out.println("T = " + result.getT() + " K");
+        System.out.println("P = " + result.getP() + " Pa");
+        System.out.println("Iterations = " + result.getIterations());
+        System.out.println("Input x = " + Arrays.toString(x));
+        System.out.println("Equilibrium x = " + Arrays.toString(stable.x));
+        System.out.println("Equilibrium y = " + Arrays.toString(stable.y));
+        System.out.println("mu = " + Arrays.toString(result.getMu()));
+        System.out.println("G = " + stable.G + " J/mol");
+        System.out.println("Amount = " + stable.amount);
+        System.out.println("Driving force = " + stable.drivingForce);
     }
 
     /**

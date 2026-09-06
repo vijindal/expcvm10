@@ -563,11 +563,7 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
                 double yi = y[off[s] + i];
 
                 if (!Double.isFinite(yi) || yi <= EPS) {
-                    throw new IllegalStateException(
-                        "CEF initial constitution contains non-positive " +
-                        "site fraction: sublattice=" + s +
-                        ", constituent=" + i +
-                        ", y=" + yi);
+                    return null;
                 }
 
                 sum += yi;
@@ -962,8 +958,11 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
         double   nfu  = nfu();
 
         for (int s = 0; s < gibbs.ns(); s++) {
-            for (int i = 0; i < ncSL[s] && i < nc; i++) {
-                gxMole[i] += a[s] * gxSite[offs[s] + i];
+            for (int i = 0; i < ncSL[s]; i++) {
+                int elementIdx = elementIndexOnSublattice[s][i];
+                if (elementIdx >= 0) {
+                    gxMole[elementIdx] += a[s] * gxSite[offs[s] + i];
+                }
             }
         }
         // Normalize by nfu so gradient is per mole of atoms
