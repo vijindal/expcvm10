@@ -77,7 +77,7 @@ public class EquilibriumSolver {
             // μ_A from single-phase tangent: G_M + Σ_A μ_A M^α_A = 0
             // Standard CALPHAD result for single phase:
             double[] gx   = pr.model.gradient(pr.x, T);
-            double[] mA   = pr.x;
+            double[] mA   = pr.mA;
             double   gVal = pr.model.evaluateG(pr.x, T);
             double   nfu  = pr.model.nfu();
             double   gTilde = gVal / nfu;
@@ -436,68 +436,140 @@ public class EquilibriumSolver {
     // ------------------------------------------------------------------
 
     /**
-     * Solves for initial phase amounts ℵ^α from the mass-balance
-     * equations, using the same M_A definition (pr.mA, the true
-     * unnormalized Sundman M_A^phase) as assembleEquilibriumMatrix's
-     * mass-balance block -- NOT the normalized mole fraction pr.x.
-     * Using pr.x here (as before) is dimensionally inconsistent whenever
-     * stable phases have different nfu (see M2 Step 6 diagnostic).
+     * Solves the initial phase amounts from the component mass-balance
+     * equations
      *
-     * <p>pr.mA is only populated by PhaseRecord.updateFromModel(); a
-     * freshly-built PhaseRecord (from GridMinimizer) still carries its
-     * constructor's placeholder mA=x.clone(). Since M_A depends only on y
-     * (not on mu), each stable phase's mA is refreshed here from its
-     * current y before the mass-balance system is assembled, at mu=0 --
-     * this does not affect y itself and mirrors the refresh the Newton
-     * loop performs every iteration via updateFromModel.
+     *     sum_alpha N_alpha M_A^alpha = N_A
+     *
+     * using the same M_A definition as the Newton mass-balance block.
+     *
+     * No additional constraint such as sum(N_alpha) = 1 is imposed:
+     * Sundman's phase amounts are amounts of phase formula units and need
+     * not sum to unity.
      */
-    private void solveInitialFractions(EquilibriumState state, double T, double P) {
+    private void solveInitialFractions(
+            EquilibriumState state,
+            double T,
+            double P) {
+
         int np = state.stablePhases().size();
         int nc = state.numComponents();
 
+        /*
+         * Refresh M_A for the current phase constitutions.
+         */
         for (PhaseRecord pr : state.stablePhases()) {
-            pr.updateFromModel(T, P, 0, 0, new double[nc]);
+            pr.updateFromModel(
+                T,
+                P,
+                0.0,
+                0.0,
+                new double[nc]
+            );
         }
 
+        /*
+         * One stable phase:
+         *
+         * The overall composition determines its constitution, while
+         * the amount is one formula-unit-normalized system amount for
+         * the present solver convention.
+         */
         if (np == 1) {
-            // Single phase: f = 1
             state.stablePhases().get(0).amount = 1.0;
             return;
         }
 
-        // Linear system: np equations, np unknowns
-        // f[ip]·mA[ip][ic] = compOverAll[ic] for each ic, solved for f[]
-        // For simplicity, use only the first nc equations (one per component)
-        // and the constraint Σ f = 1
+        /*
+         * There cannot be more independent phase amounts than there are
+         * independent component-balance equations.
+         */
+        if (np > nc) {
+            throw new IllegalStateException(
+                "Too many stable phases (" + np
+                + ") for " + nc
+                + " component mass-balance equations"
+            );
+        }
 
+        /*
+         * Select np independent component equations.
+         *
+         * For the present binary/two-phase case this simply gives:
+         *
+         *   [ M_Fe^alpha ] N_alpha = N_Fe
+         *   [ M_Cr^alpha ] N_alpha = N_Cr
+         *
+         * For a future general implementation, row selection should be
+         * replaced by rank-revealing selection if necessary.
+         */
         double[][] A = new double[np][np];
         double[] b = new double[np];
 
-        for (int ic = 0; ic < Math.min(nc, np - 1); ic++) {
-            for (int ip = 0; ip < np; ip++) {
-                A[ic][ip] = state.stablePhases().get(ip).mA[ic];
-            }
-            b[ic] = state.compOverAll[ic];
-        }
+        for (int row = 0; row < np; row++) {
 
-        // Last equation: sum of fractions = 1
-        for (int ip = 0; ip < np; ip++) {
-            A[np - 1][ip] = 1.0;
+            int component = row;
+
+            b[row] = state.compOverAll[component];
+
+            for (int ip = 0; ip < np; ip++) {
+                A[row][ip] =
+                    state.stablePhases().get(ip).mA[component];
+            }
         }
-        b[np - 1] = 1.0;
 
         try {
+
             Matrix matA = new Matrix(A);
             Matrix matB = new Matrix(b, np);
-            Matrix matF = matA.solve(matB);
+            Matrix matN = matA.solve(matB);
+
             for (int ip = 0; ip < np; ip++) {
-                double f = matF.get(ip, 0);
-                state.stablePhases().get(ip).amount = Math.max(f, 0);
+
+                double amount = matN.get(ip, 0);
+
+                if (!Double.isFinite(amount)) {
+                    throw new IllegalStateException(
+                        "Non-finite initial amount for phase "
+                        + state.stablePhases().get(ip).phaseName()
+                    );
+                }
+
+                /*
+                 * Do not silently turn a negative solution into zero.
+                 * A negative solution means that this phase set cannot
+                 * represent the specified overall composition with the
+                 * current phase constitutions.
+                 */
+                if (amount < -Constants.MIN_PHASE_AMOUNT) {
+                    throw new IllegalStateException(
+                        "Negative initial phase amount for "
+                        + state.stablePhases().get(ip).phaseName()
+                        + ": " + amount
+                    );
+                }
+
+                state.stablePhases().get(ip).amount =
+                    Math.max(0.0, amount);
             }
-        } catch (Exception e) {
-            // Fallback: equal fractions
-            for (int ip = 0; ip < np; ip++) {
-                state.stablePhases().get(ip).amount = 1.0 / np;
+
+        } catch (RuntimeException e) {
+
+            /*
+             * Initial phase amounts are only an initial guess.
+             * If the selected component equations are singular, let the
+             * Newton phase-set machinery start from a neutral positive
+             * guess rather than silently claiming that mass balance was
+             * satisfied.
+             */
+            LOG.warning(
+                "Could not solve initial phase amounts: "
+                + e.getMessage()
+                + " -- using equal positive initial amounts."
+            );
+
+            for (PhaseRecord pr : state.stablePhases()) {
+                pr.amount = 1.0 / np;
             }
         }
     }

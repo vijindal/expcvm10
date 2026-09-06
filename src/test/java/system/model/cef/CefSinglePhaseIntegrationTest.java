@@ -77,7 +77,7 @@ public class CefSinglePhaseIntegrationTest {
         test.diagnoseFccConstrainedDirectionalSecondDerivative();
         test.fccSinglePhaseAlgorithmAConverges();
         test.fccBccCandidateSetConverges();
-        test.fccBccAlgorithmAReportsEquilibriumState();
+        test.fccBccAlgorithmAAuditEquilibriumRelations();
 
         System.out.println("\n=== All tests completed ===");
     }
@@ -1178,30 +1178,16 @@ public class CefSinglePhaseIntegrationTest {
         /*
          * Verify mass balance by reconstructing composition from phases.
          */
-        double[] xRecovered = new double[x.length];
-
-        for (EquilibriumResult.PhaseResult phase : result.getStablePhases()) {
-
-            for (int k = 0; k < x.length; k++) {
-                xRecovered[k] += phase.amount * phase.x[k];
-            }
-        }
-
-        for (int k = 0; k < x.length; k++) {
-            xRecovered[k] /= totalAmount;
-
-            if (Math.abs(xRecovered[k] - x[k]) > 1.0e-6) {
-                throw new AssertionError(
-                        "Mass balance failed for element " + k
-                        + ": expected " + x[k]
-                        + ", got " + xRecovered[k]);
-            }
+        if (maxMassBalanceResidual(x, result.getStablePhases()) >= 1.0e-6) {
+            throw new AssertionError(
+                    "Mass balance residual exceeds tolerance"
+            );
         }
 
         System.out.println("Iterations = " + result.getIterations());
     }
 
-    void fccBccAlgorithmAReportsEquilibriumState() throws Exception {
+    void fccBccAlgorithmAAuditEquilibriumRelations() throws Exception {
 
         final double T = 1000.0;
         final double P = 101325.0;
@@ -1284,6 +1270,48 @@ public class CefSinglePhaseIntegrationTest {
         if (result.getStablePhases().isEmpty()) {
             throw new AssertionError("No stable phases returned");
         }
+    }
+
+    private static double maxMassBalanceResidual(
+            double[] overall,
+            List<EquilibriumResult.PhaseResult> phases) {
+
+        double[] recovered = new double[overall.length];
+
+        double totalAmount = 0.0;
+
+        for (EquilibriumResult.PhaseResult ph : phases) {
+            totalAmount += ph.amount;
+        }
+
+        if (totalAmount <= 0.0) {
+            return Double.POSITIVE_INFINITY;
+        }
+
+        /*
+         * PhaseResult.x is mole fraction, so this is still only a
+         * normalized-composition diagnostic.
+         */
+        for (EquilibriumResult.PhaseResult ph : phases) {
+            for (int A = 0; A < overall.length; A++) {
+                recovered[A] += ph.amount * ph.x[A];
+            }
+        }
+
+        for (int A = 0; A < overall.length; A++) {
+            recovered[A] /= totalAmount;
+        }
+
+        double maxResidual = 0.0;
+
+        for (int A = 0; A < overall.length; A++) {
+            maxResidual = Math.max(
+                maxResidual,
+                Math.abs(recovered[A] - overall[A])
+            );
+        }
+
+        return maxResidual;
     }
 
     /**
