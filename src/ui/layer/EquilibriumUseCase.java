@@ -3,10 +3,12 @@ package ui.layer;
 import system.ports.DatabasePort;
 import system.ports.EquilibriumResult;
 import system.model.GibbsEnergyModel;
+import system.model.PhaseModelFactory;
 import calc.equil.EquilibriumSolver;
 import ui.request.CalculationRequest;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.logging.Logger;
@@ -65,7 +67,13 @@ public class EquilibriumUseCase {
                 request.getElements(), request.getPhases());
 
         @SuppressWarnings("unchecked")
-        List<GibbsEnergyModel> candidates = (List<GibbsEnergyModel>) (List<?>) modelList;
+        List<PhaseModelFactory.PhaseModel> phaseModels =
+            (List<PhaseModelFactory.PhaseModel>) (List<?>) modelList;
+
+        List<GibbsEnergyModel> candidates = new ArrayList<>();
+        for (PhaseModelFactory.PhaseModel pm : phaseModels) {
+            candidates.add(pm.toGibbsModel(request.getElements()));
+        }
 
         if (candidates.isEmpty()) {
             throw new IllegalStateException(

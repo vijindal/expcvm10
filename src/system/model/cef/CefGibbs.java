@@ -1,492 +1,1290 @@
 package system.model.cef;
 
-import java.util.Collections;
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
- * Compound Energy Formalism (CEF) Gibbs energy evaluator for general ns sublattices.
+ * General Compound Energy Formalism (CEF) Gibbs-energy model.
  *
- * <h2>Gibbs energy formula</h2>
+ * <p>The Gibbs energy is written as</p>
+ *
  * <pre>
- *   G = G₀ + G_id + G_Em
- *
- *   G₀   = Σ over all end members em: (∏ₛ y[offset[s]+idx_em[s]]) · G_em(T)
- *
- *   G_id = R·T · Σₛ a[s] · Σᵢ y[offset[s]+i] · ln(y[offset[s]+i])
- *
- *   G_Em = Σ_interactions y[pSL][pA]·y[pSL][pB]·y[oSL][k]·L(T)
+ * G = G_ref + G_id + G_ex
  * </pre>
  *
- * <p><b>Known limitation</b>: {@code CefInteractionParam} uses
- * {@code oSL = 1 - pSL}, which assumes each interaction parameter
- * pairs exactly two sublattices. This covers all standard TDB databases.</p>
+ * <p>where</p>
  *
- * <h2>Internal parameter layout</h2>
- * The flat index for sublattice s, constituent i is:
  * <pre>
- *   m = offset[s] + i
- *   where offset[0] = 0,  offset[s] = offset[s-1] + nc[s-1]
- *   nip = offset[ns-1] + nc[ns-1]  = Σₛ nc[s]
+ * G_ref = sum_I P_I G_I
+ *
+ * G_id  = R T sum_s a_s sum_i y_si ln(y_si)
  * </pre>
  *
- * <h2>End-member radix ordering</h2>
- * End member em is decoded by:
- * <pre>
- *   stride[0] = 1
- *   stride[s] = stride[s-1] * nc[s-1]
- *   idx[s] = (em / stride[s]) % nc[s]
- * </pre>
- * so sublattice 0 is the least-significant digit.
+ * <p>The reference term is the CEF zeroth-order constituent-array
+ * contribution. Interaction terms are represented by CefInteractionParam
+ * objects. The Redlich-Kister order stored in an interaction is kept
+ * separate from the CEF constituent-array structure.</p>
  */
 public class CefGibbs {
 
-    // ------------------------------------------------------------------
-    // Class-level constants
-    // ------------------------------------------------------------------
+    /**
+     * Second-order automatic differentiation value.
+     *
+     * Stores value, first derivatives, and second derivatives
+     * with respect to all CEF site-fraction variables.
+     */
+    private static final class AD2 {
 
-    /** Maximum number of sublattices supported. */
-    public static final int MAX_SUBLATTICES = 9;
+        final double value;
+        final double[] grad;
+        final double[][] hess;
 
-    /** Universal gas constant J/(mol·K). */
-    public static final double R = 8.3144598;
+        private AD2(double value, double[] grad, double[][] hess) {
+            this.value = value;
+            this.grad = grad;
+            this.hess = hess;
+        }
 
-    // ------------------------------------------------------------------
-    // Fields
-    // ------------------------------------------------------------------
+        static AD2 constant(double value, int n) {
+            return new AD2(value, new double[n], new double[n][n]);
+        }
 
-    /** Number of sublattices. */
+        static AD2 variable(double value, int index, int n) {
+            double[] grad = new double[n];
+            double[][] hess = new double[n][n];
+            grad[index] = 1.0;
+            return new AD2(value, grad, hess);
+        }
+
+        AD2 add(AD2 other) {
+            int n = grad.length;
+            double[] g = new double[n];
+            double[][] h = new double[n][n];
+
+            for (int i = 0; i < n; i++) {
+                g[i] = grad[i] + other.grad[i];
+                for (int j = 0; j < n; j++) {
+                    h[i][j] = hess[i][j] + other.hess[i][j];
+                }
+            }
+
+            return new AD2(value + other.value, g, h);
+        }
+
+        AD2 subtract(AD2 other) {
+            int n = grad.length;
+            double[] g = new double[n];
+            double[][] h = new double[n][n];
+
+            for (int i = 0; i < n; i++) {
+                g[i] = grad[i] - other.grad[i];
+                for (int j = 0; j < n; j++) {
+                    h[i][j] = hess[i][j] - other.hess[i][j];
+                }
+            }
+
+            return new AD2(value - other.value, g, h);
+        }
+
+        AD2 multiply(AD2 other) {
+            int n = grad.length;
+            double[] g = new double[n];
+            double[][] h = new double[n][n];
+
+            for (int i = 0; i < n; i++) {
+                g[i] = grad[i] * other.value + value * other.grad[i];
+
+                for (int j = 0; j < n; j++) {
+                    h[i][j] = hess[i][j] * other.value
+                            + grad[i] * other.grad[j]
+                            + grad[j] * other.grad[i]
+                            + value * other.hess[i][j];
+                }
+            }
+
+            return new AD2(value * other.value, g, h);
+        }
+
+        AD2 scale(double factor) {
+            int n = grad.length;
+            double[] g = new double[n];
+            double[][] h = new double[n][n];
+
+            for (int i = 0; i < n; i++) {
+                g[i] = factor * grad[i];
+                for (int j = 0; j < n; j++) {
+                    h[i][j] = factor * hess[i][j];
+                }
+            }
+
+            return new AD2(factor * value, g, h);
+        }
+
+        AD2 pow(int exponent) {
+            if (exponent < 0)
+                throw new IllegalArgumentException("AD2 power must be non-negative");
+
+            if (exponent == 0)
+                return constant(1.0, grad.length);
+
+            if (exponent == 1)
+                return this;
+
+            AD2 result = constant(1.0, grad.length);
+            for (int k = 0; k < exponent; k++)
+                result = result.multiply(this);
+
+            return result;
+        }
+    }
+
+    private static final double R = 8.3144598;
+
     private final int ns;
-
-    /** Stoichiometric coefficients, length ns. */
     private final double[] a;
-
-    /** Constituents per sublattice, length ns. */
     private final int[] nc;
 
-    /** Flat-index offset for each sublattice: offset[s] = sum of nc[0..s-1], length ns. */
+    /**
+     * Offset of each sublattice in the flattened composition vector.
+     */
     private final int[] offset;
 
-    /** Total site fractions = sum of nc[s]. */
-    private final int nip;
+    /**
+     * Stride used for mixed-radix end-member indexing.
+     */
+    private final int[] stride;
 
-    /** End members; length = product of nc[s]; indexed in mixed-radix order (SL0 least significant). */
-    private final CefEndMember[] g0;
+    /**
+     * Number of end members.
+     */
+    private final int totalEM;
 
-    /** Interaction parameters (unmodifiable). */
+    /**
+     * Zeroth-order CEF constituent arrays.
+     */
+    private final CefEndMember[] endMembers;
+
+    /**
+     * Higher-order CEF interaction parameters.
+     */
     private final List<CefInteractionParam> interactions;
 
-    // ------------------------------------------------------------------
-    // Constructor
-    // ------------------------------------------------------------------
 
     /**
-     * Constructs a general ns-sublattice CEF Gibbs evaluator.
+     * Constructs a general CEF Gibbs-energy model.
      *
-     * @param sublatticeCoeffs         stoichiometric coefficients a[s], length ns
-     * @param constituentsPerSublattice nc[s], length ns
-     * @param g0                        end-member array, length = ∏ nc[s], in mixed-radix order
-     * @param interactions              CEF interaction parameters (may be empty)
+     * @param siteRatios number of sites on each sublattice
+     * @param constituents number of constituents on each sublattice
+     * @param endMembers complete zeroth-order constituent-array data
+     * @param interactions CEF interaction parameters
      */
-    public CefGibbs(double[] sublatticeCoeffs,
-                    int[] constituentsPerSublattice,
-                    CefEndMember[] g0,
+    public CefGibbs(double[] siteRatios,
+                    int[] constituents,
+                    CefEndMember[] endMembers,
                     List<CefInteractionParam> interactions) {
-        if (sublatticeCoeffs.length != constituentsPerSublattice.length)
+
+        if (siteRatios == null || constituents == null)
             throw new IllegalArgumentException(
-                "sublatticeCoeffs.length=" + sublatticeCoeffs.length
-                + " != constituentsPerSublattice.length=" + constituentsPerSublattice.length);
-        if (sublatticeCoeffs.length > MAX_SUBLATTICES)
+                    "Site ratios and constituent counts must not be null.");
+
+        if (siteRatios.length == 0)
             throw new IllegalArgumentException(
-                "Number of sublattices " + sublatticeCoeffs.length
-                + " exceeds MAX_SUBLATTICES=" + MAX_SUBLATTICES);
-        int prod = 1;
-        for (int n : constituentsPerSublattice) prod *= n;
-        if (g0.length != prod)
+                    "CEF model must contain at least one sublattice.");
+
+        if (siteRatios.length != constituents.length)
             throw new IllegalArgumentException(
-                "g0.length=" + g0.length + " but product of nc[s]=" + prod);
+                    "Site-ratio and constituent-count arrays must have equal length.");
 
-        this.ns     = sublatticeCoeffs.length;
-        this.a      = sublatticeCoeffs.clone();
-        this.nc     = constituentsPerSublattice.clone();
-        this.offset = new int[ns];
-        offset[0]   = 0;
-        for (int s = 1; s < ns; s++)
-            offset[s] = offset[s - 1] + nc[s - 1];
-        this.nip          = offset[ns - 1] + nc[ns - 1];
-        this.g0           = g0.clone();
-        this.interactions = Collections.unmodifiableList(new ArrayList<>(interactions));
-    }
+        this.ns = siteRatios.length;
 
-    // ------------------------------------------------------------------
-    // Primary API
-    // ------------------------------------------------------------------
+        this.a = siteRatios.clone();
+        this.nc = constituents.clone();
 
-    /**
-     * Evaluates G(y, T) = G₀ + G_id + G_Em.
-     *
-     * @param y  flat site-fraction vector, length nip
-     * @param T  temperature in Kelvin
-     * @return   molar Gibbs energy in J/mol
-     */
-    public double evaluate(double[] y, double T) {
-        checkY(y);
-        return g0Ref(y, T) + gId(y, T) + gEm(y, T);
-    }
-
-    /**
-     * Composition gradient ∂G/∂y[m] for all flat indices m = offset[s] + i.
-     *
-     * @param y  flat site-fraction vector
-     * @param T  temperature in Kelvin
-     * @return   gradient vector, length nip
-     */
-    public double[] gradient(double[] y, double T) {
-        checkY(y);
-        double[] gx = new double[nip];
-
-        // ── G₀ contribution ──────────────────────────────────────────────
-        // For each end member em, ∂G₀/∂y[m] = (∏_{t≠s} y[offset[t]+idx[t]]) · G_em(T)
-        // where m = offset[s] + idx[s]
-        int totalEM = totalEndMembers();
-        int[] stride = computeStrides();
-
-        for (int em = 0; em < totalEM; em++) {
-            int[] idx = decodeEM(em, stride);
-            double yProd = 1.0;
-            for (int s = 0; s < ns; s++)
-                yProd *= y[offset[s] + idx[s]];
-            double gVal = g0[em].G(T);
-            for (int s = 0; s < ns; s++) {
-                int m = offset[s] + idx[s];
-                gx[m] += (yProd / y[m]) * gVal;
-            }
-        }
-
-        // ── G_id contribution ─────────────────────────────────────────────
-        // ∂G_id/∂y[m] = R·T·a[s]·(ln(y[m]) + 1)
         for (int s = 0; s < ns; s++) {
+            if (!Double.isFinite(a[s]) || a[s] <= 0.0)
+                throw new IllegalArgumentException(
+                        "Invalid site ratio at sublattice " + s + ": " + a[s]);
+
+            if (nc[s] <= 0)
+                throw new IllegalArgumentException(
+                        "Invalid constituent count at sublattice " + s + ": " + nc[s]);
+        }
+
+        this.offset = new int[ns];
+        this.stride = new int[ns];
+
+        offset[0] = 0;
+        stride[0] = 1;
+
+        long nEM = nc[0];
+
+        for (int s = 1; s < ns; s++) {
+            offset[s] = offset[s - 1] + nc[s - 1];
+
+            long nextStride = (long) stride[s - 1] * nc[s - 1];
+
+            if (nextStride > Integer.MAX_VALUE)
+                throw new IllegalArgumentException(
+                        "Too many CEF end members for integer indexing.");
+
+            stride[s] = (int) nextStride;
+
+            nEM *= nc[s];
+
+            if (nEM > Integer.MAX_VALUE)
+                throw new IllegalArgumentException(
+                        "Too many CEF end members.");
+        }
+
+        this.totalEM = (int) nEM;
+
+        if (endMembers == null || endMembers.length != totalEM)
+            throw new IllegalArgumentException(
+                    "Expected " + totalEM +
+                    " end members but received " +
+                    (endMembers == null ? 0 : endMembers.length));
+
+        this.endMembers = endMembers.clone();
+
+        for (int em = 0; em < totalEM; em++) {
+            if (this.endMembers[em] == null)
+                throw new IllegalArgumentException(
+                        "Missing CEF end member at index " + em);
+        }
+
+        this.interactions =
+                interactions == null
+                ? List.of()
+                : List.copyOf(interactions);
+
+        validateInteractions();
+    }
+
+
+    /**
+     * Validates interaction indices against this CEF model.
+     */
+    private void validateInteractions() {
+
+        for (CefInteractionParam p : interactions) {
+
+            if (p == null)
+                throw new IllegalArgumentException(
+                        "Interaction list contains null.");
+
+            for (int k = 0; k < p.size(); k++) {
+
+                int s = p.sublattice(k);
+                int i = p.constituent(k);
+
+                if (s < 0 || s >= ns)
+                    throw new IllegalArgumentException(
+                            "Interaction contains invalid sublattice: " + s);
+
+                if (i < 0 || i >= nc[s])
+                    throw new IllegalArgumentException(
+                            "Interaction contains invalid constituent: "
+                            + i + " on sublattice " + s);
+            }
+        }
+    }
+
+
+    /* ------------------------------------------------------------------
+     * Basic model information
+     * ------------------------------------------------------------------ */
+
+    public int numberOfSublattices() {
+        return ns;
+    }
+
+    public int numberOfConstituents(int s) {
+        checkSublattice(s);
+        return nc[s];
+    }
+
+    public int totalConstituents() {
+        int n = 0;
+        for (int x : nc) n += x;
+        return n;
+    }
+
+    public int numberOfEndMembers() {
+        return totalEM;
+    }
+
+    public double siteRatio(int s) {
+        checkSublattice(s);
+        return a[s];
+    }
+
+
+    /**
+     * Returns the flattened composition-vector offset of a sublattice.
+     */
+    public int offset(int s) {
+        checkSublattice(s);
+        return offset[s];
+    }
+
+
+    /**
+     * Returns the end-member index corresponding to a complete
+     * constituent-index array.
+     */
+    public int endMemberIndex(int... constituentIdx) {
+
+        if (constituentIdx == null || constituentIdx.length != ns)
+            throw new IllegalArgumentException(
+                    "Expected " + ns + " constituent indices.");
+
+        int em = 0;
+
+        for (int s = 0; s < ns; s++) {
+            int i = constituentIdx[s];
+
+            if (i < 0 || i >= nc[s])
+                throw new IllegalArgumentException(
+                        "Invalid constituent index " + i +
+                        " on sublattice " + s);
+
+            em += i * stride[s];
+        }
+
+        return em;
+    }
+
+
+    /**
+     * Returns the end-member Gibbs-energy object.
+     */
+    public CefEndMember endMember(int... constituentIdx) {
+        return endMembers[endMemberIndex(constituentIdx)];
+    }
+
+
+    /**
+     * Backward-compatible two-sublattice accessor.
+     */
+    public CefEndMember endMember(int i, int j) {
+        if (ns != 2)
+            throw new IllegalStateException(
+                    "Two-index endMember() is valid only for a two-sublattice model.");
+
+        return endMembers[endMemberIndex(i, j)];
+    }
+
+
+    public int ns() {
+        return ns;
+    }
+
+    public int nip() {
+        return totalConstituents();
+    }
+
+    public double[] stoichiometry() {
+        return a.clone();
+    }
+
+    public int[] constituentsPerSublattice() {
+        return nc.clone();
+    }
+
+    public int[] offsets() {
+        return offset.clone();
+    }
+
+
+    /* ------------------------------------------------------------------
+     * Composition validation
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Checks the composition vector and allows zero fractions.
+     *
+     * <p>This is appropriate for Gibbs-energy evaluation because the
+     * mathematical limit y ln y -> 0 is used at y = 0.</p>
+     */
+    private void checkY(double[] y) {
+
+        if (y == null || y.length != totalConstituents())
+            throw new IllegalArgumentException(
+                    "Expected composition vector of length "
+                    + totalConstituents());
+
+        for (double v : y) {
+            if (!Double.isFinite(v) || v < 0.0)
+                throw new IllegalArgumentException(
+                        "Site fractions must be finite and non-negative.");
+        }
+
+        for (int s = 0; s < ns; s++) {
+
+            double sum = 0.0;
+
+            for (int i = 0; i < nc[s]; i++)
+                sum += y[offset[s] + i];
+
+            if (!Double.isFinite(sum) ||
+                Math.abs(sum - 1.0) > 1.0e-10) {
+
+                throw new IllegalArgumentException(
+                        "Sublattice " + s +
+                        " fractions must sum to one; sum = " + sum);
+            }
+        }
+    }
+
+
+    /**
+     * Derivative APIs require strictly positive site fractions because the
+     * ideal configurational entropy derivatives are singular at y = 0.
+     */
+    private void checkPositiveY(double[] y) {
+
+        checkY(y);
+
+        for (double v : y) {
+            if (v <= 0.0)
+                throw new IllegalArgumentException(
+                        "Analytical derivatives require strictly positive site fractions.");
+        }
+    }
+
+
+    /* ------------------------------------------------------------------
+     * Gibbs energy
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Evaluates the molar Gibbs energy.
+     *
+     * @param T temperature in K
+     * @param y flattened site-fraction vector
+     * @return Gibbs energy in J/mol
+     */
+    public double evaluate(double T, double[] y) {
+
+        if (!Double.isFinite(T) || T <= 0.0)
+            throw new IllegalArgumentException(
+                    "Temperature must be finite and positive.");
+
+        checkY(y);
+
+        double gRef = referenceEnergy(T, y);
+        double gId  = idealEnergy(T, y);
+        double gEx  = excessEnergy(T, y);
+
+        return gRef + gId + gEx;
+    }
+
+
+    /**
+     * Zeroth-order CEF reference contribution.
+     *
+     * <pre>
+     * G_ref = sum_I P_I G_I
+     * </pre>
+     *
+     * where
+     *
+     * <pre>
+     * P_I = product_s y[s][I_s].
+     * </pre>
+     */
+    private double referenceEnergy(double T, double[] y) {
+
+        double result = 0.0;
+
+        for (int em = 0; em < totalEM; em++) {
+
+            double probability = 1.0;
+            int index = em;
+
+            for (int s = 0; s < ns; s++) {
+
+                int i = (index / stride[s]) % nc[s];
+
+                probability *= y[offset[s] + i];
+
+                if (probability == 0.0)
+                    break;
+            }
+
+            if (probability != 0.0)
+                result += probability * endMembers[em].G(T);
+        }
+
+        return result;
+    }
+
+
+    /**
+     * Ideal configurational contribution.
+     */
+    private double idealEnergy(double T, double[] y) {
+
+        double result = 0.0;
+
+        for (int s = 0; s < ns; s++) {
+
             for (int i = 0; i < nc[s]; i++) {
-                int m = offset[s] + i;
-                gx[m] += R * T * a[s] * (Math.log(y[m]) + 1.0);
+
+                double yi = y[offset[s] + i];
+
+                if (yi > 0.0)
+                    result += a[s] * yi * Math.log(yi);
             }
         }
 
-        // ── G_Em contribution ─────────────────────────────────────────────
-        addGEmGradient(y, T, gx, false);
-
-        return gx;
+        return R * T * result;
     }
 
+
     /**
-     * Hessian ∂²G/∂y[m]∂y[n], returned as (nip × nip) matrix.
+     * Evaluates the excess contribution from all CEF interactions.
      *
-     * @param y  flat site-fraction vector
-     * @param T  temperature in Kelvin
-     * @return   symmetric nip×nip Hessian
-     * <p>Note: cross-sublattice terms are skipped when any site fraction
-     * y[m] &lt; 1e-300 to avoid Inf/NaN at boundary compositions.</p>
+     * <p>The interaction representation stores the constituent factors.
+     * The RK composition factor is handled separately.</p>
      */
-    public double[][] hessian(double[] y, double T) {
-        checkY(y);
-        double[][] gxx = new double[nip][nip];
+    private double excessEnergy(double T, double[] y) {
 
-        // ── G₀: cross-sublattice terms ───────────────────────────────────
-        int totalEM = totalEndMembers();
-        int[] stride = computeStrides();
+        double result = 0.0;
 
-        for (int em = 0; em < totalEM; em++) {
-            int[] idx = decodeEM(em, stride);
-            double yProd = 1.0;
-            for (int s = 0; s < ns; s++)
-                yProd *= y[offset[s] + idx[s]];
-            double gVal = g0[em].G(T);
-            for (int s1 = 0; s1 < ns; s1++) {
-                for (int s2 = s1 + 1; s2 < ns; s2++) {
-                    int m1 = offset[s1] + idx[s1];
-                    int m2 = offset[s2] + idx[s2];
-                    if (y[m1] < 1e-300 || y[m2] < 1e-300) continue;
-                    double partialProduct = yProd / (y[m1] * y[m2]);
-                    gxx[m1][m2] += partialProduct * gVal;
-                    gxx[m2][m1] += partialProduct * gVal;
+        for (CefInteractionParam p : interactions) {
+
+            double basis = interactionBasis(p, y);
+
+            result += basis * p.L(T);
+        }
+
+        return result;
+    }
+
+
+    /**
+     * Evaluates the composition basis of an interaction.
+     *
+     * <p>For the zero-order RK case the basis is simply the product of the
+     * explicitly specified constituent fractions.</p>
+     *
+     * <p>For RK orders greater than zero, the standard binary RK factor is
+     * generated when the interaction contains a pair of constituents on the
+     * same sublattice. This is intentionally evaluated without division,
+     * so the energy remains well behaved at composition boundaries.</p>
+     */
+    private double interactionBasis(CefInteractionParam p, double[] y) {
+
+        double basis = 1.0;
+
+        /*
+         * First multiply the explicit constituent-array factors.
+         */
+        for (int k = 0; k < p.size(); k++) {
+
+            int s = p.sublattice(k);
+            int i = p.constituent(k);
+
+            basis *= y[offset[s] + i];
+
+            if (basis == 0.0)
+                return 0.0;
+        }
+
+        /*
+         * RK order zero requires no additional composition factor.
+         */
+        if (p.rkOrder() == 0)
+            return basis;
+
+        /*
+         * Locate two distinct constituent factors on the same sublattice.
+         *
+         * This is the standard binary RK construction. Higher-order
+         * composition dependence is represented by repeated powers of
+         * (y_A - y_B).
+         */
+        int pairSL = -1;
+        int pairA = -1;
+        int pairB = -1;
+
+        outer:
+        for (int k = 0; k < p.size(); k++) {
+            for (int j = k + 1; j < p.size(); j++) {
+
+                if (p.sublattice(k) == p.sublattice(j) &&
+                    p.constituent(k) != p.constituent(j)) {
+
+                    pairSL = p.sublattice(k);
+                    pairA = p.constituent(k);
+                    pairB = p.constituent(j);
+                    break outer;
                 }
             }
         }
 
-        // ── G_id: diagonal only ───────────────────────────────────────────
-        // ∂²G_id/∂y[m]² = R·T·a[s]/y[m]
-        for (int s = 0; s < ns; s++) {
-            for (int i = 0; i < nc[s]; i++) {
-                int m = offset[s] + i;
-                gxx[m][m] += R * T * a[s] / y[m];
-            }
-        }
+        if (pairSL < 0)
+            throw new IllegalArgumentException(
+                    "RK order " + p.rkOrder() +
+                    " requires a distinct constituent pair on a sublattice.");
 
-        // ── G_Em ──────────────────────────────────────────────────────────
-        addGEmHessian(y, T, gxx, false);
+        double yA = y[offset[pairSL] + pairA];
+        double yB = y[offset[pairSL] + pairB];
 
-        return gxx;
+        double delta = yA - yB;
+
+        for (int r = 0; r < p.rkOrder(); r++)
+            basis *= delta;
+
+        return basis;
     }
 
+
     /**
-     * Mixed derivative ∂²G/∂y[m]∂T (GxT vector).
+     * Builds the composition-dependent interaction basis and its
+     * first and second derivatives via automatic differentiation.
      *
-     * @param y  flat site-fraction vector
-     * @param T  temperature in Kelvin
-     * @return   GxT vector, length nip
+     * <p>The composition factors are constructed in exactly the same
+     * way as interactionBasis(...): product of all explicitly specified
+     * constituent fractions, followed (when rkOrder > 0) by the RK
+     * composition factor.</p>
      */
-    public double[] gradientDT(double[] y, double T) {
-        checkY(y);
-        double[] gxt = new double[nip];
+    private AD2 interactionBasisAD(CefInteractionParam interaction, double[] y) {
 
-        // ── G₀: use dGdT instead of G ─────────────────────────────────────
-        int totalEM = totalEndMembers();
-        int[] stride = computeStrides();
+        final int n = y.length;
+
+        AD2 basis = AD2.constant(1.0, n);
+
+        for (int k = 0; k < interaction.size(); k++) {
+
+            int sl = interaction.sublattice(k);
+            int ci = interaction.constituent(k);
+
+            int idx = offset[sl] + ci;
+
+            basis = basis.multiply(
+                    AD2.variable(y[idx], idx, n)
+            );
+        }
+
+        int order = interaction.rkOrder();
+
+        if (order > 0) {
+
+            int pairA = -1;
+            int pairB = -1;
+            int pairSL = -1;
+
+            for (int k = 0; k < interaction.size(); k++) {
+
+                for (int l = k + 1; l < interaction.size(); l++) {
+
+                    if (interaction.sublattice(k) == interaction.sublattice(l)) {
+
+                        pairSL = interaction.sublattice(k);
+
+                        pairA = offset[pairSL] + interaction.constituent(k);
+
+                        pairB = offset[pairSL] + interaction.constituent(l);
+
+                        break;
+                    }
+                }
+
+                if (pairSL >= 0)
+                    break;
+            }
+
+            if (pairSL >= 0) {
+
+                AD2 ya = AD2.variable(y[pairA], pairA, n);
+                AD2 yb = AD2.variable(y[pairB], pairB, n);
+
+                AD2 delta = ya.subtract(yb);
+
+                basis = basis.multiply(delta.pow(order));
+            }
+        }
+
+        return basis;
+    }
+
+
+    /* ------------------------------------------------------------------
+     * Gradient
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Analytical gradient of G with respect to the flattened site fractions.
+     */
+    public double[] gradient(double T, double[] y) {
+
+        if (!Double.isFinite(T) || T <= 0.0)
+            throw new IllegalArgumentException(
+                    "Temperature must be finite and positive.");
+
+        checkPositiveY(y);
+
+        double[] g = new double[y.length];
+
+        referenceGradient(T, y, g);
+        idealGradient(T, y, g);
+        excessGradient(T, y, g);
+
+        return g;
+    }
+
+
+    private void referenceGradient(double T,
+                                   double[] y,
+                                   double[] g) {
 
         for (int em = 0; em < totalEM; em++) {
-            int[] idx = decodeEM(em, stride);
-            double yProd = 1.0;
-            for (int s = 0; s < ns; s++)
-                yProd *= y[offset[s] + idx[s]];
-            double dGdT = g0[em].dGdT(T);
+
+            int[] idx = endMemberIndices(em);
+
+            double G = endMembers[em].G(T);
+
             for (int s = 0; s < ns; s++) {
-                int m = offset[s] + idx[s];
-                gxt[m] += (yProd / y[m]) * dGdT;
+
+                double product = G;
+
+                for (int q = 0; q < ns; q++) {
+
+                    if (q == s)
+                        continue;
+
+                    product *= y[offset[q] + idx[q]];
+                }
+
+                g[offset[s] + idx[s]] += product;
             }
         }
+    }
 
-        // ── G_id: ∂/∂T of R·T·a[s]·(ln(y)+1) = R·a[s]·(ln(y)+1) ─────────
+
+    private void idealGradient(double T,
+                                double[] y,
+                                double[] g) {
+
         for (int s = 0; s < ns; s++) {
+
             for (int i = 0; i < nc[s]; i++) {
-                int m = offset[s] + i;
-                gxt[m] += R * a[s] * (Math.log(y[m]) + 1.0);
+
+                int k = offset[s] + i;
+                g[k] += R * T * a[s] * (Math.log(y[k]) + 1.0);
             }
         }
-
-        // ── G_Em: same structure but dL/dT instead of L ───────────────────
-        addGEmGradient(y, T, gxt, true);
-
-        return gxt;
     }
 
-    // ------------------------------------------------------------------
-    // Individual energy components (for diagnostics)
-    // ------------------------------------------------------------------
 
-    /**
-     * Reference energy G₀ using iterative mixed-radix enumeration over all end members.
-     */
-    public double g0Ref(double[] y, double T) {
-        int totalEM = totalEndMembers();
-        int[] stride = computeStrides();
-        double g = 0.0;
-        for (int em = 0; em < totalEM; em++) {
-            int[] idx = decodeEM(em, stride);
-            double yProd = 1.0;
-            for (int s = 0; s < ns; s++)
-                yProd *= y[offset[s] + idx[s]];
-            g += yProd * g0[em].G(T);
-        }
-        return g;
-    }
+    private void excessGradient(double T,
+                                double[] y,
+                                double[] g) {
 
-    /**
-     * Ideal mixing entropy contribution G_id = R·T · Σₛ a[s] · Σᵢ y[m]·ln(y[m]).
-     */
-    public double gId(double[] y, double T) {
-        double g = 0.0;
-        for (int s = 0; s < ns; s++) {
-            double sub = 0.0;
-            for (int i = 0; i < nc[s]; i++) {
-                double yi = y[offset[s] + i];
-                if (yi > 1e-300) sub += yi * Math.log(yi);
-            }
-            g += a[s] * sub;
-        }
-        return R * T * g;
-    }
-
-    /**
-     * Excess mixing energy G_Em = Σ_interactions y[pSL][pA]·y[pSL][pB]·y[oSL][k]·L(T).
-     */
-    public double gEm(double[] y, double T) {
-        double g = 0.0;
         for (CefInteractionParam p : interactions) {
-            int pSL = p.pairSublattice;
-            int oSL = 1 - pSL;
-            g += y[offset[pSL] + p.pairA]
-               * y[offset[pSL] + p.pairB]
-               * y[offset[oSL] + p.singleIdx]
-               * p.L(T);
+
+            addInteractionGradient(p, T, y, g);
         }
-        return g;
     }
 
-    /** Direct temperature derivative at fixed normalized site fractions. */
-    public double temperatureDerivative(double[] y, double T) {
-        double derivative = 0.0;
-        int totalEM = totalEndMembers();
-        int[] stride = computeStrides();
-        for (int em = 0; em < totalEM; em++) {
-            int[] idx = decodeEM(em, stride);
-            double yProd = 1.0;
-            for (int s = 0; s < ns; s++) yProd *= y[offset[s] + idx[s]];
-            derivative += yProd * g0[em].dGdT(T);
+
+    /**
+     * Gradient of an interaction basis.
+     *
+     * <p>The derivative is obtained by differentiating the product directly,
+     * rather than dividing by a site fraction. This avoids 0/0 expressions
+     * in the underlying polynomial calculation.</p>
+     */
+    private void addInteractionGradient(CefInteractionParam p,
+                                        double T,
+                                        double[] y,
+                                        double[] g) {
+
+        double L = p.L(T);
+
+        /*
+         * Product of explicit constituent factors.
+         */
+        int n = p.size();
+
+        double[] factors = new double[n];
+
+        for (int k = 0; k < n; k++) {
+            factors[k] =
+                    y[offset[p.sublattice(k)] + p.constituent(k)];
         }
-        for (int s = 0; s < ns; s++) {
-            for (int i = 0; i < nc[s]; i++) {
-                double yi = y[offset[s] + i];
-                if (yi > 1e-300) derivative += R * a[s] * yi * Math.log(yi);
+
+        /*
+         * Derivative of the explicit product.
+         */
+        for (int k = 0; k < n; k++) {
+
+            double d = 1.0;
+
+            for (int j = 0; j < n; j++) {
+
+                if (j != k)
+                    d *= factors[j];
+            }
+
+            int variable =
+                    offset[p.sublattice(k)] + p.constituent(k);
+
+            g[variable] += L * d;
+        }
+
+        /*
+         * RK composition factor.
+         */
+        if (p.rkOrder() == 0)
+            return;
+
+        int[] pair = findRKPair(p);
+
+        int pairSL = pair[0];
+        int pairA  = pair[1];
+        int pairB  = pair[2];
+
+        double delta =
+                y[offset[pairSL] + pairA]
+                - y[offset[pairSL] + pairB];
+
+        double rk = 1.0;
+
+        for (int r = 0; r < p.rkOrder(); r++)
+            rk *= delta;
+
+        /*
+         * Re-evaluate basis without RK factor.
+         */
+        double explicitProduct = 1.0;
+
+        for (double f : factors)
+            explicitProduct *= f;
+
+        int varA = offset[pairSL] + pairA;
+        int varB = offset[pairSL] + pairB;
+
+        /*
+         * Product derivative and RK derivative.
+         *
+         * d(P * delta^r)
+         * = dP * delta^r + P * r delta^(r-1) d(delta)
+         */
+        for (int k = 0; k < n; k++) {
+
+            double dP = 1.0;
+
+            for (int j = 0; j < n; j++) {
+                if (j != k)
+                    dP *= factors[j];
+            }
+
+            int variable =
+                    offset[p.sublattice(k)] + p.constituent(k);
+
+            g[variable] +=
+                    L * dP * rk;
+        }
+
+        if (p.rkOrder() > 0) {
+
+            double deltaPower = 1.0;
+
+            for (int r = 1; r < p.rkOrder(); r++)
+                deltaPower *= delta;
+
+            double rkDerivative =
+                    p.rkOrder() * deltaPower * explicitProduct * L;
+
+            g[varA] += rkDerivative;
+            g[varB] -= rkDerivative;
+        }
+    }
+
+
+    /* ------------------------------------------------------------------
+     * Hessian
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Analytical Hessian of G.
+     *
+     * <p>As for the gradient, this method requires strictly positive site
+     * fractions because the ideal entropy Hessian contains 1/y.</p>
+     */
+    public double[][] hessian(double T, double[] y) {
+
+        if (!Double.isFinite(T) || T <= 0.0)
+            throw new IllegalArgumentException(
+                    "Temperature must be finite and positive.");
+
+        checkPositiveY(y);
+
+        int n = y.length;
+        double[][] H = new double[n][n];
+
+        referenceHessian(T, y, H);
+        idealHessian(T, y, H);
+        excessHessian(T, y, H);
+
+        return H;
+    }
+
+
+    private void referenceHessian(double T,
+                                  double[] y,
+                                  double[][] H) {
+
+        for (int em = 0; em < totalEM; em++) {
+
+            int[] idx = endMemberIndices(em);
+            double G = endMembers[em].G(T);
+
+            for (int s = 0; s < ns; s++) {
+
+                for (int q = s + 1; q < ns; q++) {
+
+                    double value = G;
+
+                    for (int r = 0; r < ns; r++) {
+
+                        if (r != s && r != q)
+                            value *= y[offset[r] + idx[r]];
+                    }
+
+                    int i = offset[s] + idx[s];
+                    int j = offset[q] + idx[q];
+
+                    H[i][j] += value;
+                    H[j][i] += value;
+                }
             }
         }
-        for (CefInteractionParam p : interactions) {
-            int pSL = p.pairSublattice;
-            double pair = y[offset[pSL] + p.pairA] * y[offset[pSL] + p.pairB];
-            double delta = y[offset[pSL] + p.pairA] - y[offset[pSL] + p.pairB];
-            double term = pair;
-            if (p.singleIdx >= 0) term *= y[offset[1 - pSL] + p.singleIdx];
-            derivative += term * p.dLdT();
+    }
+
+
+    private void idealHessian(double T,
+                              double[] y,
+                              double[][] H) {
+
+        for (int s = 0; s < ns; s++) {
+
+            for (int i = 0; i < nc[s]; i++) {
+
+                int k = offset[s] + i;
+
+                H[k][k] +=
+                        R * T * a[s] / y[k];
+            }
         }
-        return derivative;
     }
 
-    // ------------------------------------------------------------------
-    // Accessors
-    // ------------------------------------------------------------------
-
-    /** Returns number of sublattices. */
-    public int ns() { return ns; }
-
-    /** Returns number of constituents on sublattice 0 (backward-compatible single-nc accessor). */
-    public int nc() { return nc[0]; }
-
-    /** Returns total number of internal parameters (Σ nc[s]). */
-    public int nip() { return nip; }
-
-    /** Returns a copy of stoichiometric coefficients. */
-    public double[] stoichiometry() { return a.clone(); }
-
-    /** Returns a copy of constituents-per-sublattice array. */
-    public int[] constituentsPerSublattice() { return nc.clone(); }
-
-    /** Returns a copy of the sublattice offsets array. */
-    public int[] offsets() { return offset.clone(); }
-
-    /** Returns the interaction parameter list (unmodifiable). */
-    public List<CefInteractionParam> interactions() { return interactions; }
 
     /**
-     * Returns end member at (sublattice-0 species i, sublattice-1 species j).
-     * Uses mixed-radix index: em = i + j * nc[0].
+     * Excess Hessian.
+     *
+     * <p>The interaction polynomial is evaluated through a small automatic
+     * differentiation calculation. This is preferable to formulas involving
+     * division by constituent fractions and remains valid for polynomial
+     * terms whose composition factors vanish.</p>
      */
-    public CefEndMember endMember(int i, int j) { return g0[i + j * nc[0]]; }
+    private void excessHessian(double T,
+                               double[] y,
+                               double[][] H) {
 
-    // ------------------------------------------------------------------
-    // Private helpers
-    // ------------------------------------------------------------------
-
-    /** Total number of end members = ∏ nc[s]. */
-    private int totalEndMembers() {
-        int total = 1;
-        for (int s = 0; s < ns; s++) total *= nc[s];
-        return total;
+        for (CefInteractionParam p : interactions)
+            addInteractionHessian(p, T, y, H);
     }
 
-    /**
-     * Computes mixed-radix strides: stride[0]=1, stride[s]=stride[s-1]*nc[s-1].
-     */
-    private int[] computeStrides() {
-        int[] stride = new int[ns];
-        stride[0] = 1;
-        for (int s = 1; s < ns; s++)
-            stride[s] = stride[s - 1] * nc[s - 1];
-        return stride;
+
+    private void addInteractionHessian(CefInteractionParam p,
+                                       double T,
+                                       double[] y,
+                                       double[][] H) {
+
+        AD2 basis = interactionBasisAD(p, y);
+
+        double L = p.L(T);
+
+        int n = y.length;
+
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < n; j++) {
+                H[i][j] += L * basis.hess[i][j];
+            }
+        }
     }
 
+
+    private int[] findRKPair(CefInteractionParam p) {
+
+        for (int k = 0; k < p.size(); k++) {
+
+            for (int j = k + 1; j < p.size(); j++) {
+
+                if (p.sublattice(k) == p.sublattice(j) &&
+                    p.constituent(k) != p.constituent(j)) {
+
+                    return new int[] {
+                        p.sublattice(k),
+                        p.constituent(k),
+                        p.constituent(j)
+                    };
+                }
+            }
+        }
+
+        throw new IllegalArgumentException(
+                "RK interaction requires two distinct constituents " +
+                "on the same sublattice.");
+    }
+
+
+    /* ------------------------------------------------------------------
+     * Temperature derivatives
+     * ------------------------------------------------------------------ */
+
     /**
-     * Decodes end-member index em into constituent indices idx[0..ns-1].
-     * idx[s] = (em / stride[s]) % nc[s]
+     * Temperature derivative of G at fixed site fractions.
      */
-    private int[] decodeEM(int em, int[] stride) {
+    public double temperatureDerivative(double T, double[] y) {
+
+        if (!Double.isFinite(T) || T <= 0.0)
+            throw new IllegalArgumentException(
+                    "Temperature must be finite and positive.");
+
+        checkY(y);
+
+        double dGdT = 0.0;
+
+        /*
+         * Reference contribution.
+         */
+        for (int em = 0; em < totalEM; em++) {
+
+            double probability = 1.0;
+            int index = em;
+
+            for (int s = 0; s < ns; s++) {
+
+                int i = (index / stride[s]) % nc[s];
+
+                probability *= y[offset[s] + i];
+
+                if (probability == 0.0)
+                    break;
+            }
+
+            if (probability != 0.0)
+                dGdT +=
+                        probability * endMembers[em].dGdT(T);
+        }
+
+        /*
+         * Ideal contribution.
+         */
+        double entropyBasis = 0.0;
+
+        for (int s = 0; s < ns; s++) {
+            for (int i = 0; i < nc[s]; i++) {
+
+                double yi = y[offset[s] + i];
+
+                if (yi > 0.0)
+                    entropyBasis += a[s] * yi * Math.log(yi);
+            }
+        }
+
+        dGdT += R * entropyBasis;
+
+        /*
+         * Excess contribution.
+         */
+        for (CefInteractionParam p : interactions)
+            dGdT += interactionBasis(p, y) * p.dLdT(T);
+
+        return dGdT;
+    }
+
+
+    /**
+     * Temperature derivative of the composition gradient.
+     */
+    public double[] gradientDT(double T, double[] y) {
+
+        if (!Double.isFinite(T) || T <= 0.0)
+            throw new IllegalArgumentException(
+                    "Temperature must be finite and positive.");
+
+        checkPositiveY(y);
+
+        int n = y.length;
+        double[] result = new double[n];
+
+        /*
+         * Reference contribution.
+         */
+        for (int em = 0; em < totalEM; em++) {
+
+            int[] idx = endMemberIndices(em);
+
+            double dGdT = endMembers[em].dGdT(T);
+
+            for (int s = 0; s < ns; s++) {
+
+                double product = dGdT;
+
+                for (int q = 0; q < ns; q++) {
+                    if (q != s)
+                        product *= y[offset[q] + idx[q]];
+                }
+
+                result[offset[s] + idx[s]] += product;
+            }
+        }
+
+        /*
+         * Ideal contribution.
+         *
+         * d/dT [R T a (ln y + 1)]
+         * = R a (ln y + 1)
+         */
+        for (int s = 0; s < ns; s++) {
+
+            for (int i = 0; i < nc[s]; i++) {
+
+                int k = offset[s] + i;
+
+                result[k] +=
+                        R * a[s] * (Math.log(y[k]) + 1.0);
+            }
+        }
+
+        /*
+         * Excess contribution.
+         */
+        for (CefInteractionParam p : interactions)
+            addInteractionGradientDT(p, T, y, result);
+
+        return result;
+    }
+
+
+    private void addInteractionGradientDT(CefInteractionParam p,
+                                          double T,
+                                          double[] y,
+                                          double[] result) {
+
+        double dL = p.dLdT(T);
+
+        int n = p.size();
+
+        double[] factors = new double[n];
+
+        for (int k = 0; k < n; k++) {
+
+            factors[k] =
+                    y[offset[p.sublattice(k)] + p.constituent(k)];
+        }
+
+        int rk = p.rkOrder();
+
+        double rkFactor = 1.0;
+
+        if (rk > 0) {
+
+            int[] pair = findRKPair(p);
+
+            double delta =
+                    y[offset[pair[0]] + pair[1]]
+                    - y[offset[pair[0]] + pair[2]];
+
+            for (int r = 0; r < rk; r++)
+                rkFactor *= delta;
+        }
+
+        for (int k = 0; k < n; k++) {
+
+            double dP = 1.0;
+
+            for (int j = 0; j < n; j++) {
+                if (j != k)
+                    dP *= factors[j];
+            }
+
+            int variable =
+                    offset[p.sublattice(k)] + p.constituent(k);
+
+            result[variable] +=
+                    dL * dP * rkFactor;
+        }
+
+        if (rk > 0) {
+
+            int[] pair = findRKPair(p);
+
+            int varA =
+                    offset[pair[0]] + pair[1];
+
+            int varB =
+                    offset[pair[0]] + pair[2];
+
+            double delta = y[varA] - y[varB];
+
+            double deltaPower = 1.0;
+
+            for (int r = 1; r < rk; r++)
+                deltaPower *= delta;
+
+            double P = 1.0;
+
+            for (double f : factors)
+                P *= f;
+
+            double contribution =
+                    dL * rk * deltaPower * P;
+
+            result[varA] += contribution;
+            result[varB] -= contribution;
+        }
+    }
+
+
+    /* ------------------------------------------------------------------
+     * Utilities
+     * ------------------------------------------------------------------ */
+
+    private int[] endMemberIndices(int em) {
+
         int[] idx = new int[ns];
+
         for (int s = 0; s < ns; s++)
             idx[s] = (em / stride[s]) % nc[s];
+
         return idx;
     }
 
-    /**
-     * Accumulates ∂G_Em/∂y[m] into gx[] for all flat indices.
-     * If {@code useDerivL = true}, uses dL/dT instead of L (for GxT computation).
-     *
-     * For each interaction param p:
-     *   Type pairSL=0: term = y[0][pA]·y[0][pB]·y[1][k]·L
-     *     ∂/∂y[0][pA] += y[0][pB]·y[1][k]·L   at flat index offset[0]+pA
-     *     ∂/∂y[0][pB] += y[0][pA]·y[1][k]·L   at flat index offset[0]+pB
-     *     ∂/∂y[1][k]  += y[0][pA]·y[0][pB]·L  at flat index offset[1]+k
-     *   Type pairSL=1: term = y[1][pA]·y[1][pB]·y[0][k]·L
-     *     ∂/∂y[1][pA] += y[1][pB]·y[0][k]·L   at flat index offset[1]+pA
-     *     ∂/∂y[1][pB] += y[1][pA]·y[0][k]·L   at flat index offset[1]+pB
-     *     ∂/∂y[0][k]  += y[1][pA]·y[1][pB]·L  at flat index offset[0]+k
-     */
-    private void addGEmGradient(double[] y, double T, double[] gx, boolean useDerivL) {
-        for (CefInteractionParam p : interactions) {
-            int pSL = p.pairSublattice;
-            double L = useDerivL ? p.dLdT() : p.L(T);
-            if (L == 0.0) continue;
 
-            int mpA = offset[pSL] + p.pairA;
-            int mpB = offset[pSL] + p.pairB;
-            int oSL = 1 - pSL;
-            int mk  = offset[oSL] + p.singleIdx;
+    private void checkSublattice(int s) {
 
-            double ypA = y[mpA], ypB = y[mpB], yk = y[mk];
-
-            gx[mpA] += ypB * yk * L;
-            gx[mpB] += ypA * yk * L;
-            gx[mk]  += ypA * ypB * L;
-        }
-    }
-
-    /**
-     * Accumulates ∂²G_Em/∂y[m]∂y[n] into gxx[][].
-     * Differentiates the gradient from {@link #addGEmGradient} once more.
-     *
-     * For each interaction param p with term y[pA]·y[pB]·y[k]·L:
-     *   Gx[pA] = y[pB]·y[k]·L   → ∂/∂y[pB] = y[k]·L,  ∂/∂y[k] = y[pB]·L
-     *   Gx[pB] = y[pA]·y[k]·L   → ∂/∂y[pA] = y[k]·L,  ∂/∂y[k] = y[pA]·L
-     *   Gx[k]  = y[pA]·y[pB]·L  → ∂/∂y[pA] = y[pB]·L, ∂/∂y[pB] = y[pA]·L
-     * All diagonal second derivs of G_Em are zero (no squared term in any single y).
-     */
-    private void addGEmHessian(double[] y, double T, double[][] gxx, boolean useDerivL) {
-        for (CefInteractionParam p : interactions) {
-            int pSL = p.pairSublattice;
-            double L = useDerivL ? p.dLdT() : p.L(T);
-            if (L == 0.0) continue;
-
-            int mpA = offset[pSL] + p.pairA;
-            int mpB = offset[pSL] + p.pairB;
-            int oSL = 1 - pSL;
-            int mk  = offset[oSL] + p.singleIdx;
-
-            double ypA = y[mpA], ypB = y[mpB], yk = y[mk];
-
-            // ∂Gx[pA]/∂y[pB] = yk·L  and by symmetry ∂Gx[pB]/∂y[pA] = yk·L
-            gxx[mpA][mpB] += yk  * L;
-            gxx[mpB][mpA] += yk  * L;
-
-            // ∂Gx[pA]/∂y[k]  = ypB·L  and ∂Gx[k]/∂y[pA] = ypB·L
-            gxx[mpA][mk]  += ypB * L;
-            gxx[mk][mpA]  += ypB * L;
-
-            // ∂Gx[pB]/∂y[k]  = ypA·L  and ∂Gx[k]/∂y[pB] = ypA·L
-            gxx[mpB][mk]  += ypA * L;
-            gxx[mk][mpB]  += ypA * L;
-        }
-    }
-
-    private void checkY(double[] y) {
-        if (y.length != nip)
+        if (s < 0 || s >= ns)
             throw new IllegalArgumentException(
-                    "y.length=" + y.length + " but nip=" + nip);
+                    "Invalid sublattice index: " + s);
+    }
+
+
+    @Override
+    public String toString() {
+
+        return "CefGibbs{" +
+                "ns=" + ns +
+                ", siteRatios=" + Arrays.toString(a) +
+                ", constituents=" + Arrays.toString(nc) +
+                ", endMembers=" + totalEM +
+                ", interactions=" + interactions.size() +
+                '}';
     }
 }

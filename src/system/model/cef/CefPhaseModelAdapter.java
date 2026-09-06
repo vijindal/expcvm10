@@ -187,7 +187,7 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
 
     @Override
     public double evaluateG() {
-        double G = gibbs.evaluate(y, T);
+        double G = gibbs.evaluate(T, y);
         if (magnetic != null) {
             double Tc = computeTc();
             double beta = computeBeta();
@@ -200,7 +200,7 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
     public double evaluateG(double[] x, double T) {
         double[] yLocal = (yInitialized && y != null && y.length == gibbs.nip())
                         ? y : getInitialInternalVars(x);
-        double G = gibbs.evaluate(yLocal, T);
+        double G = gibbs.evaluate(T, yLocal);
         if (magnetic != null) {
             double Tc = computeTc();
             double beta = computeBeta();
@@ -213,7 +213,7 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
     public double[] gradient(double[] x, double T) {
         double[] yLocal = (yInitialized && y != null && y.length == gibbs.nip())
                         ? y : getInitialInternalVars(x);
-        double[] gxSite = gibbs.gradient(yLocal, T);
+        double[] gxSite = gibbs.gradient(T, yLocal);
         return projectToMoleFractions(gxSite);
     }
 
@@ -221,14 +221,14 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
     public double[][] hessian(double[] x, double T) {
         double[] yLocal = (yInitialized && y != null && y.length == gibbs.nip())
                         ? y : getInitialInternalVars(x);
-        return gibbs.hessian(yLocal, T);
+        return gibbs.hessian(T, yLocal);
     }
 
     @Override
     public double evaluateGT() {
         double[] yLocal = yInitialized && y != null ? y : getInitialInternalVars(
             x != null ? x : new double[elementNames_value.size()]);
-        return gibbs.temperatureDerivative(yLocal, T);
+        return gibbs.temperatureDerivative(T, yLocal);
     }
 
     @Override
@@ -240,7 +240,7 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
     public double[] evaluateGx() {
         double[] yLocal = yInitialized && y != null ? y : getInitialInternalVars(
             x != null ? x : new double[elementNames_value.size()]);
-        double[] gxSite = gibbs.gradient(yLocal, T);
+        double[] gxSite = gibbs.gradient(T, yLocal);
         return projectToMoleFractions(gxSite);
     }
 
@@ -248,7 +248,7 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
     public double[] evaluateGTx() {
         double[] yLocal = yInitialized && y != null ? y : getInitialInternalVars(
             x != null ? x : new double[elementNames_value.size()]);
-        double[] gxtSite = gibbs.gradientDT(yLocal, T);
+        double[] gxtSite = gibbs.gradientDT(T, yLocal);
         return projectToMoleFractions(gxtSite);
     }
 
@@ -261,7 +261,7 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
     public double[][] evaluateGxx() {
         double[] yLocal = yInitialized && y != null ? y : getInitialInternalVars(
             x != null ? x : new double[elementNames_value.size()]);
-        return gibbs.hessian(yLocal, T);
+        return gibbs.hessian(T, yLocal);
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -371,10 +371,10 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
         int nc = elementNames_value.size();
 
         // Step 1: evaluate G and all derivatives
-        double G = gibbs.evaluate(y, T);
-        double[] Gx = gibbs.gradient(y, T);
-        double[][] Gxx = gibbs.hessian(y, T);
-        double[] GxT = gibbs.gradientDT(y, T);
+        double G = gibbs.evaluate(T, y);
+        double[] Gx = gibbs.gradient(T, y);
+        double[][] Gxx = gibbs.hessian(T, y);
+        double[] GxT = gibbs.gradientDT(T, y);
         double[] GxP = new double[nip];  // no P-dependence
 
         // Step 2: assemble phase matrix M (nip+ns)×(nip+ns), with one

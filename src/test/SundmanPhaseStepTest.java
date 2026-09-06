@@ -95,8 +95,8 @@ public class SundmanPhaseStepTest {
             }
             double[] mAPlus = model.computeM(yPlus);
             double[] mAMinus = model.computeM(yMinus);
-            double gPlus = model.getGibbs().evaluate(yPlus, T);
-            double gMinus = model.getGibbs().evaluate(yMinus, T);
+            double gPlus = model.getGibbs().evaluate(T, yPlus);
+            double gMinus = model.getGibbs().evaluate(T, yMinus);
 
             double fdG = (gPlus - gMinus) / (2 * h);
             maxErrG = Math.max(maxErrG, Math.abs(fdG - step.dGdMu[B]));

@@ -3,7 +3,6 @@ package system.model;
 import system.database.tdb;
 import system.database.tdb.Phase;
 import system.database.tdb.Parameter;
-import system.model.GibbsEnergyModel;
 import system.model.cef.CefEndMember;
 import system.model.cef.CefGibbs;
 import system.model.cef.CefInteractionParam;
@@ -13,64 +12,113 @@ import system.model.cef.SgtePolynomial;
 import system.model.rk.RkPhaseModelAdapter;
 import system.model.rk.RkPhaseModelFactory;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
+/**
+ * Factory for constructing phase Gibbs-energy models from a TDB database.
+ *
+ * <p>For phases with more than one sublattice, the model is represented using
+ * the Compound Energy Formalism (CEF). The TDB constituent array is preserved
+ * when constructing CEF interaction parameters.</p>
+ *
+ * <p>For one-sublattice substitutional phases, the existing RK model is used.
+ * This preserves the established treatment of liquid/substitutional solution
+ * phases.</p>
+ */
 public class PhaseModelFactory {
 
     /**
      * Result object returned by build().
-     * Contains the CEF model and optionally a magnetic contribution.
      */
     public static class PhaseModel {
+
         public final String phaseName;
         public final CefGibbs gibbs;
-        public final MagneticContribution magnetic; // null if not magnetic
-        public final double aff;   // 0 if not magnetic
-        public final double p;     // 0 if not magnetic
-        /** Constituent name per sublattice, e.g. constituentNames[1][0]="VA". */
+        public final MagneticContribution magnetic;
+        public final double aff;
+        public final double p;
+
+        /**
+         * Constituent names per sublattice.
+         */
         public final ArrayList<ArrayList<String>> constituentNames;
+
+        /**
+         * Alternate model, used for one-sublattice phases.
+         */
         public final GibbsEnergyModel alternateModel;
 
-        public PhaseModel(String phaseName, CefGibbs gibbs,
+
+        public PhaseModel(String phaseName,
+                          CefGibbs gibbs,
                           MagneticContribution magnetic,
-                          double aff, double p,
+                          double aff,
+                          double p,
                           ArrayList<ArrayList<String>> constituentNames) {
-            this(phaseName, gibbs, magnetic, aff, p, constituentNames, null);
+
+            this(phaseName,
+                 gibbs,
+                 magnetic,
+                 aff,
+                 p,
+                 constituentNames,
+                 null);
         }
 
-        private PhaseModel(String phaseName, CefGibbs gibbs,
+
+        private PhaseModel(String phaseName,
+                           CefGibbs gibbs,
                            MagneticContribution magnetic,
-                           double aff, double p,
+                           double aff,
+                           double p,
                            ArrayList<ArrayList<String>> constituentNames,
                            GibbsEnergyModel alternateModel) {
+
             this.phaseName = phaseName;
-            this.gibbs     = gibbs;
-            this.magnetic  = magnetic;
-            this.aff       = aff;
-            this.p         = p;
+            this.gibbs = gibbs;
+            this.magnetic = magnetic;
+            this.aff = aff;
+            this.p = p;
             this.constituentNames = constituentNames;
             this.alternateModel = alternateModel;
         }
 
+
         public static PhaseModel forAlternateModel(String phaseName,
-                                                    GibbsEnergyModel model) {
-            return new PhaseModel(phaseName, null, null, 0.0, 0.0,
-                    new ArrayList<>(), model);
+                                                   GibbsEnergyModel model) {
+
+            return new PhaseModel(
+                    phaseName,
+                    null,
+                    null,
+                    0.0,
+                    0.0,
+                    new ArrayList<>(),
+                    model);
         }
 
-        public boolean hasMagnetic() { return magnetic != null; }
+
+        public boolean hasMagnetic() {
+            return magnetic != null;
+        }
+
+        public GibbsEnergyModel toGibbsModel(List<String> elements) {
+            return PhaseModelFactory.toGibbsModel(this, elements);
+        }
     }
 
+
     /**
-     * Builds a PhaseModel for the named phase from the tdb.
+     * Builds a phase model from the supplied TDB.
      *
-     * @param phaseName    e.g. "BCC_A2"
-     * @param database     fully loaded and element-filtered tdb
-     * @param elements     ordered list of elements in the system
-     * @param affMap       map from phaseName -> aff value (from TYPE_DEFINITION)
-     * @param pMap         map from phaseName -> p value (from TYPE_DEFINITION)
-     * @return             PhaseModel containing CefGibbs + optional magnetic
-     * @throws IllegalArgumentException if phase not found in database
+     * @param phaseName phase name
+     * @param database loaded and element-filtered TDB
+     * @param elements ordered system elements
+     * @param affMap magnetic A-function map
+     * @param pMap magnetic p-function map
+     * @return constructed phase model
      */
     public static PhaseModel build(String phaseName,
                                    tdb database,
@@ -78,192 +126,683 @@ public class PhaseModelFactory {
                                    Map<String, Double> affMap,
                                    Map<String, Double> pMap) {
 
-        // 1. Get Phase record
-        Phase phase = database.getPhase(phaseName);
-        if (phase == null)
-            throw new IllegalArgumentException("Phase not found: " + phaseName);
+        if (database == null)
+            throw new IllegalArgumentException("Database must not be null.");
 
-        // A one-sublattice phase is a substitutional solution phase. Use the
-        // RK model so G(...;order) parameters retain their RK composition basis.
+        if (phaseName == null || phaseName.isBlank())
+            throw new IllegalArgumentException("Phase name must not be blank.");
+
+        if (elements == null)
+            throw new IllegalArgumentException("Element list must not be null.");
+
+
+        /*
+         * ---------------------------------------------------------------
+         * 1. Locate phase
+         * ---------------------------------------------------------------
+         */
+
+        Phase phase = database.getPhase(phaseName);
+
+        if (phase == null)
+            throw new IllegalArgumentException(
+                    "Phase not found: " + phaseName);
+
+
+        /*
+         * ---------------------------------------------------------------
+         * 2. One-sublattice phases
+         * ---------------------------------------------------------------
+         *
+         * These remain on the existing RK implementation.
+         */
         if (phase.getNumSubLat() == 1) {
-            RkPhaseModelAdapter rk = RkPhaseModelFactory.build(
-                    phaseName, elements, database);
-            return PhaseModel.forAlternateModel(phaseName, rk);
+
+            RkPhaseModelAdapter rk =
+                    RkPhaseModelFactory.build(
+                            phaseName,
+                            elements,
+                            database);
+
+            return PhaseModel.forAlternateModel(
+                    phaseName,
+                    rk);
         }
 
-        // 2. Read sublattice structure
+
+        /*
+         * ---------------------------------------------------------------
+         * 3. Read CEF structure
+         * ---------------------------------------------------------------
+         */
+
         int ns = phase.getNumSubLat();
-        double[] numSites = phase.getNumSites();        // stoichiometric coefficients
-        ArrayList<ArrayList<String>> constituentList = phase.getConstituentList();
+
+        double[] numSites = phase.getNumSites();
+
+        ArrayList<ArrayList<String>> constituentList =
+                phase.getConstituentList();
+
+        if (numSites == null || numSites.length != ns)
+            throw new IllegalArgumentException(
+                    "Invalid site-ratio data for phase " + phaseName);
+
+        if (constituentList == null ||
+            constituentList.size() != ns) {
+
+            throw new IllegalArgumentException(
+                    "Invalid constituent-list data for phase "
+                    + phaseName);
+        }
+
 
         double[] a = new double[ns];
-        int[] nc   = new int[ns];
+        int[] nc = new int[ns];
+
         for (int s = 0; s < ns; s++) {
-            a[s]  = numSites[s];
+
+            if (!Double.isFinite(numSites[s]) ||
+                numSites[s] <= 0.0) {
+
+                throw new IllegalArgumentException(
+                        "Invalid site ratio for phase "
+                        + phaseName +
+                        ", sublattice " + s +
+                        ": " + numSites[s]);
+            }
+
+            if (constituentList.get(s) == null ||
+                constituentList.get(s).isEmpty()) {
+
+                throw new IllegalArgumentException(
+                        "Empty constituent list for phase "
+                        + phaseName +
+                        ", sublattice " + s);
+            }
+
+            a[s] = numSites[s];
             nc[s] = constituentList.get(s).size();
         }
 
-        // 3. Compute flat offsets and total end-member count
-        int[] offset = new int[ns];
-        offset[0] = 0;
-        for (int s = 1; s < ns; s++)
-            offset[s] = offset[s - 1] + nc[s - 1];
-        int totalEM = 1;
-        for (int n : nc) totalEM *= n;
 
-        // 4. Build constituent index maps: name -> index per sublattice
-        //    constituentIdx[s] maps constituent name to its index within sublattice s
-        List<Map<String, Integer>> constituentIdx = new ArrayList<>();
+        /*
+         * ---------------------------------------------------------------
+         * 4. Construct mixed-radix indexing
+         * ---------------------------------------------------------------
+         */
+
+        int[] stride = new int[ns];
+
+        stride[0] = 1;
+
+        long totalEMLong = nc[0];
+
+        for (int s = 1; s < ns; s++) {
+
+            long nextStride =
+                    (long) stride[s - 1] * nc[s - 1];
+
+            if (nextStride > Integer.MAX_VALUE)
+                throw new IllegalArgumentException(
+                        "CEF indexing exceeds integer range for phase "
+                        + phaseName);
+
+            stride[s] = (int) nextStride;
+
+            totalEMLong *= nc[s];
+
+            if (totalEMLong > Integer.MAX_VALUE)
+                throw new IllegalArgumentException(
+                        "Too many CEF end members for phase "
+                        + phaseName);
+        }
+
+        int totalEM = (int) totalEMLong;
+
+
+        /*
+         * ---------------------------------------------------------------
+         * 5. Constituent name -> index maps
+         * ---------------------------------------------------------------
+         */
+
+        List<Map<String, Integer>> constituentIdx =
+                new ArrayList<>();
+
         for (int s = 0; s < ns; s++) {
-            Map<String, Integer> map = new LinkedHashMap<>();
-            ArrayList<String> constNames = constituentList.get(s);
-            for (int i = 0; i < constNames.size(); i++)
-                map.put(constNames.get(i).toUpperCase(), i);
+
+            Map<String, Integer> map =
+                    new java.util.LinkedHashMap<>();
+
+            ArrayList<String> names =
+                    constituentList.get(s);
+
+            for (int i = 0; i < names.size(); i++) {
+
+                String name = names.get(i);
+
+                if (name == null || name.isBlank())
+                    throw new IllegalArgumentException(
+                            "Blank constituent name in phase "
+                            + phaseName +
+                            ", sublattice " + s);
+
+                String key = name.trim().toUpperCase();
+
+                if (map.put(key, i) != null)
+                    throw new IllegalArgumentException(
+                            "Duplicate constituent " + key +
+                            " on sublattice " + s +
+                            " of phase " + phaseName);
+            }
+
             constituentIdx.add(map);
         }
 
-        // 5. Get all G parameters for this phase
-        ArrayList<String> elArr = new ArrayList<>(elements);
-        ArrayList<Parameter> params = database.getPhaseParam(elArr, phaseName);
 
-        // 6. Build end-member array (size = totalEM, initialized to zero G)
-        //    Mixed-radix order: sublattice 0 least significant
-        //    stride[s] = product of nc[0..s-1]
-        int[] stride = new int[ns];
-        stride[0] = 1;
-        for (int s = 1; s < ns; s++) stride[s] = stride[s-1] * nc[s-1];
+        /*
+         * ---------------------------------------------------------------
+         * 6. Obtain phase parameters
+         * ---------------------------------------------------------------
+         */
 
-        CefEndMember[] endMembers = new CefEndMember[totalEM];
-        // Initialize all end members to zero
-        for (int em = 0; em < totalEM; em++) {
-            int[] idx = new int[ns];
-            for (int s = 0; s < ns; s++) idx[s] = (em / stride[s]) % nc[s];
-            endMembers[em] = new CefEndMember(idx, 0.0, 0.0);
-        }
+        ArrayList<String> elementArray =
+                new ArrayList<>(elements);
 
-        // 7. Build interaction parameter list
-        List<CefInteractionParam> interactions = new ArrayList<>();
+        ArrayList<Parameter> params =
+                database.getPhaseParam(
+                        elementArray,
+                        phaseName);
 
-        // 8. Process G parameters — separate end-members from interactions
-        //    Also collect TC and BMAGN parameters for magnetic phases
-        //    TC[em] and BMAGN[em] stored parallel to endMembers[]
-        double[] tcA  = new double[totalEM];  // TC constant term per end-member
-        double[] tcB  = new double[totalEM];  // TC linear term per end-member
-        double[] bmA  = new double[totalEM];  // BMAGN constant per end-member
-        double[] bmB  = new double[totalEM];  // BMAGN linear per end-member
+
+        /*
+         * ---------------------------------------------------------------
+         * 7. Allocate end-member array
+         * ---------------------------------------------------------------
+         *
+         * Do NOT initialize missing end members to zero.
+         *
+         * A missing zeroth-order CEF parameter represents an unassigned
+         * end member and must not silently become G = 0.
+         */
+        CefEndMember[] endMembers =
+                new CefEndMember[totalEM];
+
+
+        /*
+         * Magnetic parameters are retained here for compatibility with
+         * the existing factory interface. Their integration remains
+         * deliberately disabled at this stage.
+         */
+        double[] tcA = new double[totalEM];
+        double[] tcB = new double[totalEM];
+
+        double[] bmA = new double[totalEM];
+        double[] bmB = new double[totalEM];
+
+
+        /*
+         * ---------------------------------------------------------------
+         * 8. Construct CEF interaction parameters
+         * ---------------------------------------------------------------
+         */
+
+        List<CefInteractionParam> interactions =
+                new ArrayList<>();
+
+
+        /*
+         * ---------------------------------------------------------------
+         * 9. Process all G / TC / BMAGN parameters
+         * ---------------------------------------------------------------
+         */
 
         for (Parameter param : params) {
-            String type = param.getType().toUpperCase();
-            if (!type.equals("G") && !type.equals("TC") && !type.equals("BMAGN"))
+
+            if (param == null)
                 continue;
 
-            ArrayList<ArrayList<String>> clist = param.getConstituentList();
-            int order = param.getOrder();
+            String type =
+                    param.getType() == null
+                    ? ""
+                    : param.getType().trim().toUpperCase();
 
-            // Determine if this is an end-member or interaction parameter
-            // End-member: exactly one constituent per sublattice in clist
-            // Interaction: at least one sublattice has two constituents listed
+            if (!type.equals("G") &&
+                !type.equals("TC") &&
+                !type.equals("BMAGN")) {
 
+                continue;
+            }
+
+
+            ArrayList<ArrayList<String>> clist =
+                    param.getConstituentList();
+
+            if (clist == null || clist.size() != ns)
+                throw new IllegalArgumentException(
+                        "Parameter constituent array does not match "
+                        + "number of sublattices for phase "
+                        + phaseName);
+
+
+            /*
+             * Build the complete temperature polynomial.
+             */
+            SgtePolynomial poly =
+                    SgtePolynomial.fromExpList(
+                            param.getExpList());
+
+            if (poly == null)
+                throw new IllegalArgumentException(
+                        "Unable to construct temperature polynomial "
+                        + "for parameter in phase "
+                        + phaseName);
+
+
+            /*
+             * Parameter order is the TDB RK order.
+             *
+             * It is NOT the CEF constituent-array order.
+             */
+            int rkOrder = param.getOrder();
+
+
+            /*
+             * Determine whether this is a zeroth-order end member.
+             *
+             * A zeroth-order constituent array contains exactly one
+             * constituent on every sublattice.
+             */
             boolean isEndMember = true;
-            for (ArrayList<String> sl : clist) {
-                if (sl.size() != 1) { isEndMember = false; break; }
+
+            for (int s = 0; s < ns; s++) {
+
+                if (clist.get(s) == null ||
+                    clist.get(s).size() != 1) {
+
+                    isEndMember = false;
+                    break;
+                }
             }
 
-            // Build full multi-range SGTE polynomial
-            SgtePolynomial paramPoly = SgtePolynomial.fromExpList(param.getExpList());
-            // Extract a and b at reference T=298.15 for fallback storage
-            // CefEndMember stores the polynomial directly via constructor
-            double coeffA = 0.0, coeffB = 0.0;
-            if (paramPoly != null) {
-                // Evaluate at two points to extract effective a + b*T
-                // This is a temporary approximation —
-                // CefEndMember will store the full polynomial when available
-                double T1 = 298.15, T2 = 299.15;
-                double G1 = paramPoly.G(T1), G2 = paramPoly.G(T2);
-                coeffB = (G2 - G1) / (T2 - T1);
-                coeffA = G1 - coeffB * T1;
-            }
+
+            /*
+             * -----------------------------------------------------------
+             * 9a. Zeroth-order G / TC / BMAGN
+             * -----------------------------------------------------------
+             */
 
             if (isEndMember) {
-                // Find the end-member index in mixed-radix order
-                int em = 0;
-                boolean valid = true;
-                for (int s = 0; s < ns; s++) {
-                    String constName = clist.get(s).get(0).toUpperCase();
-                    Integer idx = constituentIdx.get(s).get(constName);
-                    if (idx == null) { valid = false; break; }
-                    em += idx * stride[s];
-                }
-                if (!valid) continue;
+
+                int em = endMemberIndex(
+                        clist,
+                        constituentIdx,
+                        stride,
+                        nc,
+                        ns);
+
+                if (em < 0)
+                    continue;
+
 
                 if (type.equals("G")) {
-                    int[] idxArr = new int[ns];
-                    for (int s = 0; s < ns; s++)
-                        idxArr[s] = (em / stride[s]) % nc[s];
-                    SgtePolynomial poly =
-                        SgtePolynomial.fromExpList(param.getExpList());
-                    if (poly != null) {
-                        endMembers[em] = new CefEndMember(idxArr, poly);
-                    } else {
-                        endMembers[em] = new CefEndMember(idxArr, coeffA, coeffB);
-                    }
+
+                    endMembers[em] =
+                            new CefEndMember(
+                                    endMemberIndices(
+                                            em,
+                                            stride,
+                                            nc,
+                                            ns),
+                                    poly);
+
                 } else if (type.equals("TC")) {
-                    tcA[em] += coeffA; tcB[em] += coeffB;
+
+                    double[] ab =
+                            effectiveLinearCoefficients(poly);
+
+                    tcA[em] += ab[0];
+                    tcB[em] += ab[1];
+
                 } else if (type.equals("BMAGN")) {
-                    bmA[em] += coeffA; bmB[em] += coeffB;
+
+                    double[] ab =
+                            effectiveLinearCoefficients(poly);
+
+                    bmA[em] += ab[0];
+                    bmB[em] += ab[1];
                 }
-            } else {
-                // Interaction parameter
-                // Find which sublattice has the pair and which has the single
-                if (type.equals("G") && ns >= 2) {
-                    int pairSL = -1, singleSL = -1;
-                    for (int s = 0; s < ns; s++) {
-                        if (clist.get(s).size() == 2 && pairSL == -1) pairSL = s;
-                        else if (clist.get(s).size() == 1 && singleSL == -1) singleSL = s;
-                    }
-                    if (pairSL >= 0 && singleSL >= 0) {
-                        String nameA = clist.get(pairSL).get(0).toUpperCase();
-                        String nameB = clist.get(pairSL).get(1).toUpperCase();
-                        String nameK = clist.get(singleSL).get(0).toUpperCase();
-                        Integer idxA = constituentIdx.get(pairSL).get(nameA);
-                        Integer idxB = constituentIdx.get(pairSL).get(nameB);
-                        Integer idxK = constituentIdx.get(singleSL).get(nameK);
-                        if (idxA != null && idxB != null && idxK != null) {
-                            interactions.add(new CefInteractionParam(
-                                pairSL, idxA, idxB, idxK, coeffA, coeffB));
-                        }
+
+                continue;
+            }
+
+
+            /*
+             * -----------------------------------------------------------
+             * 9b. Higher-order G parameter
+             * -----------------------------------------------------------
+             *
+             * The complete TDB constituent array is preserved.
+             *
+             * Examples:
+             *
+             *   L(FE,V:C,VA;0)
+             *
+             * becomes factors
+             *
+             *   (SL0,FE) (SL0,V) (SL1,C) (SL1,VA)
+             *
+             * and
+             *
+             *   L(C,CR,FE;0)
+             *
+             * becomes
+             *
+             *   (SL0,C) (SL0,CR) (SL0,FE)
+             *
+             * The TDB order is retained independently as rkOrder.
+             */
+            if (type.equals("G")) {
+
+                int factorCount = 0;
+
+                for (int s = 0; s < ns; s++)
+                    factorCount += clist.get(s).size();
+
+
+                if (factorCount == 0)
+                    throw new IllegalArgumentException(
+                            "Empty interaction constituent array "
+                            + "in phase " + phaseName);
+
+
+                int[] factorSL =
+                        new int[factorCount];
+
+                int[] factorIdx =
+                        new int[factorCount];
+
+
+                int k = 0;
+
+                for (int s = 0; s < ns; s++) {
+
+                    ArrayList<String> names =
+                            clist.get(s);
+
+                    for (String name : names) {
+
+                        if (name == null || name.isBlank())
+                            throw new IllegalArgumentException(
+                                    "Blank constituent in interaction "
+                                    + "of phase " + phaseName);
+
+                        String key =
+                                name.trim().toUpperCase();
+
+                        Integer idx =
+                                constituentIdx.get(s).get(key);
+
+                        if (idx == null)
+                            throw new IllegalArgumentException(
+                                    "Constituent " + key +
+                                    " in parameter is not present "
+                                    + "on sublattice " + s +
+                                    " of phase " + phaseName);
+
+                        factorSL[k] = s;
+                        factorIdx[k] = idx;
+                        k++;
                     }
                 }
+
+
+                interactions.add(
+                        new CefInteractionParam(
+                                factorSL,
+                                factorIdx,
+                                rkOrder,
+                                poly));
             }
         }
 
-        // 9. Build CefGibbs
-        CefGibbs gibbs = new CefGibbs(a, nc, endMembers, interactions);
 
-        // Magnetic contribution disabled for direct comparison with the
-        // non-magnetic CEF form used in the paper's solution-phase model.
+        /*
+         * ---------------------------------------------------------------
+         * 10. Verify all zeroth-order G parameters
+         * ---------------------------------------------------------------
+         *
+         * Missing end members are not silently assigned G = 0.
+         */
+        List<String> missingEndMembers =
+                new ArrayList<>();
+
+        for (int em = 0; em < totalEM; em++) {
+
+            if (endMembers[em] == null) {
+
+                int[] idx =
+                        endMemberIndices(
+                                em,
+                                stride,
+                                nc,
+                                ns);
+
+                missingEndMembers.add(
+                        formatEndMember(
+                                idx,
+                                constituentList));
+            }
+        }
+
+        if (!missingEndMembers.isEmpty()) {
+
+            throw new IllegalArgumentException(
+                    "Missing CEF G end-member parameter(s) for phase "
+                    + phaseName + ": "
+                    + missingEndMembers);
+        }
+
+
+        /*
+         * ---------------------------------------------------------------
+         * 11. Construct CEF Gibbs model
+         * ---------------------------------------------------------------
+         */
+
+        CefGibbs gibbs =
+                new CefGibbs(
+                        a,
+                        nc,
+                        endMembers,
+                        interactions);
+
+
+        /*
+         * ---------------------------------------------------------------
+         * 12. Magnetic contribution
+         * ---------------------------------------------------------------
+         *
+         * Deliberately disabled for this CEF exercise. The existing
+         * magnetic infrastructure can be connected later without changing
+         * the CEF representation.
+         */
         MagneticContribution magnetic = null;
-        double affVal = 0.0, pVal = 0.0;
 
-        return new PhaseModel(phaseName, gibbs, magnetic, affVal, pVal, constituentList);
+        double affVal = 0.0;
+        double pVal = 0.0;
+
+
+        /*
+         * ---------------------------------------------------------------
+         * 13. Return model
+         * ---------------------------------------------------------------
+         */
+
+        return new PhaseModel(
+                phaseName,
+                gibbs,
+                magnetic,
+                affVal,
+                pVal,
+                deepCopyConstituentList(constituentList));
     }
+
 
     /**
-     * Convert a PhaseModel to a GibbsEnergyModel for use by EquilibriumSolver.
-     *
-     * @param pm       the PhaseModel result from build()
-     * @param elements list of element symbols for this phase
-     * @return CefPhaseModelAdapter wrapping the CEF model
+     * Converts a PhaseModel to the GibbsEnergyModel used by the
+     * equilibrium solver.
      */
-    public static GibbsEnergyModel toGibbsModel(PhaseModel pm,
-                                                List<String> elements) {
-        if (pm.alternateModel != null) return pm.alternateModel;
+    public static GibbsEnergyModel toGibbsModel(
+            PhaseModel pm,
+            List<String> elements) {
+
+        if (pm == null)
+            throw new IllegalArgumentException(
+                    "PhaseModel must not be null.");
+
+        if (pm.alternateModel != null)
+            return pm.alternateModel;
+
         return new CefPhaseModelAdapter(
-            pm.gibbs,
-            pm.magnetic,
-            pm.phaseName,
-            new ArrayList<>(elements),
-            pm.constituentNames);
+                pm.gibbs,
+                pm.magnetic,
+                pm.phaseName,
+                new ArrayList<>(elements),
+                pm.constituentNames);
     }
+
+
+    /*
+     * =====================================================================
+     * Helper methods
+     * =====================================================================
+     */
+
+
+    /**
+     * Converts a mixed-radix end-member number to constituent indices.
+     */
+    private static int[] endMemberIndices(
+            int em,
+            int[] stride,
+            int[] nc,
+            int ns) {
+
+        int[] idx = new int[ns];
+
+        for (int s = 0; s < ns; s++)
+            idx[s] =
+                    (em / stride[s]) % nc[s];
+
+        return idx;
+    }
+
+
+    /**
+     * Converts a complete TDB zeroth-order constituent array to its
+     * mixed-radix end-member index.
+     */
+    private static int endMemberIndex(
+            ArrayList<ArrayList<String>> clist,
+            List<Map<String, Integer>> constituentIdx,
+            int[] stride,
+            int[] nc,
+            int ns) {
+
+        int em = 0;
+
+        for (int s = 0; s < ns; s++) {
+
+            if (clist.get(s).size() != 1)
+                return -1;
+
+            String name =
+                    clist.get(s).get(0);
+
+            if (name == null)
+                return -1;
+
+            Integer idx =
+                    constituentIdx.get(s)
+                            .get(name.trim().toUpperCase());
+
+            if (idx == null)
+                return -1;
+
+            if (idx < 0 || idx >= nc[s])
+                return -1;
+
+            em += idx * stride[s];
+        }
+
+        return em;
+    }
+
+
+    /**
+     * Makes an independent copy of the phase constituent structure.
+     */
+    private static ArrayList<ArrayList<String>>
+    deepCopyConstituentList(
+            ArrayList<ArrayList<String>> source) {
+
+        ArrayList<ArrayList<String>> copy =
+                new ArrayList<>();
+
+        for (ArrayList<String> sl : source)
+            copy.add(new ArrayList<>(sl));
+
+        return copy;
+    }
+
+
+    /**
+     * Formats an end-member constituent array for diagnostics.
+     */
+    private static String formatEndMember(
+            int[] idx,
+            ArrayList<ArrayList<String>> constituentList) {
+
+        StringBuilder sb = new StringBuilder("(");
+
+        for (int s = 0; s < idx.length; s++) {
+
+            if (s > 0)
+                sb.append(":");
+
+            sb.append(
+                    constituentList
+                            .get(s)
+                            .get(idx[s]));
+        }
+
+        sb.append(")");
+
+        return sb.toString();
+    }
+
+
+    /**
+     * Returns the first two effective coefficients of a polynomial.
+     *
+     * <p>This is used only for the presently unused magnetic arrays.
+     * CEF G parameters retain their complete SgtePolynomial.</p>
+     */
+    private static double[] effectiveLinearCoefficients(
+            SgtePolynomial poly) {
+
+        double T1 = 298.15;
+        double T2 = 299.15;
+
+        double G1 = poly.G(T1);
+        double G2 = poly.G(T2);
+
+        double b = G2 - G1;
+        double a = G1 - b * T1;
+
+        return new double[] {a, b};
+    }
+
 
 }

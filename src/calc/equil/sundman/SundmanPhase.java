@@ -90,8 +90,8 @@ public final class SundmanPhase {
         this.G = model.evaluateG(y, T);
         if (model instanceof CefPhaseModelAdapter) {
             CefPhaseModelAdapter cef = (CefPhaseModelAdapter) model;
-            this.Gx = cef.getGibbs().gradient(y, T);
-            this.Gxx = cef.getGibbs().hessian(y, T);
+            this.Gx = cef.getGibbs().gradient(T, y);
+            this.Gxx = cef.getGibbs().hessian(T, y);
         } else {
             this.Gx = model.gradient(y, T);
             this.Gxx = model.hessian(y, T);

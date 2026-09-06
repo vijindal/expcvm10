@@ -156,7 +156,7 @@ public class CefBuildTest {
                     y[offset + i] = 1.0 / nc[s];
                 offset += nc[s];
             }
-            double G = m.gibbs.evaluate(y, 1000.0);
+            double G = m.gibbs.evaluate(1000.0, y);
             System.out.printf("  %-10s G = %14.2f J/mol%n", m.phaseName, G);
         }
 
