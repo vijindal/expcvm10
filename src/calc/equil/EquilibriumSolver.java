@@ -255,9 +255,31 @@ public class EquilibriumSolver {
                     if (allValid) {
                         state.mu = trialMu;
                         for (int ip = 0; ip < stableNow.size(); ip++) {
-                            stableNow.get(ip).y      = trialY[ip];
-                            stableNow.get(ip).amount = trialN[ip];
-                            stableNow.get(ip).updateComposition();
+
+                            PhaseRecord pr = stableNow.get(ip);
+
+                            pr.y      = trialY[ip];
+                            pr.amount = trialN[ip];
+
+                            /*
+                             * Recompute composition from the accepted constitution.
+                             */
+                            pr.updateComposition();
+
+                            /*
+                             * Re-evaluate G, M_A and the constitution response at the
+                             * accepted state.  This ensures that the convergence tests
+                             * below use one thermodynamically consistent state:
+                             *
+                             *     (y_new, mu_new, G_new, M_new)
+                             */
+                            pr.updateFromModel(
+                                T,
+                                P,
+                                0.0,
+                                0.0,
+                                state.mu
+                            );
                         }
                         accepted = true;
                     } else {
@@ -268,6 +290,20 @@ public class EquilibriumSolver {
                 if (!accepted) {
                     converged = false;
                     break;
+                }
+
+                /*
+                 * Diagnostic: explicit residual check at accepted state.
+                 */
+                for (PhaseRecord pr : stableNow) {
+                    pr.computeDrivingForce(state.mu);
+
+                    System.out.printf(
+                        "Algorithm A: phase=%s, G=%.12f, drivingForce=%.12f%n",
+                        pr.phaseName(),
+                        pr.G,
+                        pr.drivingForce
+                    );
                 }
 
                 // Convergence test (§2.3.1, Fig. 1), extended per M2 Step 6/7:

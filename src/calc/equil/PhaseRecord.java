@@ -62,7 +62,11 @@ public class PhaseRecord {
                        boolean stable) {
         this.model  = model;
         this.x      = x != null ? x.clone() : new double[model.numComponents()];
-        this.mA     = this.x.clone();  // initialise mA = x (correct for RK)
+        /*
+         * Temporary initialization.  updateFromModel() replaces this with
+         * the true Sundman M_A computed from the phase constitution.
+         */
+        this.mA     = this.x.clone();
         this.amount = amount;
         this.stable = stable;
         int nip = model.numInternalParams();
