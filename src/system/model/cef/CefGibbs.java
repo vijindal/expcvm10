@@ -968,32 +968,59 @@ public class CefGibbs {
     }
 
 
+    /**
+     * Adds the reference-state Hessian contribution using second-order
+     * automatic differentiation of the complete endmember probability.
+     *
+     * <p>For an endmember I:</p>
+     * <pre>
+     * P_I = product_s y[s][i_s]
+     * </pre>
+     *
+     * <p>where i_s is the constituent occupying sublattice s.</p>
+     *
+     * <p>The AD2 construction automatically retains all cross-sublattice
+     * second derivatives, avoiding hand-written formula errors.</p>
+     */
     private void referenceHessian(double T,
                                   double[] y,
                                   double[][] H) {
 
+        final int n = y.length;
+
         for (int em = 0; em < totalEM; em++) {
 
             int[] idx = endMemberIndices(em);
-            double G = endMembers[em].G(T);
+
+            AD2 probability =
+                    AD2.constant(1.0, n);
 
             for (int s = 0; s < ns; s++) {
 
-                for (int q = s + 1; q < ns; q++) {
+                int constituent = idx[s];
 
-                    double value = G;
+                int varIdx =
+                        offset[s] + constituent;
 
-                    for (int r = 0; r < ns; r++) {
+                probability =
+                        probability.multiply(
+                                AD2.variable(
+                                        y[varIdx],
+                                        varIdx,
+                                        n
+                                )
+                        );
+            }
 
-                        if (r != s && r != q)
-                            value *= y[offset[r] + idx[r]];
-                    }
+            double G =
+                    endMembers[em].G(T);
 
-                    int i = offset[s] + idx[s];
-                    int j = offset[q] + idx[q];
+            for (int i = 0; i < n; i++) {
 
-                    H[i][j] += value;
-                    H[j][i] += value;
+                for (int j = 0; j < n; j++) {
+
+                    H[i][j] +=
+                            G * probability.hess[i][j];
                 }
             }
         }
