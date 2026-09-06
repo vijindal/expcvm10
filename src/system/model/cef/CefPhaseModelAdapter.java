@@ -717,9 +717,27 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
             }
         }
 
-        // For CEF: deln is the mole fraction change (convert from dely)
-        double[] delnN = compositionFromInternal(delyN);
         double[] x = compositionFromInternal(y);
+
+        /*
+         * ΔM_A = Σ_s a[s] Δy[s,A].
+         */
+        double[] delnN = new double[nc];
+        double[] a = gibbs.stoichiometry();
+
+        for (int s = 0; s < gibbs.ns(); s++) {
+            for (int i = 0; i < ncSL[s]; i++) {
+
+                int el = elementIndexOnSublattice[s][i];
+
+                if (el < 0)
+                    continue;
+
+                delnN[el] +=
+                    a[s]
+                    * delyN[offs[s] + i];
+            }
+        }
 
         // mA = M_A^phase (Sundman Eq.2): moles of component A per formula
         // unit = sum_s a[s]*y[s,A], summed only over element-mapped
@@ -780,20 +798,49 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
      * sublattice that is not the last sublattice, or whose local index
      * happens to be less than nc).
      */
+    /**
+     * Maps component chemical-potential multipliers to the
+     * site-fraction stationarity equations.
+     *
+     * For constituent A on sublattice s:
+     *
+     *     M_A = sum_s a[s] y[s,A]
+     *
+     * hence
+     *
+     *     dM_A/dy[s,A] = a[s]
+     *
+     * and the corresponding site-space multiplier is
+     *
+     *     muY[s,A] = a[s] mu_A.
+     *
+     * Non-element constituents such as VA have zero multiplier.
+     */
     private double[] mapMuToSiteFractions(double[] mu, double[] y) {
         int nip  = gibbs.nip();
         int[]    offs = gibbs.offsets();
         int[]    ncSL = gibbs.constituentsPerSublattice();
+        double[] a    = gibbs.stoichiometry();
         double[] muY  = new double[nip];
 
         for (int s = 0; s < gibbs.ns(); s++) {
             for (int i = 0; i < ncSL[s]; i++) {
                 int flatIdx = offs[s] + i;
                 int el = elementIndexOnSublattice[s][i];
-                // Only map if this constituent corresponds to a modeled
-                // element. Non-element constituents (e.g. VA) get mu = 0.
+                /*
+                 * M_el = sum_s a[s] * y[s,el]
+                 *
+                 * Therefore
+                 *
+                 * dM_el / dy[s,el] = a[s].
+                 *
+                 * Sundman's chemical-potential contribution in the
+                 * site-fraction stationarity equations is consequently
+                 *
+                 *     a[s] * mu_el.
+                 */
                 if (el >= 0 && el < mu.length) {
-                    muY[flatIdx] = mu[el];
+                    muY[flatIdx] = a[s] * mu[el];
                 }
                 // else: muY[flatIdx] stays 0.0 (VA convention)
             }
@@ -896,8 +943,13 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
         int nip = gibbs.nip();
 
         double[][] ny  = compositionSensitivity();
+        double[] a = gibbs.stoichiometry();
 
-        // dyDmu[m][B] = sum over j mapped to element B of eMat[m][j]
+        /*
+         * dyDmu[m][B] = sum over j on sublattice s mapped to element B
+         * of a[s] * eMat[m][j], accounting for the a[s] factor from
+         * mapMuToSiteFractions.
+         */
         double[][] dyDmu = new double[nip][nc];
         int[] ncSL = gibbs.constituentsPerSublattice();
         int[] offs = gibbs.offsets();
@@ -907,7 +959,8 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
                 if (elJ < 0) continue;
                 int flatJ = offs[s] + j;
                 for (int m = 0; m < nip; m++) {
-                    dyDmu[m][elJ] += eMat[m][flatJ];
+                    dyDmu[m][elJ] +=
+                        a[s] * eMat[m][flatJ];
                 }
             }
         }

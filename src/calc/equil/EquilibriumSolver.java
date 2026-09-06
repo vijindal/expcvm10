@@ -74,19 +74,45 @@ public class EquilibriumSolver {
         if (state.numStable() == 1) {
             PhaseRecord pr = state.stablePhases().get(0);
             pr.amount = 1.0;
-            // μ_A from single-phase tangent: G_M + Σ_A μ_A M^α_A = 0
-            // Standard CALPHAD result for single phase:
+            /*
+             * Initialise Sundman chemical-potential multipliers for a
+             * single-phase state.
+             *
+             * The solver uses the convention
+             *
+             *     G_M + sum_A(mu_A * M_A) = 0
+             *
+             * so mu_A is the negative of the conventional CALPHAD
+             * chemical potential.
+             *
+             * gx is the derivative of G_M/nfu with respect to x_A,
+             * i.e. per mole of atoms.
+             */
             double[] gx   = pr.model.gradient(pr.x, T);
             double[] mA   = pr.mA;
             double   gVal = pr.model.evaluateG(pr.x, T);
             double   nfu  = pr.model.nfu();
-            double   gTilde = gVal / nfu;
-            double sumMGx = 0.0;
-            for (int ic = 0; ic < nc; ic++) sumMGx += mA[ic] * gx[ic];
-            // mu_A = Gtilde + dG/dx_A - sum_B x_B * dG/dx_B (Euler/tangent-plane
-            // relation for a single phase; gx is already per mole of atoms).
+            double   gAtom = gVal / nfu;
+
+            /*
+             * x_A = M_A / nfu for a complete phase composition.
+             *
+             * Use normalized mole fractions here because gx is the
+             * mole-fraction gradient per mole of atoms.
+             */
+            double sumXGx = 0.0;
+
             for (int ic = 0; ic < nc; ic++) {
-                state.mu[ic] = gTilde + gx[ic] - sumMGx;
+                double xi = mA[ic] / nfu;
+                sumXGx += xi * gx[ic];
+            }
+
+            /*
+             * Negative conventional chemical potential = Sundman multiplier.
+             */
+            for (int ic = 0; ic < nc; ic++) {
+                state.mu[ic] =
+                    -(gAtom + gx[ic] - sumXGx);
             }
             pr.updateFromModel(T, P, 0, 0, state.mu);
             pr.computeDrivingForce(state.mu);
