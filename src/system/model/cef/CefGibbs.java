@@ -322,6 +322,34 @@ public class CefGibbs {
         return g;
     }
 
+    /** Direct temperature derivative at fixed normalized site fractions. */
+    public double temperatureDerivative(double[] y, double T) {
+        double derivative = 0.0;
+        int totalEM = totalEndMembers();
+        int[] stride = computeStrides();
+        for (int em = 0; em < totalEM; em++) {
+            int[] idx = decodeEM(em, stride);
+            double yProd = 1.0;
+            for (int s = 0; s < ns; s++) yProd *= y[offset[s] + idx[s]];
+            derivative += yProd * g0[em].dGdT(T);
+        }
+        for (int s = 0; s < ns; s++) {
+            for (int i = 0; i < nc[s]; i++) {
+                double yi = y[offset[s] + i];
+                if (yi > 1e-300) derivative += R * a[s] * yi * Math.log(yi);
+            }
+        }
+        for (CefInteractionParam p : interactions) {
+            int pSL = p.pairSublattice;
+            double pair = y[offset[pSL] + p.pairA] * y[offset[pSL] + p.pairB];
+            double delta = y[offset[pSL] + p.pairA] - y[offset[pSL] + p.pairB];
+            double term = pair;
+            if (p.singleIdx >= 0) term *= y[offset[1 - pSL] + p.singleIdx];
+            derivative += term * p.dLdT();
+        }
+        return derivative;
+    }
+
     // ------------------------------------------------------------------
     // Accessors
     // ------------------------------------------------------------------
@@ -403,12 +431,12 @@ public class CefGibbs {
     private void addGEmGradient(double[] y, double T, double[] gx, boolean useDerivL) {
         for (CefInteractionParam p : interactions) {
             int pSL = p.pairSublattice;
-            int oSL = 1 - pSL;
             double L = useDerivL ? p.dLdT() : p.L(T);
             if (L == 0.0) continue;
 
             int mpA = offset[pSL] + p.pairA;
             int mpB = offset[pSL] + p.pairB;
+            int oSL = 1 - pSL;
             int mk  = offset[oSL] + p.singleIdx;
 
             double ypA = y[mpA], ypB = y[mpB], yk = y[mk];
@@ -432,12 +460,12 @@ public class CefGibbs {
     private void addGEmHessian(double[] y, double T, double[][] gxx, boolean useDerivL) {
         for (CefInteractionParam p : interactions) {
             int pSL = p.pairSublattice;
-            int oSL = 1 - pSL;
             double L = useDerivL ? p.dLdT() : p.L(T);
             if (L == 0.0) continue;
 
             int mpA = offset[pSL] + p.pairA;
             int mpB = offset[pSL] + p.pairB;
+            int oSL = 1 - pSL;
             int mk  = offset[oSL] + p.singleIdx;
 
             double ypA = y[mpA], ypB = y[mpB], yk = y[mk];

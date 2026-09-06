@@ -20,7 +20,9 @@
       "Bash(java -cp \"./build/classes/java/main\" ui.Main --gui)",
       "Bash(grep -rn \"T\\\\*ln\\\\|T·ln\\\\|constant\\)\" d:/codes/expcvm10/src --include=*.java)",
       "Bash(CLASSPATH=\"lib/*\" javac -source 8 -target 8 -d build/classes/java/main -sourcepath src src/ui/gui/MainFrame.java)",
-      "Bash(git pull:*)"
+      "Bash(git pull:*)",
+      "Bash(java -cp build/classes/java/main test.CefBuildTest)",
+      "Bash(./gradlew clean:*)"
     ]
   }
 }

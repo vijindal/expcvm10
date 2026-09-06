@@ -84,7 +84,7 @@ public class RkPhaseModelAdapter extends GibbsEnergyModel {
 
     @Override
     public double evaluateGT() {
-        cachedGT = gibbs.gradientDT(y, T)[0];
+        cachedGT = gibbs.temperatureDerivative(y, T);
         return cachedGT;
     }
 
@@ -202,10 +202,16 @@ public class RkPhaseModelAdapter extends GibbsEnergyModel {
         double[] delnN = delyN;
         double[] x = y.clone();
 
+        // For RK: M^α_A = x^α_A (since nfu=1)
+        double[] mA = x.clone();
+
+        // For RK: eMatNC = eMat (already in composition space)
+        double[][] eMatNC = eMat;
+
         // Energy parameter list
         double[] eList = buildEList(y, T, GN);
 
-        return new PhaseEquilData(GN, delyN, delnN, x, eMat, cG, cT, cP, eList);
+        return new PhaseEquilData(GN, delyN, delnN, x, mA, eMat, eMatNC, cG, cT, cP, eList);
     }
 
     // ══════════════════════════════════════════════════════════════════

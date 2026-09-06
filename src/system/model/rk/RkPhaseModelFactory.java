@@ -104,13 +104,24 @@ public class RkPhaseModelFactory {
         Map<String, int[]>                      pairIndices = new HashMap<>();
 
         for (tdb.Parameter param : params) {
-            if (!"L".equalsIgnoreCase(param.getType())) continue;
+            if (!"L".equalsIgnoreCase(param.getType())
+                    && !"G".equalsIgnoreCase(param.getType())) continue;
 
             ArrayList<ArrayList<String>> constituents = param.getConstituentList();
-            if (constituents == null || constituents.size() < 2) continue;
+            if (constituents == null || constituents.isEmpty()) continue;
 
-            List<String> sub0 = constituents.get(0);
-            List<String> sub1 = constituents.get(1);
+            List<String> sub0;
+            List<String> sub1;
+            if (constituents.size() == 1 && constituents.get(0).size() == 2) {
+                sub0 = constituents.get(0);
+                sub1 = sub0.subList(1, 2);
+                sub0 = sub0.subList(0, 1);
+            } else if (constituents.size() >= 2) {
+                sub0 = constituents.get(0);
+                sub1 = constituents.get(1);
+            } else {
+                continue;
+            }
             if (sub0 == null || sub0.isEmpty() || sub1 == null || sub1.isEmpty()) continue;
 
             int i = elements.indexOf(sub0.get(0));

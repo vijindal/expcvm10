@@ -52,6 +52,7 @@ public final class CefInteractionParam {
     /** Temperature-linear coefficient (J/(mol·K)). */
     public final double b;
 
+
     /**
      * Constructs a CEF interaction parameter.
      *

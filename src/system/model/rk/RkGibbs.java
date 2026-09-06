@@ -454,6 +454,24 @@ public class RkGibbs {
         return g;
     }
 
+    /** Direct temperature derivative at fixed composition. */
+    public double temperatureDerivative(double[] x, double T) {
+        double derivative = 0.0;
+        double h = 0.01;
+        for (int i = 0; i < nc; i++) {
+            derivative += x[i] * (g0[i].gibbs(phaseName, T + h)
+                    - g0[i].gibbs(phaseName, T - h)) / (2.0 * h);
+            if (x[i] > 1e-300) derivative += R * x[i] * Math.log(x[i]);
+        }
+        for (BinaryParam p : binaries)
+            derivative += x[p.idxI] * x[p.idxJ] * p.dLdT(x);
+        for (TernaryParam p : ternaries)
+            derivative += x[p.idxI] * x[p.idxJ] * x[p.idxK] * p.dLdT(x);
+        for (QuaternaryParam p : quaternaries)
+            derivative += x[p.idxI] * x[p.idxJ] * x[p.idxK] * x[p.idxL] * p.dLdT();
+        return derivative;
+    }
+
     /** Returns number of components. */
     public int nc() { return nc; }
 

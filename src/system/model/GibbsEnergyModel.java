@@ -505,6 +505,16 @@ public abstract class GibbsEnergyModel {
     public abstract double[] compositionFromInternal(double[] y);
     public abstract boolean isValid(double[] y);
 
+    /**
+     * Moles of component A per formula unit.
+     * For RK phases: M[A] = x[A] (nfu=1).
+     * For CEF phases: M[A] = Σ_s a[s]*y[s][A].
+     * Default implementation returns x (correct for RK).
+     */
+    public double[] getM() {
+        return x != null ? x.clone() : new double[numComponents()];
+    }
+
     // ══════════════════════════════════════════════════════════════════
     // Equilibrium Matrix (Concrete Implementation)
     // ══════════════════════════════════════════════════════════════════

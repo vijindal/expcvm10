@@ -10,6 +10,8 @@ import system.model.cef.CefInteractionParam;
 import system.model.cef.CefPhaseModelAdapter;
 import system.model.cef.MagneticContribution;
 import system.model.cef.SgtePolynomial;
+import system.model.rk.RkPhaseModelAdapter;
+import system.model.rk.RkPhaseModelFactory;
 
 import java.util.*;
 
@@ -25,15 +27,35 @@ public class PhaseModelFactory {
         public final MagneticContribution magnetic; // null if not magnetic
         public final double aff;   // 0 if not magnetic
         public final double p;     // 0 if not magnetic
+        /** Constituent name per sublattice, e.g. constituentNames[1][0]="VA". */
+        public final ArrayList<ArrayList<String>> constituentNames;
+        public final GibbsEnergyModel alternateModel;
 
         public PhaseModel(String phaseName, CefGibbs gibbs,
                           MagneticContribution magnetic,
-                          double aff, double p) {
+                          double aff, double p,
+                          ArrayList<ArrayList<String>> constituentNames) {
+            this(phaseName, gibbs, magnetic, aff, p, constituentNames, null);
+        }
+
+        private PhaseModel(String phaseName, CefGibbs gibbs,
+                           MagneticContribution magnetic,
+                           double aff, double p,
+                           ArrayList<ArrayList<String>> constituentNames,
+                           GibbsEnergyModel alternateModel) {
             this.phaseName = phaseName;
             this.gibbs     = gibbs;
             this.magnetic  = magnetic;
             this.aff       = aff;
             this.p         = p;
+            this.constituentNames = constituentNames;
+            this.alternateModel = alternateModel;
+        }
+
+        public static PhaseModel forAlternateModel(String phaseName,
+                                                    GibbsEnergyModel model) {
+            return new PhaseModel(phaseName, null, null, 0.0, 0.0,
+                    new ArrayList<>(), model);
         }
 
         public boolean hasMagnetic() { return magnetic != null; }
@@ -60,6 +82,14 @@ public class PhaseModelFactory {
         Phase phase = database.getPhase(phaseName);
         if (phase == null)
             throw new IllegalArgumentException("Phase not found: " + phaseName);
+
+        // A one-sublattice phase is a substitutional solution phase. Use the
+        // RK model so G(...;order) parameters retain their RK composition basis.
+        if (phase.getNumSubLat() == 1) {
+            RkPhaseModelAdapter rk = RkPhaseModelFactory.build(
+                    phaseName, elements, database);
+            return PhaseModel.forAlternateModel(phaseName, rk);
+        }
 
         // 2. Read sublattice structure
         int ns = phase.getNumSubLat();
@@ -183,7 +213,7 @@ public class PhaseModelFactory {
                     bmA[em] += coeffA; bmB[em] += coeffB;
                 }
             } else {
-                // Interaction parameter — only handle 2-sublattice interactions
+                // Interaction parameter
                 // Find which sublattice has the pair and which has the single
                 if (type.equals("G") && ns >= 2) {
                     int pairSL = -1, singleSL = -1;
@@ -210,16 +240,12 @@ public class PhaseModelFactory {
         // 9. Build CefGibbs
         CefGibbs gibbs = new CefGibbs(a, nc, endMembers, interactions);
 
-        // 10. Build MagneticContribution if this phase has MAGNETIC type definition
+        // Magnetic contribution disabled for direct comparison with the
+        // non-magnetic CEF form used in the paper's solution-phase model.
         MagneticContribution magnetic = null;
         double affVal = 0.0, pVal = 0.0;
-        if (affMap.containsKey(phaseName) && pMap.containsKey(phaseName)) {
-            affVal = affMap.get(phaseName);
-            pVal   = pMap.get(phaseName);
-            magnetic = MagneticContribution.fromTypeDefinition(affVal, pVal);
-        }
 
-        return new PhaseModel(phaseName, gibbs, magnetic, affVal, pVal);
+        return new PhaseModel(phaseName, gibbs, magnetic, affVal, pVal, constituentList);
     }
 
     /**
@@ -231,11 +257,13 @@ public class PhaseModelFactory {
      */
     public static GibbsEnergyModel toGibbsModel(PhaseModel pm,
                                                 List<String> elements) {
+        if (pm.alternateModel != null) return pm.alternateModel;
         return new CefPhaseModelAdapter(
             pm.gibbs,
             pm.magnetic,
             pm.phaseName,
-            new ArrayList<>(elements));
+            new ArrayList<>(elements),
+            pm.constituentNames);
     }
 
 }

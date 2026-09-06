@@ -74,15 +74,19 @@ public class EquilibriumSolver {
         if (state.numStable() == 1) {
             PhaseRecord pr = state.stablePhases().get(0);
             pr.amount = 1.0;
-            // Chemical potentials from partial molar Gibbs energies:
-            // mu_code[A] = -G - Gx[A] + Σ_B x_B * Gx[B]
-            // This satisfies G + Σ mu_code[A]*x[A] = 0 (Euler identity in code convention)
-            double[] gx = pr.model.gradient(pr.x, T);
-            double sumXGx = 0;
-            for (int ic = 0; ic < nc; ic++) sumXGx += pr.x[ic] * gx[ic];
-            double gVal = pr.model.evaluateG(pr.x, T);
+            // μ_A from single-phase tangent: G_M + Σ_A μ_A M^α_A = 0
+            // Standard CALPHAD result for single phase:
+            double[] gx   = pr.model.gradient(pr.x, T);
+            double[] mA   = pr.x;
+            double   gVal = pr.model.evaluateG(pr.x, T);
+            double   nfu  = pr.model.nfu();
+            double   gTilde = gVal / nfu;
+            double sumMGx = 0.0;
+            for (int ic = 0; ic < nc; ic++) sumMGx += mA[ic] * gx[ic];
+            // mu_A = Gtilde + dG/dx_A - sum_B x_B * dG/dx_B (Euler/tangent-plane
+            // relation for a single phase; gx is already per mole of atoms).
             for (int ic = 0; ic < nc; ic++) {
-                state.mu[ic] = -gVal - gx[ic] + sumXGx;
+                state.mu[ic] = gTilde + gx[ic] - sumMGx;
             }
             pr.updateFromModel(T, P, 0, 0, state.mu);
             pr.computeDrivingForce(state.mu);
@@ -123,7 +127,7 @@ public class EquilibriumSolver {
             // ────────────────────────────────────────────────────────
             // Solve initial phase fractions from mass balance
             // ────────────────────────────────────────────────────────
-            solveInitialFractions(state);
+            solveInitialFractions(state, T, P);
 
             // ────────────────────────────────────────────────────────
             // Initialise μ_A from grid-minimiser tangent plane (§2.3.1)
@@ -132,35 +136,37 @@ public class EquilibriumSolver {
             // weighted by phase amount, matching the Lagrangian condition
             // ∂L/∂ℵ^α = 0 ⟹ G^α_m + Σ_A μ_A M^α_A = 0 (Eq. 7).
             // Without this, mu[] starts at zero and wastes early iterations.
+            //
+            // On the very first phase set, state.mu may already carry a good
+            // tangent-plane estimate computed by the single-phase fast path
+            // above (before falling through here because a metastable phase
+            // had positive driving force). That estimate must be preserved,
+            // not discarded — resetting to zero here was throwing away a
+            // valid starting point and forcing the first Newton step to
+            // cover the full gap from mu=0 to the true equilibrium value.
             // ────────────────────────────────────────────────────────
             if (numPhaseSetResets == 0) {
-                double[] muEst = new double[nc];
-                double totalAmount = 0.0;
-                for (PhaseRecord pr : state.stablePhases()) {
-                    double w = Math.max(pr.amount, 1e-10);
-                    double gVal  = pr.model.evaluateG(pr.x, T);
-                    double[] gx  = pr.model.gradient(pr.x, T);
-                    double sumXGx = 0.0;
-                    for (int ic = 0; ic < nc; ic++) sumXGx += pr.x[ic] * gx[ic];
-                    for (int ic = 0; ic < nc; ic++) {
-                        muEst[ic] += w * (-gVal - gx[ic] + sumXGx);
-                    }
-                    totalAmount += w;
-                }
-                for (int ic = 0; ic < nc; ic++) state.mu[ic] = muEst[ic] / totalAmount;
-                // Initialise driving forces for all phases with the estimated μ
+                // Initialise driving forces for all phases with the current μ
+                // (state.mu is whatever the caller/fast-path already set;
+                // it defaults to all-zero from EquilibriumState's constructor
+                // if no fast-path estimate was computed).
                 for (PhaseRecord pr : state.phases) {
                     double gVal = pr.model.evaluateG(pr.x, T);
                     pr.G = gVal;
                     pr.computeDrivingForce(state.mu);
                 }
-                LOG.fine("Initial mu from tangent plane: " + java.util.Arrays.toString(state.mu));
+                LOG.fine("Initial mu (preserved from fast path or zero): "
+                        + java.util.Arrays.toString(state.mu));
             }
 
             // ────────────────────────────────────────────────────────
             // Newton iteration for current phase set
             // ────────────────────────────────────────────────────────
-            converged = true;
+            // converged starts false and is set true only when the
+            // muOk && yOk tolerance is actually satisfied (see break below).
+            // Exhausting MAX_ITERATIONS without hitting that break must
+            // leave converged == false, not silently report success.
+            converged = false;
             for (int iter = 0; iter < Constants.MAX_ITERATIONS; iter++) {
                 totalIterations++;
 
@@ -173,11 +179,28 @@ public class EquilibriumSolver {
                 EquilibriumMatrix eqMat = assembleEquilibriumMatrix(state, iter);
                 double[] corrections = eqMat.solve();
 
+                // A singular matrix means no valid Newton correction exists
+                // for this iteration -- this is a failed iteration, not a
+                // (falsely convergence-satisfying) zero correction.
+                if (corrections == null) {
+                    converged = false;
+                    break;
+                }
+
                 // Damped Newton step with analytical step-limit for negative amounts
                 // (§2.3.1 / standard CALPHAD practice):
                 //   λ_max = 0.9 × min over phases where ΔN<0 of (ℵ^α / |ΔN^α|)
                 // This prevents amounts going negative on the first trial,
                 // avoiding wasted halving iterations and premature phase removal.
+                //
+                // The computed safeStep must be allowed to go arbitrarily
+                // small (it can legitimately be far below 2^-10 when a phase
+                // amount is small and the raw correction is large) — a floor
+                // applied via Math.max would override and defeat this safety
+                // clamp exactly when it matters most. The halving loop below
+                // (which starts from this lambda and repeatedly halves it)
+                // provides its own separate lower bound via its fixed
+                // iteration count; no additional floor is applied here.
                 List<PhaseRecord> stableNow = state.stablePhases();
                 double lambda = 1.0;
                 for (int ip = 0; ip < stableNow.size(); ip++) {
@@ -187,7 +210,6 @@ public class EquilibriumSolver {
                         if (safeStep < lambda) lambda = safeStep;
                     }
                 }
-                lambda = Math.max(lambda, 1.0 / (1 << 10)); // floor at 2^-10
 
                 boolean accepted = false;
                 for (int itr = 0; itr < 10 && !accepted; itr++) {
@@ -216,10 +238,15 @@ public class EquilibriumSolver {
                         }
                     }
 
-                    // Check composition validity (y fractions in range)
+                    // Check composition validity (y fractions in range) and
+                    // that no phase amount has gone negative.
                     boolean allValid = true;
                     for (int ip = 0; ip < stableNow.size(); ip++) {
                         if (!stableNow.get(ip).model.isValid(trialY[ip])) {
+                            allValid = false;
+                            break;
+                        }
+                        if (trialN[ip] < 0.0) {
                             allValid = false;
                             break;
                         }
@@ -243,11 +270,27 @@ public class EquilibriumSolver {
                     break;
                 }
 
-                // Convergence test (§2.3.1, Fig. 1):
+                // Convergence test (§2.3.1, Fig. 1), extended per M2 Step 6/7:
                 //   |Δμ_A|  < Constants.MU_TOL  for all A  (corrections[0..nc-1])
                 //   |Δy_is| < Constants.Y_TOL   for all phases/site-fracs (from data.dely)
                 // Δℵ (phase amounts, corrections[nc..]) are NOT part of the test —
                 // they have different units and the paper does not include them.
+                //
+                // Small Δμ/Δy alone only certifies that the LAST step was
+                // small -- it does not certify that the governing equations
+                // (Gibbs-Duhem per stable phase, overall mass balance) are
+                // actually satisfied at the current state. A phase-set pass
+                // can otherwise report converged=true while a stable phase's
+                // own Gibbs-Duhem residual, or the mass-balance residual, is
+                // still far from zero (see M2 Step 6 diagnostic). Both
+                // physical residuals are now required to be small as well,
+                // using the phase's own driving force (= Gibbs-Duhem
+                // residual, via the existing computeDrivingForce/
+                // DRIVING_FORCE_TOL convention) and mA (= M_A, already used
+                // by assembleEquilibriumMatrix's mass-balance rows) for the
+                // mass-balance residual, reusing Y_TOL as its tolerance
+                // (same order of magnitude as the existing site-fraction
+                // tolerance; no new tolerance constant introduced).
                 boolean muOk = true;
                 for (int i = 0; i < nc; i++) {
                     if (Math.abs(lambda * corrections[i]) >= Constants.MU_TOL) { muOk = false; break; }
@@ -265,10 +308,45 @@ public class EquilibriumSolver {
                     }
                 }
 
+                // Gibbs-Duhem / phase-equilibrium criterion (M2 Step 9):
+                // the direct residual |G_phi + Sum_A mu_A*mA_phi[A]| for
+                // each stable phase, matching exactly the Sundman-Eq.7
+                // convention assembleEquilibriumMatrix solves (F_phi=0).
+                // computeDrivingForce() now computes exactly this quantity
+                // (fixed in M2 Step 9 to match the current mA=M_A
+                // definition), so it is used directly rather than
+                // re-deriving the same sum inline.
+                boolean gibbsDuhemOk = true;
                 if (muOk && yOk) {
+                    for (PhaseRecord pr : stableNow) {
+                        pr.computeDrivingForce(state.mu);
+                        if (Math.abs(pr.drivingForce) >= Constants.DRIVING_FORCE_TOL) {
+                            gibbsDuhemOk = false;
+                            break;
+                        }
+                    }
+                }
+
+                boolean massBalanceOk = true;
+                if (muOk && yOk && gibbsDuhemOk) {
+                    for (int A = 0; A < nc; A++) {
+                        double massSum = 0.0;
+                        for (PhaseRecord pr : stableNow) massSum += pr.amount * pr.mA[A];
+                        if (Math.abs(massSum - state.compOverAll[A]) >= Constants.Y_TOL) {
+                            massBalanceOk = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (muOk && yOk && gibbsDuhemOk && massBalanceOk) {
+                    converged = true;
                     break;  // converged for this phase set
                 }
             }
+            // If the loop above exhausted MAX_ITERATIONS without ever
+            // executing the muOk&&yOk break, converged remains false here
+            // (it is never left as a stale "true" from a previous phase set).
 
             if (!converged) {
                 break;  // Couldn't converge within Constants.MAX_ITERATIONS
@@ -354,12 +432,32 @@ public class EquilibriumSolver {
     }
 
     // ------------------------------------------------------------------
-    // Initial fraction solve: Σ f[ip]·x[ip] = compOverAll
+    // Initial fraction solve: Σ_ip ℵ[ip]·mA[ip][A] = compOverAll[A]
     // ------------------------------------------------------------------
 
-    private void solveInitialFractions(EquilibriumState state) {
+    /**
+     * Solves for initial phase amounts ℵ^α from the mass-balance
+     * equations, using the same M_A definition (pr.mA, the true
+     * unnormalized Sundman M_A^phase) as assembleEquilibriumMatrix's
+     * mass-balance block -- NOT the normalized mole fraction pr.x.
+     * Using pr.x here (as before) is dimensionally inconsistent whenever
+     * stable phases have different nfu (see M2 Step 6 diagnostic).
+     *
+     * <p>pr.mA is only populated by PhaseRecord.updateFromModel(); a
+     * freshly-built PhaseRecord (from GridMinimizer) still carries its
+     * constructor's placeholder mA=x.clone(). Since M_A depends only on y
+     * (not on mu), each stable phase's mA is refreshed here from its
+     * current y before the mass-balance system is assembled, at mu=0 --
+     * this does not affect y itself and mirrors the refresh the Newton
+     * loop performs every iteration via updateFromModel.
+     */
+    private void solveInitialFractions(EquilibriumState state, double T, double P) {
         int np = state.stablePhases().size();
         int nc = state.numComponents();
+
+        for (PhaseRecord pr : state.stablePhases()) {
+            pr.updateFromModel(T, P, 0, 0, new double[nc]);
+        }
 
         if (np == 1) {
             // Single phase: f = 1
@@ -368,7 +466,7 @@ public class EquilibriumSolver {
         }
 
         // Linear system: np equations, np unknowns
-        // f[ip]·x[ip][ic] = compOverAll[ic] for each ic, solved for f[]
+        // f[ip]·mA[ip][ic] = compOverAll[ic] for each ic, solved for f[]
         // For simplicity, use only the first nc equations (one per component)
         // and the constraint Σ f = 1
 
@@ -377,7 +475,7 @@ public class EquilibriumSolver {
 
         for (int ic = 0; ic < Math.min(nc, np - 1); ic++) {
             for (int ip = 0; ip < np; ip++) {
-                A[ic][ip] = state.stablePhases().get(ip).x[ic];
+                A[ic][ip] = state.stablePhases().get(ip).mA[ic];
             }
             b[ic] = state.compOverAll[ic];
         }
@@ -416,66 +514,64 @@ public class EquilibriumSolver {
         double[][] jac = new double[matSize][matSize];
         double[] rhs = new double[matSize];
 
-        // ── Row block 1: Gibbs-Duhem equations (np rows) ──
-        // From ∂L/∂ℵ^α = 0 (Eq. 7): G^α_M + Σ_A μ_A·x^α_A = 0
-        // Linearised w.r.t. [Δμ, Δℵ]:
-        //   Σ_C J_GD^α[C] Δμ_C = -(G^α + Σ_A μ_A x^α_A)
-        // where J_GD^α[C] = x^α_C + Σ_A μ_A · eMat^α[A][C]
-        //   (chain rule: x depends on μ through y via eMat as ∂x_A/∂μ_C = eMat[A][C])
-        // The Lagrangian condition has NO ℵ dependence → Δℵ columns are zero.
+        // ── Row block 1: Gibbs-Duhem equations (np rows) ──────────────
+        // From Sundman Eq.7: G^α_M + Σ_A μ_A M^α_A = 0
+        // Linearised: Σ_B (M^α_B + Σ_A μ_A eMatNC[A][B]) Δμ_B
+        //           = -(G^α_M + Σ_A μ_A M^α_A)
+        // Note: Δℵ does NOT appear in Eq.7 → jac cols nc..nc+np-1 are zero.
         for (int ip = 0; ip < np; ip++) {
-            PhaseRecord pr = state.stablePhases().get(ip);
-            PhaseEquilData data = pr.lastCompute;
+            PhaseRecord pr   = state.stablePhases().get(ip);
+            PhaseEquilData d = pr.lastCompute;
 
-            // RHS: -(G + Σ μ·x)
-            double gibbsSum = pr.G;
-            for (int ic = 0; ic < nc; ic++) gibbsSum += state.mu[ic] * pr.x[ic];
+            // RHS = -(G^α_M + Σ_A μ_A M^α_A)
+            double gibbsSum = pr.G;  // G^α_M per FU
+            for (int A = 0; A < nc; A++)
+                gibbsSum += state.mu[A] * pr.mA[A];
             rhs[ip] = -gibbsSum;
 
-            // Jacobian vs Δμ_C: x^α_C + Σ_A μ_A · eMat^α[A][C]
-            for (int ic = 0; ic < nc; ic++) {
-                double jval = pr.x[ic];
-                if (data != null && data.eMat != null) {
-                    for (int jc = 0; jc < nc; jc++) {
-                        jval += state.mu[jc] * data.eMat[jc][ic]; // eMat[A][C], not transposed
-                    }
+            // Jacobian vs Δμ_B:
+            //   jac[ip][B] = M^α_B + Σ_A μ_A * eMatNC[A][B]
+            for (int B = 0; B < nc; B++) {
+                double jval = pr.mA[B];
+                if (d != null && d.eMatNC != null) {
+                    for (int A = 0; A < nc; A++)
+                        jval += state.mu[A] * d.eMatNC[A][B];
                 }
-                jac[ip][ic] = jval;
+                jac[ip][B] = jval;
             }
-
-            // Jacobian vs Δℵ: zero — ℵ does not appear in Eq. 7
-            // (cols nc..nc+np-1 remain 0 from array initialisation)
+            // Columns nc..nc+np-1 remain zero (ℵ not in Eq.7)
         }
 
-        // ── Row block 2: Mass balance equations (c rows) ──
-        // Σ_α ℵ^α·x^α_A = compOverAll_A
-        // Rows np..np+nc-1  (NOT nc..2nc-1 — block 1 occupies rows 0..np-1)
-        for (int ic = 0; ic < nc; ic++) {
-            int row = np + ic;
-            // RHS: -(Σ ℵ·x - compOverAll)
-            double sum = 0;
-            for (PhaseRecord pr : state.stablePhases()) {
-                sum += pr.amount * pr.x[ic];
-            }
-            rhs[row] = -(sum - state.compOverAll[ic]);
+        // ── Row block 2: Mass balance equations (nc rows) ─────────────
+        // Σ_α ℵ^α M^α_A = Ñ_A   (per Sundman Eq.5 / mass balance)
+        // Linearised:
+        //   Σ_α (M^α_A Δℵ^α + ℵ^α ΔM^α_A) = Ñ_A - Σ_α ℵ^α M^α_A
+        //   ΔM^α_A = Σ_B eMatNC[A][B] Δμ_B
+        for (int A = 0; A < nc; A++) {
+            int row = np + A;
 
-            // Jacobian vs μ: J[row, jc] = Σ_α ℵ^α·cAB^α[A,B]
-            for (int jc = 0; jc < nc; jc++) {
-                double jval = 0;
+            // RHS = -(Σ_α ℵ^α M^α_A - Ñ_A)
+            double sum = 0.0;
+            for (PhaseRecord pr : state.stablePhases())
+                sum += pr.amount * pr.mA[A];
+            rhs[row] = -(sum - state.compOverAll[A]);
+
+            // Jacobian vs Δμ_B: Σ_α ℵ^α eMatNC[A][B]
+            for (int B = 0; B < nc; B++) {
+                double jval = 0.0;
                 for (PhaseRecord pr : state.stablePhases()) {
-                    PhaseEquilData data = pr.lastCompute;
-                    if (data != null && data.eMat != null &&
-                        ic < data.eMat.length && jc < data.eMat[ic].length) {
-                        jval += pr.amount * data.eMat[ic][jc];
-                    }
+                    PhaseEquilData d = pr.lastCompute;
+                    if (d != null && d.eMatNC != null
+                            && A < d.eMatNC.length
+                            && B < d.eMatNC[A].length)
+                        jval += pr.amount * d.eMatNC[A][B];
                 }
-                jac[row][jc] = jval;
+                jac[row][B] = jval;
             }
 
-            // Jacobian vs N: J[row, nc+ip] = x^α_A
-            for (int ip = 0; ip < np; ip++) {
-                jac[row][nc + ip] = state.stablePhases().get(ip).x[ic];
-            }
+            // Jacobian vs Δℵ^α: M^α_A
+            for (int ip = 0; ip < np; ip++)
+                jac[row][nc + ip] = state.stablePhases().get(ip).mA[A];
         }
 
         return new EquilibriumMatrix(jac, rhs, iter);
@@ -496,6 +592,15 @@ public class EquilibriumSolver {
             this.iterationNum = iterationNum;
         }
 
+        /**
+         * Solves the linear system, or returns null if the matrix is
+         * singular. A singular matrix means no valid Newton correction
+         * exists for this iteration; it must be treated as a failed
+         * iteration by the caller, not silently replaced with a
+         * zero-correction vector (which would trivially satisfy the
+         * |correction| < tolerance convergence test and could report
+         * false convergence -- see M2 Step 6 diagnostic).
+         */
         double[] solve() {
             try {
                 Matrix matJ = new Matrix(jac);
@@ -508,8 +613,8 @@ public class EquilibriumSolver {
                 return sol;
             } catch (Exception e) {
                 LOG.warning("EquilibriumSolver: singular matrix at iteration " + iterationNum
-                        + " — returning zero corrections. " + e.getMessage());
-                return new double[jac.length];
+                        + " — treating as a failed Newton iteration. " + e.getMessage());
+                return null;
             }
         }
     }

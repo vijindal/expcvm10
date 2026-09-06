@@ -16,8 +16,29 @@ public class CefBuildTest {
         TdbParser parser = new TdbParser();
         parser.load(tdbPath);
 
-        // Check if GHSERVV function exists and what it contains
         system.database.tdb rawDb = parser.getUnderlyingTdb();
+        system.database.tdb filtered = rawDb.gettdb(new String[]{"V","ZR"});
+        ArrayList<system.database.tdb.Parameter> p2 =
+            filtered.getPhaseParam(
+                new java.util.ArrayList<>(java.util.Arrays.asList("V","ZR")),
+                "V2ZR");
+        for (system.database.tdb.Parameter p : p2) {
+            if (!"G".equalsIgnoreCase(p.getType())) continue;
+            ArrayList<ArrayList<String>> cl = p.getConstituentList();
+            // V:V end member only
+            if (cl.size()==2
+                && cl.get(0).size()==1 && "V".equals(cl.get(0).get(0))
+                && cl.get(1).size()==1 && "V".equals(cl.get(1).get(0))) {
+                System.out.println("V2ZR V:V raw expList:");
+                for (system.database.tdb.Exp exp : p.getExpList()) {
+                    System.out.println("  range=" + exp.getTempRange());
+                    System.out.println("  subCoeffList=" + exp.getSubCoeffList());
+                    System.out.println("  expStr=" + exp.getExpStr());
+                }
+            }
+        }
+
+        // Check if GHSERVV function exists and what it contains
 
         // Print phase param for V in BCC_A2 from the FULL unfiltered db
         // (before gettdb filtering)
@@ -139,6 +160,26 @@ public class CefBuildTest {
             System.out.printf("  %-10s G = %14.2f J/mol%n", m.phaseName, G);
         }
 
+        // Diagnostic: check G vs composition for each phase at several
+        // compositions to verify grid minimizer inputs are correct
+        System.out.println("\n=== G vs composition sweep ===");
+        double[] xVals = {0.1, 0.3, 0.5, 0.67, 0.9};
+        for (PhaseModel m : models) {
+            System.out.println("Phase: " + m.phaseName);
+            system.model.GibbsEnergyModel gm =
+                system.model.PhaseModelFactory.toGibbsModel(m, elements);
+            for (double xV : xVals) {
+                double[] x = {xV, 1.0 - xV};
+                double G = gm.evaluateG(x, 1000.0);
+                double[] y = gm.getInitialInternalVars(x);
+                double[] xBack = gm.compositionFromInternal(y);
+                System.out.printf("  x_V=%.2f -> G=%.2f  y=%s  xBack=[%.3f,%.3f]%n",
+                    xV, G,
+                    java.util.Arrays.toString(y),
+                    xBack[0], xBack[1]);
+            }
+        }
+
         // ── Expected values ───────────────────────────────────────────
         System.out.println();
         System.out.println("=== Expected structure ===");
@@ -147,35 +188,84 @@ public class CefBuildTest {
         System.out.println("HCP_A3  : ns=2, nip=3, a=[1.0,0.5],   nc=[2,1], magnetic=true (aff=-3.0 p=0.28)");
         System.out.println("V2ZR    : ns=2, nip=4, a=[2.0,1.0],   nc=[2,2], magnetic=false");
 
-        // ── End-to-end equilibrium test ───────────────────────────────
-        System.out.println("\n=== Equilibrium test: V-Zr at 1000K x_V=0.5 ===");
-        try {
-            List<system.model.GibbsEnergyModel> gibbsModels = new ArrayList<>();
-            for (PhaseModel m : models) {
-                gibbsModels.add(system.model.PhaseModelFactory.toGibbsModel(
-                    m, elements));
+        // ── Validate LIQUID G against SGTE Table IIIa at 2200K ────────
+        // Table IIIa gives ΔGm (integral molar Gibbs energy of mixing)
+        // at 2200K for liquid phase, reference: V(liquid), Zr(liquid)
+        //
+        // ΔGm = G_mix(x) - [x_V * G°_V(liq) + x_Zr * G°_Zr(liq)]
+        //
+        // We can verify ΔGm by computing:
+        //   ΔGm(x) = G_liquid(x,T) - [x_V*G_liquid(xV=1,T)
+        //                             + x_Zr*G_liquid(xZr=1,T)]
+        //
+        // SGTE Table IIIa values at 2200K (J/mol):
+        // xZr=0.0: ΔGm=0
+        // xZr=0.1: ΔGm=-3903
+        // xZr=0.2: ΔGm=-5687
+        // xZr=0.3: ΔGm=-6842
+        // xZr=0.4: ΔGm=-7608
+        // xZr=0.5: ΔGm=-8040
+        // xZr=1.0: ΔGm=0
+
+        List<system.model.GibbsEnergyModel> gibbsModels = new ArrayList<>();
+        for (PhaseModel m : models) {
+            gibbsModels.add(system.model.PhaseModelFactory.toGibbsModel(
+                m, elements));
+        }
+
+        // CSV output for plotting
+        System.out.println("\n=== CSV_START ===");
+        System.out.println("xV,LIQUID,BCC_A2,HCP_A3,V2ZR");
+        for (int i = 1; i <= 99; i++) {
+            double xV = i / 100.0;
+            double[] xc = {xV, 1.0 - xV};
+            StringBuilder sb = new StringBuilder();
+            sb.append(String.format("%.2f", xV));
+            for (var gm : gibbsModels) {
+                double G   = gm.evaluateG(xc, 1000.0);
+                double nfu = Math.max(gm.nfu(), 1.0);
+                sb.append(String.format(",%.2f", G / nfu));
             }
+            System.out.println(sb);
+        }
+        System.out.println("=== CSV_END ===");
 
-            calc.equil.EquilibriumSolver solver =
-                new calc.equil.EquilibriumSolver();
+        calc.equil.EquilibriumSolver solver =
+            new calc.equil.EquilibriumSolver();
 
-            double[] comp = {0.5, 0.5};  // x_V=0.5, x_Zr=0.5
-            system.ports.EquilibriumResult result =
-                solver.solve(1000.0, 101325.0, comp, gibbsModels);
+        double[][] tests = {
+            {2000.0, 0.5, 0.5},
+            {1000.0, 0.5, 0.5},
+            {1000.0, 0.95, 0.05},
+            {1000.0, 1.0-0.927, 0.927},
+        };
+        String[] labels = {
+            "2000K xV=0.50 expect:LIQUID",
+            "1000K xV=0.50 expect:V2Zr+HCP",
+            "1000K xV=0.95 expect:BCC",
+            "1000K xV=0.07 expect:BCC+V2Zr+HCP",
+        };
 
-            System.out.println("Converged : " + result.isConverged());
-            System.out.println("Iterations: " + result.getIterations());
-            double[] mu = result.getMu();
-            System.out.println("mu[V]     : " + String.format("%.2f", mu[0]));
-            System.out.println("mu[Zr]    : " + String.format("%.2f", mu[1]));
-            System.out.println("Stable phases:");
-            for (system.ports.EquilibriumResult.PhaseResult pr : result.getStablePhases()) {
-                System.out.printf("  %-10s amount=%.4f  x=[%.4f, %.4f]%n",
-                    pr.phaseName, pr.amount, pr.x[0], pr.x[1]);
+        for (int t = 0; t < tests.length; t++) {
+            double T    = tests[t][0];
+            double[] comp = {tests[t][1], tests[t][2]};
+            System.out.println("\n=== " + labels[t] + " ===");
+            try {
+                system.ports.EquilibriumResult res =
+                    solver.solve(T, 101325.0, comp, gibbsModels);
+                System.out.printf("Converged=%-5b iter=%d%n",
+                    res.isConverged(), res.getIterations());
+                double[] mu = res.getMu();
+                if (mu != null)
+                    System.out.printf("mu[V]=%.1f  mu[Zr]=%.1f%n",
+                        mu[0], mu[1]);
+                for (var pr : res.getStablePhases())
+                    System.out.printf("  %-10s amt=%.4f  x=[%.4f,%.4f]%n",
+                        pr.phaseName, pr.amount,
+                        pr.x[0], pr.x[1]);
+            } catch (Exception e) {
+                System.out.println("ERROR: " + e.getMessage());
             }
-        } catch (Exception e) {
-            System.out.println("ERROR: " + e.getMessage());
-            e.printStackTrace();
         }
     }
 }
