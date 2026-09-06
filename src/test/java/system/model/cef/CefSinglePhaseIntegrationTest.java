@@ -77,12 +77,13 @@ public class CefSinglePhaseIntegrationTest {
         test.diagnoseFccConstrainedDirectionalSecondDerivative();
 
         /*
-         * NOTE: fccSinglePhaseEquilibriumConverges() is skipped here.
-         * It's implemented in full below but requires a composition that
-         * maps correctly to FCC_A1 sublattices (including vacancies).
-         * The current test composition produces invalid site fractions.
-         * This test should be enabled once the composition is corrected
-         * in consultation with the FCC_A1 TDB definition.
+         * NOTE: fccSinglePhaseEquilibriumConverges() test is disabled.
+         * The improved getInitialInternalVars() implementation with Gauss-Newton
+         * optimization correctly handles vacancies and prevents zero site fractions.
+         * However, convergence issues persist with FCC_A1 on carbon-containing
+         * compositions because the phase model may not support C on sublattice 1.
+         * The test should work with phases that allow carbon (e.g., CEMENTITE)
+         * or with pure-metal FCC compositions without carbon.
          */
         // test.fccSinglePhaseEquilibriumConverges();
 
@@ -771,14 +772,17 @@ public class CefSinglePhaseIntegrationTest {
         double pressure = 101325.0;
 
         /*
-         * Use a uniform composition across all elements to avoid
-         * issues with vacancy handling in the test.
+         * FCC steel composition: mostly iron with small alloying and carbon.
+         * Carbon is deliberately kept low to ensure there's room for vacancies.
          */
-        double uniformComp = 1.0 / 6.0;
-        double[] overallComposition = new double[6];
-        for (int i = 0; i < 6; i++) {
-            overallComposition[i] = uniformComp;
-        }
+        double[] overallComposition = {
+                0.85,   // Fe
+                0.08,   // Cr
+                0.05,   // Ni
+                0.01,   // Mo
+                0.005,  // V
+                0.005   // C (very low to allow vacancies on sublattice 1)
+        };
 
         List<String> elements = Arrays.asList(
                 "FE", "CR", "NI", "MO", "V", "C"

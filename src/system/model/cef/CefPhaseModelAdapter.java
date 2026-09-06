@@ -270,36 +270,317 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
 
     @Override
     public double[] getInitialInternalVars(double[] x) {
-        // For each sublattice, distribute site fraction among constituents
-        // that map to a modeled element in proportion to the target mole
-        // fractions x[]; constituents with no element mapping (e.g. VA)
-        // are fixed at 1.0 (only such a constituent occupies the sublattice).
-        double[] yInit = new double[gibbs.nip()];
-        int[] nc = gibbs.constituentsPerSublattice();
-        int[] offset = gibbs.offsets();
-        for (int s = 0; s < gibbs.ns(); s++) {
-            double sumX = 0.0;
-            int mappedCount = 0;
-            for (int i = 0; i < nc[s]; i++) {
-                int el = elementIndexOnSublattice[s][i];
-                if (el >= 0 && x != null && el < x.length) {
-                    sumX += x[el];
-                    mappedCount++;
-                }
+        /*
+         * Construct a strictly positive CEF constitution y from the requested
+         * overall component composition x.
+         *
+         * Sundman:
+         *
+         *   M_A = sum_s a_s sum_i b_iA y_is
+         *   x_A = M_A / sum_B M_B
+         *
+         * with
+         *
+         *   sum_i y_is = 1
+         *
+         * on every sublattice.
+         *
+         * The previous implementation normalized x independently on each
+         * sublattice.  That is not a valid general CEF composition mapping and
+         * gives y_VA = 0 for FCC_A1 when carbon is present.
+         *
+         * Here we determine y by minimizing the composition residual subject
+         * to the sublattice normalization constraints.  The initial point is
+         * strictly positive, so CefGibbs.gradient() is always evaluated away
+         * from the logarithmic singularity.
+         */
+
+        final double EPS = 1.0e-10;
+        final int ns  = gibbs.ns();
+        final int nip = gibbs.nip();
+
+        if (x == null || x.length != elementNames_value.size()) {
+            throw new IllegalArgumentException(
+                "Composition length does not match number of system elements");
+        }
+
+        /*
+         * Normalize the requested overall composition.
+         */
+        double xSum = 0.0;
+
+        for (double xi : x) {
+            if (!Double.isFinite(xi) || xi < 0.0) {
+                throw new IllegalArgumentException(
+                    "Invalid overall composition: " + xi);
             }
+            xSum += xi;
+        }
+
+        if (!(xSum > 0.0) || !Double.isFinite(xSum)) {
+            throw new IllegalArgumentException(
+                "Overall composition must have a positive finite sum");
+        }
+
+        final double[] target = new double[x.length];
+
+        for (int k = 0; k < x.length; k++) {
+            target[k] = x[k] / xSum;
+        }
+
+        /*
+         * Start from the center of every sublattice simplex.
+         *
+         * This guarantees:
+         *
+         *       y_is > 0
+         *       sum_i y_is = 1
+         *
+         * before composition correction begins.
+         */
+        double[] y = new double[nip];
+        int[] nc = gibbs.constituentsPerSublattice();
+        int[] off = gibbs.offsets();
+
+        for (int s = 0; s < ns; s++) {
+            double value = 1.0 / nc[s];
+
             for (int i = 0; i < nc[s]; i++) {
-                int el = elementIndexOnSublattice[s][i];
-                if (el >= 0 && x != null && el < x.length && sumX > 1e-300) {
-                    yInit[offset[s] + i] = x[el] / sumX;
-                } else if (mappedCount == 0) {
-                    // No element on this sublattice (e.g. pure VA sublattice)
-                    yInit[offset[s] + i] = 1.0 / nc[s];
-                } else {
-                    yInit[offset[s] + i] = 0.0;
-                }
+                y[off[s] + i] = value;
             }
         }
-        return yInit;
+
+        /*
+         * The composition mapping is invariant to the overall scale of M.
+         * We therefore optimize the normalized component composition directly.
+         *
+         * A damped Gauss-Newton iteration is used.  The Jacobian is obtained
+         * analytically from:
+         *
+         *       M_A = sum_s a_s sum_i b_iA y_is
+         *
+         * and the CEF sublattice constraints are enforced by eliminating the
+         * last constituent of every sublattice.
+         */
+        final int nIndependent = nip - ns;
+
+        if (nIndependent <= 0) {
+            /*
+             * Fixed-composition phase.  Its composition cannot be changed by
+             * internal variables, so the central positive constitution is the
+             * only valid initialization.
+             */
+            return y;
+        }
+
+        /*
+         * Independent-variable representation:
+         *
+         * for each sublattice, the first nc[s]-1 fractions are independent and
+         * the final fraction is:
+         *
+         *       y_last = 1 - sum(y_independent)
+         *
+         * To guarantee strict positivity during the iteration we use a
+         * softmax representation internally.
+         */
+        double[] z = new double[nIndependent];
+
+        int p = 0;
+
+        for (int s = 0; s < ns; s++) {
+            /*
+             * Uniform site fractions correspond to zero logits.
+             */
+            for (int i = 0; i < nc[s] - 1; i++) {
+                z[p++] = 0.0;
+            }
+        }
+
+        /*
+         * Convert logits to site fractions.
+         */
+        logitsToSiteFractions(z, y, nc, off);
+
+        /*
+         * Minimize:
+         *
+         *       1/2 sum_A (x_A(y)-x_A,target)^2
+         *
+         * with a small damping term.
+         *
+         * The iteration is intentionally modest because this is an
+         * initialization routine, not the equilibrium minimizer itself.
+         */
+        final int maxIter = 100;
+        final double tol = 1.0e-10;
+        final double lambda = 1.0e-8;
+
+        double[] residual = new double[x.length];
+
+        for (int iter = 0; iter < maxIter; iter++) {
+
+            /*
+             * Current composition.
+             */
+            double[] current = compositionFromInternal(y);
+
+            double norm2 = 0.0;
+
+            for (int k = 0; k < target.length; k++) {
+                residual[k] = current[k] - target[k];
+                norm2 += residual[k] * residual[k];
+            }
+
+            if (Math.sqrt(norm2) < tol) {
+                break;
+            }
+
+            /*
+             * Numerical Jacobian with respect to the unconstrained logits.
+             *
+             * This deliberately uses compositionFromInternal(), so the
+             * initializer and the equilibrium layer use exactly the same
+             * composition definition.
+             */
+            double[][] J = new double[target.length][nIndependent];
+
+            final double dz = 1.0e-6;
+
+            for (int j = 0; j < nIndependent; j++) {
+
+                double old = z[j];
+
+                z[j] = old + dz;
+                double[] yp = new double[nip];
+                logitsToSiteFractions(z, yp, nc, off);
+                double[] xp = compositionFromInternal(yp);
+
+                z[j] = old - dz;
+                double[] ym = new double[nip];
+                logitsToSiteFractions(z, ym, nc, off);
+                double[] xm = compositionFromInternal(ym);
+
+                z[j] = old;
+
+                for (int k = 0; k < target.length; k++) {
+                    J[k][j] = (xp[k] - xm[k]) / (2.0 * dz);
+                }
+            }
+
+            /*
+             * Solve the damped normal equations:
+             *
+             *       (J^T J + lambda I) dz = -J^T r
+             *
+             * This is a small dense system whose dimension is the number of
+             * CEF internal variables.
+             */
+            double[][] A = new double[nIndependent][nIndependent];
+            double[] b = new double[nIndependent];
+
+            for (int i = 0; i < nIndependent; i++) {
+                for (int j = 0; j < nIndependent; j++) {
+
+                    double sum = 0.0;
+
+                    for (int k = 0; k < target.length; k++) {
+                        sum += J[k][i] * J[k][j];
+                    }
+
+                    A[i][j] = sum;
+
+                    if (i == j) {
+                        A[i][j] += lambda;
+                    }
+                }
+
+                double sum = 0.0;
+
+                for (int k = 0; k < target.length; k++) {
+                    sum += J[k][i] * residual[k];
+                }
+
+                b[i] = -sum;
+            }
+
+            double[] step = solveLinearSystem(A, b);
+
+            /*
+             * Backtracking prevents a very large composition correction from
+             * moving the initialization into an undesirable region.
+             */
+            double oldNorm = Math.sqrt(norm2);
+            double alpha = 1.0;
+
+            double[] trialZ = new double[nIndependent];
+            double[] trialY = new double[nip];
+
+            boolean accepted = false;
+
+            for (int ls = 0; ls < 20; ls++) {
+
+                for (int j = 0; j < nIndependent; j++) {
+                    trialZ[j] = z[j] + alpha * step[j];
+                }
+
+                logitsToSiteFractions(
+                    trialZ, trialY, nc, off);
+
+                double[] trialX = compositionFromInternal(trialY);
+
+                double trialNorm2 = 0.0;
+
+                for (int k = 0; k < target.length; k++) {
+                    double r = trialX[k] - target[k];
+                    trialNorm2 += r * r;
+                }
+
+                if (Math.sqrt(trialNorm2) < oldNorm) {
+                    accepted = true;
+                    break;
+                }
+
+                alpha *= 0.5;
+            }
+
+            if (!accepted) {
+                break;
+            }
+
+            System.arraycopy(trialZ, 0, z, 0, nIndependent);
+            System.arraycopy(trialY, 0, y, 0, nip);
+        }
+
+        /*
+         * Final positivity/normalization check.
+         */
+        for (int s = 0; s < ns; s++) {
+
+            double sum = 0.0;
+
+            for (int i = 0; i < nc[s]; i++) {
+                double yi = y[off[s] + i];
+
+                if (!Double.isFinite(yi) || yi <= EPS) {
+                    throw new IllegalStateException(
+                        "CEF initial constitution contains non-positive " +
+                        "site fraction: sublattice=" + s +
+                        ", constituent=" + i +
+                        ", y=" + yi);
+                }
+
+                sum += yi;
+            }
+
+            if (Math.abs(sum - 1.0) > 1.0e-12) {
+                throw new IllegalStateException(
+                    "CEF initial site fractions do not normalize on " +
+                    "sublattice " + s + ": sum=" + sum);
+            }
+        }
+
+        return y;
     }
 
     @Override
@@ -698,4 +979,144 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
 
     /** Compute beta from end-member BMAGN parameters. Placeholder. */
     private double computeBeta() { return 0.0; }
+
+    /**
+     * Convert unconstrained logits into strictly positive site fractions.
+     *
+     * For a sublattice with n constituents:
+     *
+     *       y_i = exp(z_i) / (1 + sum exp(z_j))
+     *       y_last = 1 / (1 + sum exp(z_j))
+     *
+     * Thus every y_i is strictly positive and the sublattice sum is exactly 1.
+     */
+    private static void logitsToSiteFractions(
+            double[] z,
+            double[] y,
+            int[] nc,
+            int[] off) {
+
+        int p = 0;
+
+        for (int s = 0; s < nc.length; s++) {
+
+            int n = nc[s];
+
+            /*
+             * z values are referenced relative to the last constituent.
+             * Subtracting the maximum avoids overflow in exp().
+             */
+            double maxZ = 0.0;
+
+            for (int i = 0; i < n - 1; i++) {
+                maxZ = Math.max(maxZ, z[p + i]);
+            }
+
+            double denominator = Math.exp(-maxZ);
+
+            for (int i = 0; i < n - 1; i++) {
+                denominator += Math.exp(z[p + i] - maxZ);
+            }
+
+            double inv = 1.0 / denominator;
+
+            /*
+             * Last constituent has logit zero.
+             */
+            y[off[s] + n - 1] = Math.exp(-maxZ) * inv;
+
+            for (int i = 0; i < n - 1; i++) {
+                y[off[s] + i] =
+                    Math.exp(z[p + i] - maxZ) * inv;
+            }
+
+            p += n - 1;
+        }
+    }
+
+    /**
+     * Dense Gaussian elimination with partial pivoting.
+     *
+     * Used only for the small normal-equation system in the initialization
+     * routine, so no external linear-algebra dependency is required.
+     */
+    private static double[] solveLinearSystem(
+            double[][] A,
+            double[] b) {
+
+        int n = b.length;
+
+        double[][] a = new double[n][n + 1];
+
+        for (int i = 0; i < n; i++) {
+            System.arraycopy(A[i], 0, a[i], 0, n);
+            a[i][n] = b[i];
+        }
+
+        for (int k = 0; k < n; k++) {
+
+            int pivot = k;
+            double max = Math.abs(a[k][k]);
+
+            for (int i = k + 1; i < n; i++) {
+                double v = Math.abs(a[i][k]);
+
+                if (v > max) {
+                    max = v;
+                    pivot = i;
+                }
+            }
+
+            if (!(max > 1.0e-20) || !Double.isFinite(max)) {
+                /*
+                 * Singular/ill-conditioned Jacobian.  Returning zero is
+                 * preferable for an initializer: the positive current
+                 * constitution remains valid and the Sundman solver can
+                 * subsequently refine it.
+                 */
+                return new double[n];
+            }
+
+            if (pivot != k) {
+                double[] tmp = a[k];
+                a[k] = a[pivot];
+                a[pivot] = tmp;
+            }
+
+            double diag = a[k][k];
+
+            for (int j = k; j <= n; j++) {
+                a[k][j] /= diag;
+            }
+
+            for (int i = 0; i < n; i++) {
+
+                if (i == k) {
+                    continue;
+                }
+
+                double factor = a[i][k];
+
+                if (factor == 0.0) {
+                    continue;
+                }
+
+                for (int j = k; j <= n; j++) {
+                    a[i][j] -= factor * a[k][j];
+                }
+            }
+        }
+
+        double[] x = new double[n];
+
+        for (int i = 0; i < n; i++) {
+            x[i] = a[i][n];
+
+            if (!Double.isFinite(x[i])) {
+                return new double[n];
+            }
+        }
+
+        return x;
+    }
 }
