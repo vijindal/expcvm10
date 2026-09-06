@@ -740,10 +740,7 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
         // See computeEMatNC's Javadoc for the full derivation.
         double[][] eMatNC = computeEMatNC(eMat);
 
-        // Energy parameter list
-        double[] eList = buildEList(y, T, G);
-
-        return new PhaseEquilData(G, delyN, delnN, x, mA, eMat, eMatNC, cG, cT, cP, eList);
+        return new PhaseEquilData(G, delyN, delnN, x, mA, eMat, eMatNC, cG, cT, cP, null);
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -769,17 +766,6 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
     // ══════════════════════════════════════════════════════════════════
     // Private Helpers
     // ══════════════════════════════════════════════════════════════════
-
-    private double[] buildEList(double[] y, double T, double G) {
-        int nip = gibbs.nip();
-        double[] eList = new double[nip];
-        // For now, store site fractions as energy parameters
-        // Expand later to include end-member energies
-        for (int i = 0; i < nip; i++) {
-            eList[i] = y[i];
-        }
-        return eList;
-    }
 
     /**
      * Map chemical potentials (length nc) to site-fraction space (length nip).

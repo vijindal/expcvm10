@@ -76,6 +76,7 @@ public class CefSinglePhaseIntegrationTest {
         test.diagnoseFccHessianFiniteDifference();
         test.diagnoseFccConstrainedDirectionalSecondDerivative();
         test.fccSinglePhaseAlgorithmAConverges();
+        test.fccBccTwoPhaseAlgorithmAConverges();
 
         System.out.println("\n=== All tests completed ===");
     }
@@ -1070,6 +1071,133 @@ public class CefSinglePhaseIntegrationTest {
         System.out.println("G = " + stable.G + " J/mol");
         System.out.println("Amount = " + stable.amount);
         System.out.println("Driving force = " + stable.drivingForce);
+    }
+
+    void fccBccTwoPhaseAlgorithmAConverges() throws Exception {
+
+        final double T = 1000.0;
+        final double P = 101325.0;
+
+        /*
+         * Binary Fe-Cr composition.
+         * Keep away from end points so both phases have meaningful composition.
+         */
+        final double[] x = new double[] {
+            0.50,   // Fe
+            0.50    // Cr
+        };
+
+        /*
+         * Build both BCC_A2 and FCC_A1 from steel7.TDB.
+         */
+        PhaseModelFactory.PhaseModel bcc = buildPhase("BCC_A2");
+        PhaseModelFactory.PhaseModel fcc = buildPhase("FCC_A1");
+
+        if (bcc == null || bcc.phaseName == null) {
+            throw new AssertionError("BCC_A2 phase is null");
+        }
+
+        if (fcc == null || fcc.phaseName == null) {
+            throw new AssertionError("FCC_A1 phase is null");
+        }
+
+        ArrayList<String> elements = new ArrayList<>(
+                Arrays.asList("FE", "CR"));
+
+        GibbsEnergyModel bccModel = bcc.toGibbsModel(elements);
+        GibbsEnergyModel fccModel = fcc.toGibbsModel(elements);
+
+        if (bccModel == null) {
+            throw new AssertionError("BCC_A2 GibbsEnergyModel is null");
+        }
+
+        if (fccModel == null) {
+            throw new AssertionError("FCC_A1 GibbsEnergyModel is null");
+        }
+
+        /*
+         * Run Algorithm A with both phases.
+         */
+        List<GibbsEnergyModel> phases = Arrays.asList(bccModel, fccModel);
+
+        EquilibriumSolver solver = new EquilibriumSolver();
+        EquilibriumResult result =
+                solver.solve(T, P, x, phases);
+
+        if (result == null) {
+            throw new AssertionError("Algorithm A returned null result");
+        }
+
+        if (!result.isConverged()) {
+            throw new AssertionError("Algorithm A did not converge");
+        }
+
+        if (result.getStablePhases().isEmpty()) {
+            throw new AssertionError("No stable phase was returned");
+        }
+
+        /*
+         * Do NOT assert specific phases yet.
+         * First establish that the machinery works for two phases.
+         */
+        double totalAmount = 0.0;
+
+        for (EquilibriumResult.PhaseResult phase : result.getStablePhases()) {
+
+            if (phase.amount < 0.0) {
+                throw new AssertionError(
+                        "Negative phase amount for " + phase.phaseName);
+            }
+
+            if (phase.x == null) {
+                throw new AssertionError(
+                        "Phase " + phase.phaseName + " has null composition");
+            }
+
+            if (phase.y == null) {
+                throw new AssertionError(
+                        "Phase " + phase.phaseName + " has null site fractions");
+            }
+
+            totalAmount += phase.amount;
+
+            System.out.printf(
+                "%s: amount=%g, G=%g, x=%s%n",
+                phase.phaseName,
+                phase.amount,
+                phase.G,
+                Arrays.toString(phase.x)
+            );
+        }
+
+        if (totalAmount <= 0.0) {
+            throw new AssertionError("Total stable phase amount is zero");
+        }
+
+        /*
+         * Verify mass balance by reconstructing composition from phases.
+         */
+        double[] xRecovered = new double[x.length];
+
+        for (EquilibriumResult.PhaseResult phase : result.getStablePhases()) {
+
+            for (int k = 0; k < x.length; k++) {
+                xRecovered[k] += phase.amount * phase.x[k];
+            }
+        }
+
+        for (int k = 0; k < x.length; k++) {
+            xRecovered[k] /= totalAmount;
+
+            if (Math.abs(xRecovered[k] - x[k]) > 1.0e-6) {
+                throw new AssertionError(
+                        "Mass balance failed for element " + k
+                        + ": expected " + x[k]
+                        + ", got " + xRecovered[k]);
+            }
+        }
+
+        System.out.println("Iterations = " + result.getIterations());
     }
 
     /**
