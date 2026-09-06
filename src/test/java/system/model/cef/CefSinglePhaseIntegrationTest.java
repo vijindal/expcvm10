@@ -71,6 +71,7 @@ public class CefSinglePhaseIntegrationTest {
         test.verifyCurrentInteractionParameterImplementation();
         test.diagnoseFccGradientFiniteDifference();
         test.diagnoseFccHessianFiniteDifference();
+        test.diagnoseFccConstrainedDirectionalSecondDerivative();
 
         System.out.println("\n=== All tests completed ===");
     }
@@ -520,6 +521,226 @@ public class CefSinglePhaseIntegrationTest {
                 }
             }
         }
+    }
+
+    void diagnoseFccConstrainedDirectionalSecondDerivative() throws Exception {
+
+        PhaseModelFactory.PhaseModel phase =
+                buildPhase("FCC_A1");
+
+        CefGibbs g = phase.gibbs;
+
+        double[] y = makeInteriorComposition(g);
+
+        double g0 = g.evaluate(T, y);
+
+        int[] nc = g.constituentsPerSublattice();
+        int[] offsets = g.offsets();
+
+        double[][] H = g.hessian(T, y);
+
+        double[] steps = {
+                1.0e-4,
+                1.0e-5,
+                1.0e-6,
+                1.0e-7
+        };
+
+        double maxAbsError = 0.0;
+        double maxRelError = 0.0;
+
+        System.out.println();
+        System.out.println(
+                "================================================="
+        );
+        System.out.println(
+                "CEF CONSTRAINED DIRECTIONAL SECOND DERIVATIVE"
+        );
+        System.out.println(
+                "================================================="
+        );
+        System.out.println("Phase = FCC_A1");
+        System.out.println("T     = " + T);
+        System.out.println("G(y)  = " + g0);
+        System.out.println("y     = " + Arrays.toString(y));
+
+        /*
+         * Each direction transfers composition between two
+         * constituents on the SAME sublattice:
+         *
+         *       d[mi] = +1
+         *       d[mj] = -1
+         *
+         * Therefore:
+         *
+         *       sum_i d[i] = 0
+         *
+         * on that sublattice and the CEF normalization constraint
+         * remains satisfied.
+         */
+        for (int s = 0; s < nc.length; s++) {
+
+            if (nc[s] < 2) {
+                continue;
+            }
+
+            for (int i = 0; i < nc[s]; i++) {
+
+                for (int j = i + 1; j < nc[s]; j++) {
+
+                    int mi = offsets[s] + i;
+                    int mj = offsets[s] + j;
+
+                    double[] d = new double[g.nip()];
+
+                    d[mi] = 1.0;
+                    d[mj] = -1.0;
+
+                    /*
+                     * Analytical directional second derivative:
+                     *
+                     *       d^T H d
+                     *
+                     * For this particular direction this is
+                     *
+                     *       H[mi][mi]
+                     *     - H[mi][mj]
+                     *     - H[mj][mi]
+                     *     + H[mj][mj].
+                     */
+                    double analytical =
+                            0.0;
+
+                    for (int p = 0; p < d.length; p++) {
+
+                        for (int q = 0; q < d.length; q++) {
+
+                            analytical +=
+                                    d[p] * H[p][q] * d[q];
+                        }
+                    }
+
+                    System.out.println();
+                    System.out.println(
+                            "-------------------------------------------------"
+                    );
+                    System.out.println(
+                            "s=" + s
+                            + ", i=" + i
+                            + ", j=" + j
+                            + ", global=(" + mi + "," + mj + ")"
+                    );
+
+                    System.out.println(
+                            "Analytical d^T H d = "
+                            + analytical
+                    );
+
+                    System.out.printf(
+                            "%-12s %-20s %-20s %-20s%n",
+                            "h",
+                            "Numerical",
+                            "AbsError",
+                            "RelError"
+                    );
+
+                    for (double h : steps) {
+
+                        double[] yp = y.clone();
+                        double[] ym = y.clone();
+
+                        /*
+                         * y + h*d
+                         */
+                        yp[mi] += h;
+                        yp[mj] -= h;
+
+                        /*
+                         * y - h*d
+                         */
+                        ym[mi] -= h;
+                        ym[mj] += h;
+
+                        /*
+                         * Central second difference:
+                         *
+                         *       [G(y+hd) - 2G(y) + G(y-hd)] / h²
+                         */
+                        double gp =
+                                g.evaluate(T, yp);
+
+                        double gm =
+                                g.evaluate(T, ym);
+
+                        double numerical =
+                                (gp - 2.0 * g0 + gm)
+                                / (h * h);
+
+                        double absError =
+                                Math.abs(
+                                        numerical
+                                        - analytical
+                                );
+
+                        double scale =
+                                Math.max(
+                                        1.0,
+                                        Math.max(
+                                                Math.abs(numerical),
+                                                Math.abs(analytical)
+                                        )
+                                );
+
+                        double relError =
+                                absError / scale;
+
+                        maxAbsError =
+                                Math.max(
+                                        maxAbsError,
+                                        absError
+                                );
+
+                        maxRelError =
+                                Math.max(
+                                        maxRelError,
+                                        relError
+                                );
+
+                        System.out.printf(
+                                "%-12.1e %-20.10e %-20.10e %-20.10e%n",
+                                h,
+                                numerical,
+                                absError,
+                                relError
+                        );
+                    }
+                }
+            }
+        }
+
+        System.out.println();
+        System.out.println(
+                "================================================="
+        );
+        System.out.println(
+                "MAXIMUM DIAGNOSTIC ERROR"
+        );
+        System.out.println(
+                "Maximum absolute error = "
+                + maxAbsError
+        );
+        System.out.println(
+                "Maximum relative error = "
+                + maxRelError
+        );
+        System.out.println(
+                "================================================="
+        );
+
+        /*
+         * Diagnostic only.
+         * No production-code assertion is made.
+         */
     }
 
     /**
