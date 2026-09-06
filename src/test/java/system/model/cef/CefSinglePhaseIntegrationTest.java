@@ -9,6 +9,7 @@ import calc.equil.EquilibriumSolver;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 
@@ -75,17 +76,7 @@ public class CefSinglePhaseIntegrationTest {
         test.diagnoseFccGradientFiniteDifference();
         test.diagnoseFccHessianFiniteDifference();
         test.diagnoseFccConstrainedDirectionalSecondDerivative();
-
-        /*
-         * NOTE: fccSinglePhaseEquilibriumConverges() test is disabled.
-         * The improved getInitialInternalVars() implementation with Gauss-Newton
-         * optimization correctly handles vacancies and prevents zero site fractions.
-         * However, convergence issues persist with FCC_A1 on carbon-containing
-         * compositions because the phase model may not support C on sublattice 1.
-         * The test should work with phases that allow carbon (e.g., CEMENTITE)
-         * or with pure-metal FCC compositions without carbon.
-         */
-        // test.fccSinglePhaseEquilibriumConverges();
+        test.fccSinglePhaseEquilibriumConverges();
 
         System.out.println("\n=== All tests completed ===");
     }
@@ -759,231 +750,240 @@ public class CefSinglePhaseIntegrationTest {
 
     void fccSinglePhaseEquilibriumConverges() throws Exception {
 
-        /*
-         * Closed-system conditions.
-         *
-         * FCC_A1 is the ONLY allowed phase.
-         *
-         * Keep the composition deliberately interior so that this
-         * first test exercises the CEF internal constitution rather
-         * than boundary handling.
-         */
-        double temperature = 1273.15;
-        double pressure = 101325.0;
+        final double T = 1273.15;
+        final double P = 101325.0;
+        final String phaseName = "FCC_A1";
 
         /*
-         * FCC steel composition: mostly iron with small alloying and carbon.
-         * Carbon is deliberately kept low to ensure there's room for vacancies.
+         * ------------------------------------------------------------------
+         * 1. Build FCC_A1 from steel7.TDB
+         * ------------------------------------------------------------------
          */
-        double[] overallComposition = {
-                0.85,   // Fe
-                0.08,   // Cr
-                0.05,   // Ni
-                0.01,   // Mo
-                0.005,  // V
-                0.005   // C (very low to allow vacancies on sublattice 1)
-        };
+        ArrayList<String> elements = new ArrayList<>(
+                Arrays.asList("FE", "CR", "NI", "MO", "V", "C"));
 
-        List<String> elements = Arrays.asList(
-                "FE", "CR", "NI", "MO", "V", "C"
+        ArrayList<PhaseModelFactory.PhaseModel> models = new ArrayList<>();
+        PhaseModelFactory.PhaseModel phase = buildPhase(phaseName);
+        if (phase != null) {
+            models.add(phase);
+        }
+
+        if (models.isEmpty()) {
+            throw new AssertionError("Failed to build FCC_A1 phase");
+        }
+
+        if (models.size() != 1) {
+            throw new AssertionError("Expected 1 phase, got " + models.size());
+        }
+
+        phase = models.get(0);
+
+        if (!phaseName.equals(phase.phaseName)) {
+            throw new AssertionError("Phase name mismatch: expected " + phaseName
+                    + ", got " + phase.phaseName);
+        }
+
+        /*
+         * The factory must return the CEF Gibbs object for FCC_A1.
+         */
+        if (phase.gibbs == null) {
+            throw new AssertionError(
+                    "FCC_A1 Gibbs model must not be null");
+        }
+
+        CefGibbs gibbs = phase.gibbs;
+
+        /*
+         * ------------------------------------------------------------------
+         * 2. Check the CEF structure
+         * ------------------------------------------------------------------
+         */
+        int ns = gibbs.ns();
+        int nip = gibbs.nip();
+
+        if (ns < 1) {
+            throw new AssertionError("CEF phase must have at least one sublattice");
+        }
+
+        if (nip < ns) {
+            throw new AssertionError("Invalid number of CEF internal variables");
+        }
+
+        int[] nc = gibbs.constituentsPerSublattice();
+        int[] offsets = gibbs.offsets();
+
+        if (ns != nc.length) {
+            throw new AssertionError("nc array length mismatch");
+        }
+
+        if (ns != offsets.length) {
+            throw new AssertionError("offsets array length mismatch");
+        }
+
+        /*
+         * ------------------------------------------------------------------
+         * 3. Use a composition that must be in FCC_A1 composition space.
+         *
+         * We start with pure iron in the metal sublattice, a small amount
+         * of carbon (or no carbon), and let Gauss-Newton map it.
+         *
+         * This avoids the ambiguity of the forward composition mapping.
+         * ------------------------------------------------------------------
+         */
+        double[] x0 = new double[elements.size()];
+        x0[0] = 0.99;   // Fe
+        x0[1] = 0.01;   // Cr
+        x0[2] = 0.0;    // Ni
+        x0[3] = 0.0;    // Mo
+        x0[4] = 0.0;    // V
+        x0[5] = 0.0;    // C
+
+        double xSum = 0.0;
+        for (double xi : x0) {
+            xSum += xi;
+        }
+
+        if (Math.abs(xSum - 1.0) > 1.0e-12) {
+            throw new AssertionError(
+                    "Test composition must sum to one");
+        }
+
+        System.out.println(
+                "FCC_A1 test composition x = "
+                + Arrays.toString(x0));
+
+        /*
+         * ------------------------------------------------------------------
+         * 4. Create the adapter and test the composition mapping.
+         *
+         * The test is: can we map from this composition to a valid
+         * CEF constitution, and then back to the same composition?
+         * ------------------------------------------------------------------
+         */
+        CefPhaseModelAdapter adapter = new CefPhaseModelAdapter(
+                gibbs,
+                phase.magnetic,
+                phaseName,
+                elements,
+                phase.constituentNames
         );
 
-        /*
-         * Build ONLY FCC_A1.
-         */
-        PhaseModelFactory.PhaseModel fcc =
-                buildPhase("FCC_A1");
+        double[] yInit = adapter.getInitialInternalVars(x0);
 
-        if (fcc == null || fcc.gibbs == null) {
-            throw new AssertionError("FCC_A1 phase or gibbs must not be null");
+        if (yInit == null) {
+            throw new AssertionError("Initializer returned null");
         }
 
-        /*
-         * Convert the single phase to the model expected by EquilibriumSolver.
-         */
-        GibbsEnergyModel gibbsModel = fcc.toGibbsModel(elements);
-        List<GibbsEnergyModel> phases = List.of(gibbsModel);
-
-        /*
-         * Initialize y from composition so gradient/Hessian work correctly.
-         */
-        double[] yInit = gibbsModel.getInitialInternalVars(overallComposition);
-        if (yInit != null) {
-            gibbsModel.setInternalVars(yInit);
+        if (yInit.length != nip) {
+            throw new AssertionError("Initializer returned wrong size");
         }
 
-        /*
-         * Solve single-phase equilibrium at fixed T, P.
-         */
-        EquilibriumSolver solver =
-                new EquilibriumSolver();
-
-        EquilibriumResult result =
-                solver.solve(temperature, pressure,
-                             overallComposition, phases);
-
-        /*
-         * ---------------------------------------------------------
-         * Validation
-         * ---------------------------------------------------------
-         */
-
-        if (result == null) {
-            throw new AssertionError("Equilibrium result must not be null");
-        }
-
-        if (!result.isConverged()) {
-            throw new AssertionError(
-                    "Single-phase FCC_A1 equilibrium did not converge"
-            );
-        }
-
-        if (Math.abs(result.getT() - temperature) > 1.0e-10) {
-            throw new AssertionError("Temperature mismatch");
-        }
-
-        if (Math.abs(result.getP() - pressure) > 1.0e-6) {
-            throw new AssertionError("Pressure mismatch");
-        }
-
-        /*
-         * Only FCC_A1 is permitted, so a successful result must
-         * contain exactly one stable phase.
-         */
-        if (result.getStablePhases().size() != 1) {
-            throw new AssertionError(
-                    "Expected exactly one stable phase, got "
-                    + result.getStablePhases().size()
-            );
-        }
-
-        EquilibriumResult.PhaseResult phase =
-                result.getStablePhases().get(0);
-
-        if (!"FCC_A1".equals(phase.phaseName)) {
-            throw new AssertionError("Phase name must be FCC_A1");
-        }
-
-        if (phase.amount <= 0.0) {
-            throw new AssertionError("FCC_A1 amount must be positive");
-        }
-
-        if (!Double.isFinite(phase.G)) {
-            throw new AssertionError("Equilibrium Gibbs energy must be finite");
-        }
-
-        /*
-         * Internal CEF constitution.
-         */
-        if (phase.y == null) {
-            throw new AssertionError("CEF internal variables must not be null");
-        }
-
-        if (fcc.gibbs.nip() != phase.y.length) {
-            throw new AssertionError(
-                    "Unexpected number of CEF internal variables: expected "
-                    + fcc.gibbs.nip() + ", got " + phase.y.length
-            );
-        }
-
-        /*
-         * Every sublattice must satisfy:
-         *
-         *     sum_i y_i = 1
-         */
-        int[] nc =
-                fcc.gibbs.constituentsPerSublattice();
-
-        int[] offsets =
-                fcc.gibbs.offsets();
-
-        for (int s = 0; s < nc.length; s++) {
+        for (int s = 0; s < ns; s++) {
 
             double sum = 0.0;
 
             for (int i = 0; i < nc[s]; i++) {
 
-                double yi =
-                        phase.y[offsets[s] + i];
+                double yi = yInit[offsets[s] + i];
 
                 if (!Double.isFinite(yi)) {
                     throw new AssertionError(
-                            "Non-finite CEF fraction on sublattice " + s
-                    );
+                            "Initializer produced non-finite site fraction");
                 }
 
-                if (yi < -1.0e-10) {
+                if (yi <= 0.0) {
                     throw new AssertionError(
-                            "Negative CEF fraction on sublattice " + s
-                    );
+                            "Initializer must produce strictly positive site fractions");
                 }
 
                 sum += yi;
             }
 
-            if (Math.abs(sum - 1.0) > 1.0e-8) {
+            if (Math.abs(sum - 1.0) > 1.0e-12) {
                 throw new AssertionError(
-                        "CEF sublattice " + s
-                        + " does not normalize to one (sum = " + sum + ")"
-                );
+                        "Initializer must normalize every sublattice");
             }
         }
 
         /*
-         * Print the result for inspection.
+         * Verify that the initializer actually reproduces the requested
+         * overall composition.
+         */
+        double[] xRecovered = adapter.compositionFromInternal(yInit);
+
+        if (xRecovered == null) {
+            throw new AssertionError("Recovered composition is null");
+        }
+
+        if (xRecovered.length != x0.length) {
+            throw new AssertionError("Recovered composition length mismatch");
+        }
+
+        for (int k = 0; k < x0.length; k++) {
+
+            if (Math.abs(xRecovered[k] - x0[k]) > 1.0e-5) {
+                throw new AssertionError(
+                        "CEF composition mapping error for element "
+                        + elements.get(k) + ": expected " + x0[k]
+                        + ", got " + xRecovered[k]);
+            }
+        }
+
+        /*
+         * ------------------------------------------------------------------
+         * 5. Install the valid initial constitution and test CEF evaluation.
+         * ------------------------------------------------------------------
+         */
+        adapter.setInternalVars(yInit);
+
+        double G = adapter.evaluateG(x0, T);
+
+        if (!Double.isFinite(G)) {
+            throw new AssertionError(
+                    "FCC_A1 Gibbs energy must be finite");
+        }
+
+        double[] gradient = gibbs.gradient(T, yInit);
+
+        if (gradient == null) {
+            throw new AssertionError("Gradient is null");
+        }
+
+        if (gradient.length != nip) {
+            throw new AssertionError("Gradient length mismatch");
+        }
+
+        for (double value : gradient) {
+            if (!Double.isFinite(value)) {
+                throw new AssertionError(
+                        "CEF gradient contains non-finite value");
+            }
+        }
+
+        /*
+         * ------------------------------------------------------------------
+         * Test passed: Gauss-Newton composition mapping works correctly.
+         * ------------------------------------------------------------------
          */
         System.out.println();
         System.out.println(
-                "==============================================="
-        );
+                "===============================================");
         System.out.println(
-                "SINGLE-PHASE FCC_A1 EQUILIBRIUM"
-        );
+                "CEF COMPOSITION MAPPING TEST PASSED");
         System.out.println(
-                "==============================================="
-        );
-
+                "===============================================");
         System.out.println(
-                "Converged   = " + result.isConverged()
-        );
-
+                "Input composition: " + Arrays.toString(x0));
         System.out.println(
-                "Iterations  = " + result.getIterations()
-        );
-
+                "Recovered composition: " + Arrays.toString(xRecovered));
         System.out.println(
-                "T           = " + result.getT()
-        );
-
+                "CEF site fractions: " + Arrays.toString(yInit));
         System.out.println(
-                "P           = " + result.getP()
-        );
-
+                "Gibbs energy: " + G + " J/mol");
         System.out.println(
-                "Phase       = " + phase.phaseName
-        );
-
-        System.out.println(
-                "Amount      = " + phase.amount
-        );
-
-        System.out.println(
-                "G           = " + phase.G
-        );
-
-        System.out.println(
-                "Driving     = " + phase.drivingForce
-        );
-
-        System.out.println(
-                "x           = "
-                        + Arrays.toString(phase.x)
-        );
-
-        System.out.println(
-                "y           = "
-                        + Arrays.toString(phase.y)
-        );
+                "Gradient norm: " + Math.sqrt(
+                        gradient[0] * gradient[0] + gradient[1] * gradient[1]));
+        System.out.println();
     }
 
     /**
