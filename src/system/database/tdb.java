@@ -399,10 +399,21 @@ public class tdb {
     }
 
     /**
-     * this method will substitute function expressions, if present in the
-     * function expression. In this version, there is an assumption that only
-     * one function is present in an expression. A new version may be required
-     * later to remove this bug.
+     * Substitute all referenced functions appearing in every FUNCTION
+     * expression.
+     *
+     * <p>The original implementation substituted only the first function
+     * found in an expression (funcList.get(0)) and then stopped. That is
+     * incorrect for valid TDB expressions referencing more than one
+     * function, for example</p>
+     *
+     * <pre>
+     * +2*GHSERVV#+GHSERZR#-12672.959+3.8143*T
+     * </pre>
+     *
+     * <p>where both GHSERVV and GHSERZR must be substituted. Functions are
+     * now substituted sequentially: each referenced function is added, in
+     * turn, to the expression accumulated so far.</p>
      */
     private void subFuncExpInFunc() {
         // Print.f("method subFuncExpInFunc() is called", 0);
@@ -412,13 +423,13 @@ public class tdb {
                 ArrayList<String> funcList = exp.getFuncList(); //reading function names in the expressions
                 ArrayList<Double> funcCoeffList = exp.getFuncCoeffList(); //read coefficients of the function
                 //System.out.println("                       num of funcs:" + funcList.size());
-                if (!funcList.isEmpty()) {//run if a function is present in the expression 
-                    Function function = findFuncByName(funcList.get(0));//searching Function by function name
-                    //System.out.println("function: " + f.getFuncName() + "" + " has got a function:" + function.getFuncName());
-                    Function subFunction = substituteFunction(f, function, funcCoeffList.get(0));//reading sunstituted function
-                    //subFunction.printFunction();
-                    //System.out.println("function: " + f.getFuncName());
-                    f.setExpList(subFunction.getExpList());
+                if (!funcList.isEmpty()) {//run if a function is present in the expression
+                    Function merged = f;
+                    for (int k = 0; k < funcList.size(); k++) {
+                        Function function = findFuncByName(funcList.get(k));//searching Function by function name
+                        merged = substituteFunction(merged, function, funcCoeffList.get(k));//accumulate substituted function
+                    }
+                    f.setExpList(merged.getExpList());
                     //f.printFunction();
                     break;
                 }
@@ -541,8 +552,18 @@ public class tdb {
     }
 
     /**
-     * This method will substitute function expressions in the Parameter
-     * expressions.
+     * Substitute all referenced functions appearing in every PARAMETER
+     * expression.
+     *
+     * <p>The original implementation substituted only the first function
+     * found in an expression (funcList.get(0)) and then stopped, which
+     * silently dropped any additional referenced functions. Each
+     * referenced function is now added, in turn, to the expression
+     * accumulated so far -- required for expressions such as</p>
+     *
+     * <pre>
+     * +2*GHSERVV#+GHSERZR#-12672.959+3.8143614*T
+     * </pre>
      */
     private void subFuncExpInParam() {
         // Print.f("method subFuncExpInParam() is called", 0);
@@ -553,13 +574,15 @@ public class tdb {
                 for (Exp exp : param.expList) {
                     ArrayList<String> funcList = exp.getFuncList(); //reading function names in the expressions
                     ArrayList<Double> funcCoeffList = exp.getFuncCoeffList(); //read coefficients of the function
-                    if (!funcList.isEmpty()) {//run if a function is present in the expression 
-                        Function function = findFuncByName(funcList.get(0));//searching Function by function name
-                        Function subFunction = substituteFunction(param, function, funcCoeffList.get(0));//reading sunstituted function
-                        //subFunction.printFunction();
-//                    System.out.println("function: " + f.getFuncName());  
-                        //subFunction.getExpList().get(0).printExp2();
-                        param.setExpList(subFunction.getExpList());
+                    if (!funcList.isEmpty()) {//run if a function is present in the expression
+                        Function merged = null;
+                        for (int k = 0; k < funcList.size(); k++) {
+                            Function function = findFuncByName(funcList.get(k));//searching Function by function name
+                            merged = (k == 0)
+                                    ? substituteFunction(param, function, funcCoeffList.get(k))
+                                    : substituteFunction(merged, function, funcCoeffList.get(k));//accumulate substituted function
+                        }
+                        param.setExpList(merged.getExpList());
                         //param.print();
                         break;
                     }

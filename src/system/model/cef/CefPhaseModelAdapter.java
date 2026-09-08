@@ -151,6 +151,111 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
      */
     public double[] computeM(double[] y) { return unnormalizedM(y); }
 
+    /**
+     * Direct stateless CEF Gibbs-energy evaluation at site fractions y.
+     *
+     * This is intentionally separate from the legacy GibbsEnergyModel
+     * composition-facing evaluateG()/gradient()/hessian() methods.
+     */
+    public double sundmanG(double T, double[] y) {
+        return gibbs.evaluate(T, y);
+    }
+
+    /**
+     * Direct site-fraction gradient dG/dY.
+     */
+    public double[] sundmanGradient(double T, double[] y) {
+        return gibbs.gradient(T, y);
+    }
+
+    /**
+     * Direct site-fraction Hessian d2G/dYdY.
+     */
+    public double[][] sundmanHessian(double T, double[] y) {
+        return gibbs.hessian(T, y);
+    }
+
+    /**
+     * Sundman M_A:
+     *
+     *   M_A = sum_s a_s sum_i b_Ai y_si
+     *
+     * Returned values are unnormalized moles of element A per formula unit.
+     */
+    public double[] sundmanM(double[] y) {
+        return unnormalizedM(y);
+    }
+
+    /**
+     * Jacobian dM_A/dY_m.
+     *
+     * M_A is linear in Y, so this Jacobian is constant for a given
+     * phase model.
+     */
+    public double[][] sundmanMJacobian() {
+
+        int nc = elementNames_value.size();
+        int nip = gibbs.nip();
+
+        double[][] dM = new double[nc][nip];
+
+        double[] a = gibbs.stoichiometry();
+        int[] offsets = gibbs.offsets();
+        int[] ncSL = gibbs.constituentsPerSublattice();
+
+        for (int s = 0; s < gibbs.ns(); s++) {
+
+            for (int i = 0; i < ncSL[s]; i++) {
+
+                int element = elementIndexOnSublattice[s][i];
+
+                if (element < 0)
+                    continue;
+
+                int k = offsets[s] + i;
+
+                dM[element][k] = a[s];
+            }
+        }
+
+        return dM;
+    }
+
+    /**
+     * Returns a copy of the CEF sublattice site-ratio array.
+     */
+    public double[] sundmanSiteRatios() {
+        return gibbs.stoichiometry();
+    }
+
+    /**
+     * Number of sublattices.
+     */
+    public int sundmanNumSublattices() {
+        return gibbs.ns();
+    }
+
+    /**
+     * Number of site-fraction variables.
+     */
+    public int sundmanNumSiteVariables() {
+        return gibbs.nip();
+    }
+
+    /**
+     * Offsets of the sublattices in the flattened Y vector.
+     */
+    public int[] sundmanOffsets() {
+        return gibbs.offsets();
+    }
+
+    /**
+     * Number of constituents on each sublattice.
+     */
+    public int[] sundmanConstituentsPerSublattice() {
+        return gibbs.constituentsPerSublattice();
+    }
+
     @Override
     public void setInternalVars(double[] y) {
         super.setInternalVars(y);
