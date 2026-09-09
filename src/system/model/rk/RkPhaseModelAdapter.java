@@ -144,6 +144,69 @@ public class RkPhaseModelAdapter extends GibbsEnergyModel {
     }
 
     // ══════════════════════════════════════════════════════════════════
+    // Site-Fraction Thermodynamics (RK: one sublattice, Y = X, no
+    // vacancies -- the ns=1 specialization of the general CEF contract)
+    // ══════════════════════════════════════════════════════════════════
+
+    @Override
+    public double siteEnergy(double T, double[] y) {
+        return gibbs.evaluate(y, T);
+    }
+
+    @Override
+    public double[] siteGradient(double T, double[] y) {
+        return gibbs.gradient(y, T);
+    }
+
+    @Override
+    public double[][] siteHessian(double T, double[] y) {
+        return gibbs.hessian(y, T);
+    }
+
+    /** RK: M_A(Y) = Y_A directly (one constituent per element, nfu=1). */
+    @Override
+    public double[] elementAmounts(double[] y) {
+        return y.clone();
+    }
+
+    /** RK: dM_A/dY_i is the identity matrix (M_A = Y_A). */
+    @Override
+    public double[][] elementAmountsJacobian() {
+        int nc = gibbs.nc();
+        double[][] identity = new double[nc][nc];
+        for (int i = 0; i < nc; i++) {
+            identity[i][i] = 1.0;
+        }
+        return identity;
+    }
+
+    /** RK: a single sublattice with site ratio 1.0. */
+    @Override
+    public double[] siteRatios() {
+        return new double[] { 1.0 };
+    }
+
+    @Override
+    public int numSublattices() {
+        return 1;
+    }
+
+    @Override
+    public int numSiteVariables() {
+        return gibbs.nc();
+    }
+
+    @Override
+    public int[] sublatticeOffsets() {
+        return new int[] { 0 };
+    }
+
+    @Override
+    public int[] constituentsPerSublattice() {
+        return new int[] { gibbs.nc() };
+    }
+
+    // ══════════════════════════════════════════════════════════════════
     // Full Per-Phase Computation
     // ══════════════════════════════════════════════════════════════════
 

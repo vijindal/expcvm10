@@ -731,10 +731,10 @@ public class VzrFixedTwoPhaseSundmanBaseline {
                                     "model");
 
             int[] offsets =
-                    model.sundmanOffsets();
+                    model.sublatticeOffsets();
 
             int[] nconst =
-                    model.sundmanConstituentsPerSublattice();
+                    model.constituentsPerSublattice();
 
             for (int i = 0;
                  i < gy.length;

@@ -157,32 +157,36 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
      * This is intentionally separate from the legacy GibbsEnergyModel
      * composition-facing evaluateG()/gradient()/hessian() methods.
      */
-    public double sundmanG(double T, double[] y) {
+    @Override
+    public double siteEnergy(double T, double[] y) {
         return gibbs.evaluate(T, y);
     }
 
     /**
      * Direct site-fraction gradient dG/dY.
      */
-    public double[] sundmanGradient(double T, double[] y) {
+    @Override
+    public double[] siteGradient(double T, double[] y) {
         return gibbs.gradient(T, y);
     }
 
     /**
      * Direct site-fraction Hessian d2G/dYdY.
      */
-    public double[][] sundmanHessian(double T, double[] y) {
+    @Override
+    public double[][] siteHessian(double T, double[] y) {
         return gibbs.hessian(T, y);
     }
 
     /**
-     * Sundman M_A:
+     * Element content M_A:
      *
      *   M_A = sum_s a_s sum_i b_Ai y_si
      *
      * Returned values are unnormalized moles of element A per formula unit.
      */
-    public double[] sundmanM(double[] y) {
+    @Override
+    public double[] elementAmounts(double[] y) {
         return unnormalizedM(y);
     }
 
@@ -192,7 +196,8 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
      * M_A is linear in Y, so this Jacobian is constant for a given
      * phase model.
      */
-    public double[][] sundmanMJacobian() {
+    @Override
+    public double[][] elementAmountsJacobian() {
 
         int nc = elementNames_value.size();
         int nip = gibbs.nip();
@@ -224,35 +229,40 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
     /**
      * Returns a copy of the CEF sublattice site-ratio array.
      */
-    public double[] sundmanSiteRatios() {
+    @Override
+    public double[] siteRatios() {
         return gibbs.stoichiometry();
     }
 
     /**
      * Number of sublattices.
      */
-    public int sundmanNumSublattices() {
+    @Override
+    public int numSublattices() {
         return gibbs.ns();
     }
 
     /**
      * Number of site-fraction variables.
      */
-    public int sundmanNumSiteVariables() {
+    @Override
+    public int numSiteVariables() {
         return gibbs.nip();
     }
 
     /**
      * Offsets of the sublattices in the flattened Y vector.
      */
-    public int[] sundmanOffsets() {
+    @Override
+    public int[] sublatticeOffsets() {
         return gibbs.offsets();
     }
 
     /**
      * Number of constituents on each sublattice.
      */
-    public int[] sundmanConstituentsPerSublattice() {
+    @Override
+    public int[] constituentsPerSublattice() {
         return gibbs.constituentsPerSublattice();
     }
 

@@ -135,19 +135,19 @@ public class V2ZrPhaseResponseBaselineTestCorrected {
         // 2. Evaluate reference state.
         // ------------------------------------------------------------
         double G =
-                phase.sundmanG(T, Y_STAR);
+                phase.siteEnergy(T, Y_STAR);
 
         double[] gy =
-                phase.sundmanGradient(T, Y_STAR);
+                phase.siteGradient(T, Y_STAR);
 
         double[][] gyy =
-                phase.sundmanHessian(T, Y_STAR);
+                phase.siteHessian(T, Y_STAR);
 
         double[][] dMdY =
-                phase.sundmanMJacobian();
+                phase.elementAmountsJacobian();
 
         double[] M =
-                phase.sundmanM(Y_STAR);
+                phase.elementAmounts(Y_STAR);
 
         checkReferenceComposition(M);
 
@@ -358,10 +358,10 @@ public class V2ZrPhaseResponseBaselineTestCorrected {
              * reintroducing the old fixed-M constraint.
              */
             double[] Mplus =
-                    phase.sundmanM(yPlus);
+                    phase.elementAmounts(yPlus);
 
             double[] Mminus =
-                    phase.sundmanM(yMinus);
+                    phase.elementAmounts(yMinus);
 
             double dM =
                     normDifference(
@@ -449,10 +449,10 @@ public class V2ZrPhaseResponseBaselineTestCorrected {
             }
 
             double[] gy =
-                    phase.sundmanGradient(T, y);
+                    phase.siteGradient(T, y);
 
             double[][] H =
-                    phase.sundmanHessian(T, y);
+                    phase.siteHessian(T, y);
 
             double dLambda =
                     lambda[1] - lambda[0];
@@ -570,7 +570,7 @@ public class V2ZrPhaseResponseBaselineTestCorrected {
                 }
 
                 double[] trialGy =
-                        phase.sundmanGradient(
+                        phase.siteGradient(
                                 T,
                                 trialY);
 
@@ -617,24 +617,24 @@ public class V2ZrPhaseResponseBaselineTestCorrected {
             double[] gamma) {
 
         int nip =
-                phase.sundmanNumSiteVariables();
+                phase.numSiteVariables();
 
         int ns =
-                phase.sundmanNumSublattices();
+                phase.numSublattices();
 
         int[] offsets =
-                phase.sundmanOffsets();
+                phase.sublatticeOffsets();
 
         int[] nconst =
-                phase.sundmanConstituentsPerSublattice();
+                phase.constituentsPerSublattice();
 
         double[] gy =
-                phase.sundmanGradient(
+                phase.siteGradient(
                         T,
                         y);
 
         double[][] dMdY =
-                phase.sundmanMJacobian();
+                phase.elementAmountsJacobian();
 
         double sum2 = 0.0;
 
@@ -698,10 +698,10 @@ public class V2ZrPhaseResponseBaselineTestCorrected {
             double[][] hessian) {
 
         int nip =
-                phase.sundmanNumSiteVariables();
+                phase.numSiteVariables();
 
         int ns =
-                phase.sundmanNumSublattices();
+                phase.numSublattices();
 
         double[][] E =
                 new double[nip + ns][nip + ns];
@@ -720,10 +720,10 @@ public class V2ZrPhaseResponseBaselineTestCorrected {
         }
 
         int[] offsets =
-                phase.sundmanOffsets();
+                phase.sublatticeOffsets();
 
         int[] nconst =
-                phase.sundmanConstituentsPerSublattice();
+                phase.constituentsPerSublattice();
 
         for (int s = 0;
              s < ns;
@@ -883,10 +883,10 @@ public class V2ZrPhaseResponseBaselineTestCorrected {
             double[][] cA) {
 
         int[] offsets =
-                phase.sundmanOffsets();
+                phase.sublatticeOffsets();
 
         int[] nconst =
-                phase.sundmanConstituentsPerSublattice();
+                phase.constituentsPerSublattice();
 
         final double tol =
                 1.0e-12;

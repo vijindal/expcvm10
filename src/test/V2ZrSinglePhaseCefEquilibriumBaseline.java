@@ -200,9 +200,9 @@ public class V2ZrSinglePhaseCefEquilibriumBaseline {
 
             double[] y = constitution(q);
 
-            double G = adapter.sundmanG(T, y);
-            double[] grad = adapter.sundmanGradient(T, y);
-            double[][] hess = adapter.sundmanHessian(T, y);
+            double G = adapter.siteEnergy(T, y);
+            double[] grad = adapter.siteGradient(T, y);
+            double[][] hess = adapter.siteHessian(T, y);
 
             double[] dqVector = {
                     -1.0,
@@ -285,13 +285,13 @@ public class V2ZrSinglePhaseCefEquilibriumBaseline {
         double[] yFinal = constitution(q);
 
         double GFinal =
-                adapter.sundmanG(T, yFinal);
+                adapter.siteEnergy(T, yFinal);
 
         double[] gradFinal =
-                adapter.sundmanGradient(T, yFinal);
+                adapter.siteGradient(T, yFinal);
 
         double[][] hessFinal =
-                adapter.sundmanHessian(T, yFinal);
+                adapter.siteHessian(T, yFinal);
 
         double[] direction = {
                 -1.0,
@@ -307,7 +307,7 @@ public class V2ZrSinglePhaseCefEquilibriumBaseline {
                 quadraticForm(direction, hessFinal);
 
         double[] M =
-                adapter.sundmanM(yFinal);
+                adapter.elementAmounts(yFinal);
 
         double xV = M[0] / TOTAL_SITES;
         double xZR = M[1] / TOTAL_SITES;

@@ -363,25 +363,25 @@ public class VzrTwoPhaseSundmanMatrixBaselineTest {
         }
 
         double G =
-                phase.sundmanG(
+                phase.siteEnergy(
                         T,
                         y);
 
         double[] gy =
-                phase.sundmanGradient(
+                phase.siteGradient(
                         T,
                         y);
 
         double[][] gyy =
-                phase.sundmanHessian(
+                phase.siteHessian(
                         T,
                         y);
 
         double[] mA =
-                phase.sundmanM(y);
+                phase.elementAmounts(y);
 
         double[][] dMdY =
-                phase.sundmanMJacobian();
+                phase.elementAmountsJacobian();
 
         // ------------------------------------------------------------
         // Phase matrix and inverse.
@@ -398,7 +398,7 @@ public class VzrTwoPhaseSundmanMatrixBaselineTest {
                         .getArray();
 
         int nip =
-                phase.sundmanNumSiteVariables();
+                phase.numSiteVariables();
 
         int nc =
                 mA.length;
@@ -636,10 +636,10 @@ public class VzrTwoPhaseSundmanMatrixBaselineTest {
             double[][] hessian) {
 
         int nip =
-                phase.sundmanNumSiteVariables();
+                phase.numSiteVariables();
 
         int ns =
-                phase.sundmanNumSublattices();
+                phase.numSublattices();
 
         double[][] E =
                 new double[nip + ns][nip + ns];
@@ -658,10 +658,10 @@ public class VzrTwoPhaseSundmanMatrixBaselineTest {
         }
 
         int[] offsets =
-                phase.sundmanOffsets();
+                phase.sublatticeOffsets();
 
         int[] nconst =
-                phase.sundmanConstituentsPerSublattice();
+                phase.constituentsPerSublattice();
 
         for (int s = 0;
              s < ns;

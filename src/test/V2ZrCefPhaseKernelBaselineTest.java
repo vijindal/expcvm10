@@ -87,11 +87,11 @@ public class V2ZrCefPhaseKernelBaselineTest {
         // ------------------------------------------------------------
         // 2. Evaluate the phase kernel.
         // ------------------------------------------------------------
-        double G = adapter.sundmanG(T, Y);
-        double[] gy = adapter.sundmanGradient(T, Y);
-        double[][] gyy = adapter.sundmanHessian(T, Y);
-        double[] M = adapter.sundmanM(Y);
-        double[][] dMdY = adapter.sundmanMJacobian();
+        double G = adapter.siteEnergy(T, Y);
+        double[] gy = adapter.siteGradient(T, Y);
+        double[][] gyy = adapter.siteHessian(T, Y);
+        double[] M = adapter.elementAmounts(Y);
+        double[][] dMdY = adapter.elementAmountsJacobian();
 
         // ------------------------------------------------------------
         // 3. Print results.
@@ -152,8 +152,8 @@ public class V2ZrCefPhaseKernelBaselineTest {
         // ------------------------------------------------------------
         // 4. Sublattice normalization.
         // ------------------------------------------------------------
-        int[] offsets = adapter.sundmanOffsets();
-        int[] nconst = adapter.sundmanConstituentsPerSublattice();
+        int[] offsets = adapter.sublatticeOffsets();
+        int[] nconst = adapter.constituentsPerSublattice();
 
         double maxNormError = 0.0;
 

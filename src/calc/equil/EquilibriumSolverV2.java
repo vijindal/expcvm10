@@ -682,102 +682,71 @@ public class EquilibriumSolverV2 {
 
             /*
              * Every candidate phase (stable or not) has its own
-             * PhaseWork, evaluated by evaluateAllPhases() each
+             * PhaseWork, evaluated by evaluateAllPhases() every
              * iteration -- do not assume candidate 0 is the only
-             * active phase. Use the PhaseWork keyed by candidate index
-             * i directly, rather than the single-phase phaseWork alias
-             * (which only ever pointed at slot 0).
+             * active phase, and do not fall back to the legacy
+             * GibbsEnergyModel composition-facing interface
+             * (getComposition()/getInternalVars()/evaluateG()/getM()),
+             * which can silently diverge from the actual state the
+             * Sundman iteration solved. Use the PhaseWork keyed by
+             * candidate index i directly.
              */
-            if (phaseWorks != null
-                    && i < phaseWorks.size()
-                    && phaseWorks.get(i) != null
-                    && phaseWorks.get(i).model == model
-                    && phaseWorks.get(i).y != null) {
+            if (phaseWorks == null
+                    || i >= phaseWorks.size()
+                    || phaseWorks.get(i) == null
+                    || phaseWorks.get(i).model != model
+                    || phaseWorks.get(i).y == null) {
 
-                PhaseWork work =
-                        phaseWorks.get(i);
+                throw new IllegalStateException(
+                        "Missing or unsynchronized PhaseWork for "
+                        + "candidate phase "
+                        + i + " ("
+                        + model.phaseName()
+                        + "); evaluateAllPhases() must run before "
+                        + "buildEquilibriumResult().");
+            }
 
-                y =
-                        work.y.clone();
+            PhaseWork work =
+                    phaseWorks.get(i);
 
-                g =
-                        work.G;
+            y =
+                    work.y.clone();
 
-                mA =
-                        work.mA.clone();
+            g =
+                    work.G;
 
-                /*
-                 * Calculate composition from M_A so that the returned
-                 * x is guaranteed to correspond to the accepted CEF
-                 * constitution.
-                 */
-                x =
-                        new double[nc];
+            mA =
+                    work.mA.clone();
 
-                double totalM =
-                        0.0;
+            /*
+             * Calculate composition from M_A so that the returned
+             * x is guaranteed to correspond to the accepted CEF
+             * constitution.
+             */
+            x =
+                    new double[nc];
 
-                for (double value : mA) {
-                    totalM += value;
-                }
+            double totalM =
+                    0.0;
 
-                if (!(totalM > 0.0)
-                        || !Double.isFinite(totalM)) {
+            for (double value : mA) {
+                totalM += value;
+            }
 
-                    throw new IllegalStateException(
-                            "Invalid phase element amount sum: "
-                            + totalM);
-                }
+            if (!(totalM > 0.0)
+                    || !Double.isFinite(totalM)) {
 
-                for (int A = 0;
-                     A < nc;
-                     A++) {
+                throw new IllegalStateException(
+                        "Invalid phase element amount sum: "
+                        + totalM);
+            }
 
-                    x[A] =
-                            mA[A] / totalM;
-                }
+            for (int A = 0;
+                 A < nc;
+                 A++) {
 
-            } else {
-
-                /*
-                 * Non-active phases are not yet part of the V2 solver
-                 * implementation.  Retain a guarded legacy path for
-                 * result reporting.
-                 */
-                try {
-
-                    x =
-                            model.getComposition();
-
-                    y =
-                            model.getInternalVars();
-
-                    g =
-                            model.evaluateG(
-                                    x,
-                                    T);
-
-                    mA =
-                            model.getM();
-
-                } catch (RuntimeException ex) {
-
-                    /*
-                     * Do not let result construction destroy an otherwise
-                     * converged equilibrium calculation.
-                     */
-                    x =
-                            new double[nc];
-
-                    y =
-                            new double[0];
-
-                    g =
-                            Double.NaN;
-
-                    mA =
-                            new double[nc];
-                }
+                x[A] =
+                        mA[A] / totalM;
             }
 
             /*
@@ -875,13 +844,33 @@ public class EquilibriumSolverV2 {
     /**
      * Initialize the phase-indexed V2 state.
      *
-     * Current scope:
-     *   - arbitrary number of candidate phases may be supplied;
-     *   - only one phase is initially selected as stable;
+     * SCOPE LIMITATION: this is NOT Sundman's grid/global initializer.
+     * Sundman's algorithm relies on an initial grid minimization over
+     * candidate phases to obtain a good starting stable-phase set and
+     * constitutions before the local Newton/Sundman iteration begins;
+     * without it the iterative method can converge to a local rather
+     * than global equilibrium, and cannot detect a miscibility gap or
+     * select the initial stable-phase set from among the candidates.
+     *
+     * What this method actually does instead, until that global-search
+     * step is implemented:
+     *
+     *   - every candidate phase is evaluated (arbitrary number of
+     *     candidates supported), but only with a constitution seeded
+     *     from the overall requested composition
+     *     (initializeSinglePhaseState()), not a phase-specific grid
+     *     search;
+     *   - the initial stable set is unconditionally candidate 0 alone
+     *     (no phase selection, no miscibility-gap detection);
      *   - CEF phases only.
      *
-     * The initial stable phase is candidate 0.  Phase selection will be
-     * implemented later in updateStablePhaseSet().
+     * For a KNOWN, already-validated fixed multiphase starting point
+     * (e.g. a controlled two-phase test), use
+     * {@link #setInitialStateForTest} to bypass this limitation rather
+     * than treating candidate-0-only as if it were a general initial
+     * phase-selection procedure. Phase selection during the iteration
+     * itself remains updateStablePhaseSet()'s responsibility (currently
+     * a no-op).
      */
     private void initialize() {
 
@@ -1192,7 +1181,7 @@ public class EquilibriumSolverV2 {
         double sum = 0.0;
 
         for (double a :
-             phase.sundmanSiteRatios()) {
+             phase.siteRatios()) {
 
             sum += a;
         }
@@ -1249,19 +1238,19 @@ public class EquilibriumSolverV2 {
             CefPhaseModelAdapter phase) {
 
         int ns =
-                phase.sundmanNumSublattices();
+                phase.numSublattices();
 
         int nip =
-                phase.sundmanNumSiteVariables();
+                phase.numSiteVariables();
 
         double[][] C =
                 new double[ns][nip];
 
         int[] offsets =
-                phase.sundmanOffsets();
+                phase.sublatticeOffsets();
 
         int[] nc =
-                phase.sundmanConstituentsPerSublattice();
+                phase.constituentsPerSublattice();
 
         for (int s = 0; s < ns; s++) {
 
@@ -1291,13 +1280,13 @@ public class EquilibriumSolverV2 {
             CefPhaseModelAdapter phase) {
 
         int nip =
-                phase.sundmanNumSiteVariables();
+                phase.numSiteVariables();
 
         int nc =
                 targetAmounts.length;
 
         int ns =
-                phase.sundmanNumSublattices();
+                phase.numSublattices();
 
         int n =
                 nip + nc + ns;
@@ -1381,13 +1370,13 @@ public class EquilibriumSolverV2 {
             double[] targetM) {
 
         int nip =
-                phase.sundmanNumSiteVariables();
+                phase.numSiteVariables();
 
         int nc =
                 targetAmounts.length;
 
         int ns =
-                phase.sundmanNumSublattices();
+                phase.numSublattices();
 
         int n =
                 nip + nc + ns;
@@ -1420,8 +1409,8 @@ public class EquilibriumSolverV2 {
             int s =
                     sublatticeOf(
                             i,
-                            phase.sundmanOffsets(),
-                            phase.sundmanConstituentsPerSublattice());
+                            phase.sublatticeOffsets(),
+                            phase.constituentsPerSublattice());
 
             value -=
                     phaseWork.gamma[s];
@@ -1449,10 +1438,10 @@ public class EquilibriumSolverV2 {
         // ------------------------------------------------------------
 
         int[] offsets =
-                phase.sundmanOffsets();
+                phase.sublatticeOffsets();
 
         int[] ncSL =
-                phase.sundmanConstituentsPerSublattice();
+                phase.constituentsPerSublattice();
 
         for (int s = 0; s < ns; s++) {
 
@@ -1493,10 +1482,10 @@ public class EquilibriumSolverV2 {
                 phaseWork.model;
 
         int nip =
-                model.sundmanNumSiteVariables();
+                model.numSiteVariables();
 
         int ns =
-                model.sundmanNumSublattices();
+                model.numSublattices();
 
         int n =
                 nip + ns;
@@ -1525,10 +1514,10 @@ public class EquilibriumSolverV2 {
         // consistently for the multipliers.
         // ------------------------------------------------------------
         int[] offsets =
-                model.sundmanOffsets();
+                model.sublatticeOffsets();
 
         int[] nc =
-                model.sundmanConstituentsPerSublattice();
+                model.constituentsPerSublattice();
 
         for (int s = 0; s < ns; s++) {
 
@@ -1563,10 +1552,10 @@ public class EquilibriumSolverV2 {
             CefPhaseModelAdapter phase) {
 
         int nip =
-                phase.sundmanNumSiteVariables();
+                phase.numSiteVariables();
 
         int ns =
-                phase.sundmanNumSublattices();
+                phase.numSublattices();
 
         double[][] e =
                 new double[nip + ns][nip + ns];
@@ -1579,10 +1568,10 @@ public class EquilibriumSolverV2 {
         }
 
         int[] offsets =
-                phase.sundmanOffsets();
+                phase.sublatticeOffsets();
 
         int[] nconst =
-                phase.sundmanConstituentsPerSublattice();
+                phase.constituentsPerSublattice();
 
         // C^T and C
         for (int s = 0; s < ns; s++) {
@@ -1647,10 +1636,10 @@ public class EquilibriumSolverV2 {
                 invertMatrix(phaseMatrix);
 
         int nip =
-                phase.sundmanNumSiteVariables();
+                phase.numSiteVariables();
 
         int ns =
-                phase.sundmanNumSublattices();
+                phase.numSublattices();
 
         int nc =
                 targetAmounts.length;
@@ -1716,14 +1705,16 @@ public class EquilibriumSolverV2 {
                 cA);
     }
 
-    /**
-     * Current-state chemical potentials, solving
+    /*
+     * Obtain an initial chemical-potential estimate for the starting
+     * state. This is initialization only.
      *
-     *     G_Y = C^T*gamma + J_M^T*mu
+     * The actual multiphase equilibrium chemical potentials are obtained
+     * from the global Sundman equilibrium matrix.
      *
-     * where J_M[A][i] = dM_A/dY_i. This is only the current-state
-     * chemical-potential calculation; it is not yet the global Sundman
-     * correction equation.
+     * Solves G_Y = C^T*gamma + J_M^T*mu (J_M[A][i] = dM_A/dY_i) via a
+     * minimum-norm least-squares solve, using whatever single phase is
+     * currently aliased to phaseWork.
      */
     private void calculateChemicalPotentials() {
 
@@ -1733,10 +1724,10 @@ public class EquilibriumSolverV2 {
         }
 
         int nip =
-                phaseWork.model.sundmanNumSiteVariables();
+                phaseWork.model.numSiteVariables();
 
         int ns =
-                phaseWork.model.sundmanNumSublattices();
+                phaseWork.model.numSublattices();
 
         int nc =
                 targetAmounts.length;
@@ -1769,11 +1760,11 @@ public class EquilibriumSolverV2 {
         // C^T * gamma
         // ------------------------------------------------------------
         int[] offsets =
-                phaseWork.model.sundmanOffsets();
+                phaseWork.model.sublatticeOffsets();
 
         int[] nconst =
                 phaseWork.model
-                        .sundmanConstituentsPerSublattice();
+                        .constituentsPerSublattice();
 
         for (int s = 0; s < ns; s++) {
 
@@ -1821,10 +1812,10 @@ public class EquilibriumSolverV2 {
         }
 
         int nip =
-                phaseWork.model.sundmanNumSiteVariables();
+                phaseWork.model.numSiteVariables();
 
         int ns =
-                phaseWork.model.sundmanNumSublattices();
+                phaseWork.model.numSublattices();
 
         int nc =
                 targetAmounts.length;
@@ -1870,11 +1861,11 @@ public class EquilibriumSolverV2 {
         // ============================================================
 
         int[] offsets =
-                phaseWork.model.sundmanOffsets();
+                phaseWork.model.sublatticeOffsets();
 
         int[] nconst =
                 phaseWork.model
-                        .sundmanConstituentsPerSublattice();
+                        .constituentsPerSublattice();
 
         for (int s = 0; s < ns; s++) {
 
@@ -2037,11 +2028,11 @@ public class EquilibriumSolverV2 {
         // Sublattice constraints
         // ------------------------------------------------------------
         int[] offsets =
-                phaseWork.model.sundmanOffsets();
+                phaseWork.model.sublatticeOffsets();
 
         int[] nconst =
                 phaseWork.model
-                        .sundmanConstituentsPerSublattice();
+                        .constituentsPerSublattice();
 
         for (int s = 0; s < nconst.length; s++) {
 
@@ -2111,22 +2102,22 @@ public class EquilibriumSolverV2 {
 
         int nip =
                 phaseWork.model
-                        .sundmanNumSiteVariables();
+                        .numSiteVariables();
 
         int nc =
                 targetAmounts.length;
 
         int ns =
                 phaseWork.model
-                        .sundmanNumSublattices();
+                        .numSublattices();
 
         int[] offsets =
                 phaseWork.model
-                        .sundmanOffsets();
+                        .sublatticeOffsets();
 
         int[] nconst =
                 phaseWork.model
-                        .sundmanConstituentsPerSublattice();
+                        .constituentsPerSublattice();
 
         double sum2 = 0.0;
 
@@ -2175,19 +2166,19 @@ public class EquilibriumSolverV2 {
             double[] y) {
 
         phaseWork.G =
-                phase.sundmanG(T, y);
+                phase.siteEnergy(T, y);
 
         phaseWork.gy =
-                phase.sundmanGradient(T, y);
+                phase.siteGradient(T, y);
 
         phaseWork.gyy =
-                phase.sundmanHessian(T, y);
+                phase.siteHessian(T, y);
 
         phaseWork.mA =
-                phase.sundmanM(y);
+                phase.elementAmounts(y);
 
         phaseWork.dMdY =
-                phase.sundmanMJacobian();
+                phase.elementAmountsJacobian();
     }
 
     /**
@@ -2210,26 +2201,26 @@ public class EquilibriumSolverV2 {
         }
 
         work.G =
-                work.model.sundmanG(
+                work.model.siteEnergy(
                         T,
                         work.y);
 
         work.gy =
-                work.model.sundmanGradient(
+                work.model.siteGradient(
                         T,
                         work.y);
 
         work.gyy =
-                work.model.sundmanHessian(
+                work.model.siteHessian(
                         T,
                         work.y);
 
         work.mA =
-                work.model.sundmanM(
+                work.model.elementAmounts(
                         work.y);
 
         work.dMdY =
-                work.model.sundmanMJacobian();
+                work.model.elementAmountsJacobian();
     }
 
     /**
@@ -2383,13 +2374,13 @@ public class EquilibriumSolverV2 {
             double[] targetM) {
 
         int nip =
-                phase.sundmanNumSiteVariables();
+                phase.numSiteVariables();
 
         int nc =
                 targetAmounts.length;
 
         int ns =
-                phase.sundmanNumSublattices();
+                phase.numSublattices();
 
         /*
          * Start with zero Lagrange multipliers.
@@ -2748,7 +2739,7 @@ public class EquilibriumSolverV2 {
 
             int nip =
                     work.model
-                            .sundmanNumSiteVariables();
+                            .numSiteVariables();
 
             work.massResponse =
                     new double[nc][nc];
@@ -2878,7 +2869,7 @@ public class EquilibriumSolverV2 {
 
         int nip =
                 phaseWork.model
-                        .sundmanNumSiteVariables();
+                        .numSiteVariables();
 
         double[][] R =
                 new double[nc][nc];
@@ -2915,7 +2906,7 @@ public class EquilibriumSolverV2 {
 
         int nip =
                 phaseWork.model
-                        .sundmanNumSiteVariables();
+                        .numSiteVariables();
 
         double[] r =
                 new double[nc];
@@ -3808,7 +3799,7 @@ public class EquilibriumSolverV2 {
 
             final int nip =
                     work.model
-                            .sundmanNumSiteVariables();
+                            .numSiteVariables();
 
             if (work.response.cG == null
                     || work.response.cG.length != nip) {
@@ -4014,22 +4005,22 @@ public class EquilibriumSolverV2 {
 
         int nip =
                 phaseWork.model
-                        .sundmanNumSiteVariables();
+                        .numSiteVariables();
 
         int nc =
                 targetAmounts.length;
 
         int ns =
                 phaseWork.model
-                        .sundmanNumSublattices();
+                        .numSublattices();
 
         int[] offsets =
                 phaseWork.model
-                        .sundmanOffsets();
+                        .sublatticeOffsets();
 
         int[] nconst =
                 phaseWork.model
-                        .sundmanConstituentsPerSublattice();
+                        .constituentsPerSublattice();
 
         double[] gamma =
                 new double[ns];
@@ -4107,22 +4098,22 @@ public class EquilibriumSolverV2 {
 
         int nip =
                 work.model
-                        .sundmanNumSiteVariables();
+                        .numSiteVariables();
 
         int nc =
                 targetAmounts.length;
 
         int ns =
                 work.model
-                        .sundmanNumSublattices();
+                        .numSublattices();
 
         int[] offsets =
                 work.model
-                        .sundmanOffsets();
+                        .sublatticeOffsets();
 
         int[] nconst =
                 work.model
-                        .sundmanConstituentsPerSublattice();
+                        .constituentsPerSublattice();
 
         if (work.gy.length != nip) {
 
@@ -4821,11 +4812,11 @@ public class EquilibriumSolverV2 {
             // ----------------------------------------------------------
 
             int[] offsets =
-                    work.model.sundmanOffsets();
+                    work.model.sublatticeOffsets();
 
             int[] nconst =
                     work.model
-                            .sundmanConstituentsPerSublattice();
+                            .constituentsPerSublattice();
 
             for (int s = 0;
                  s < nconst.length;
@@ -5061,17 +5052,17 @@ public class EquilibriumSolverV2 {
 
         int nip =
                 work.model
-                        .sundmanNumSiteVariables();
+                        .numSiteVariables();
 
         int nc =
                 targetAmounts.length;
 
         int[] offsets =
-                work.model.sundmanOffsets();
+                work.model.sublatticeOffsets();
 
         int[] nconst =
                 work.model
-                        .sundmanConstituentsPerSublattice();
+                        .constituentsPerSublattice();
 
         double sum2 =
                 0.0;
@@ -5242,11 +5233,11 @@ public class EquilibriumSolverV2 {
         // ------------------------------------------------------------
 
         int[] offsets =
-                phaseWork.model.sundmanOffsets();
+                phaseWork.model.sublatticeOffsets();
 
         int[] nconst =
                 phaseWork.model
-                        .sundmanConstituentsPerSublattice();
+                        .constituentsPerSublattice();
 
         double maxConstraintResidual =
                 0.0;
@@ -5412,6 +5403,26 @@ public class EquilibriumSolverV2 {
                 lastResidual);
     }
 
+    /*
+     * Phase-set management is intentionally deferred.
+     *
+     * Sundman requires:
+     *   omega_alpha < 0     -> remove stable phase
+     *   drivingForce_w > 0  -> add unstable phase
+     *
+     * where the driving force for an unstable phase w is
+     *
+     *   c^w = sum_A lambda_A * M_A^w - G_M^w
+     *
+     * (already calculated correctly in buildEquilibriumResult() as
+     * drivingForce = -G + sum(mu[A] * mA[A])), but not yet consumed
+     * here to decide phase addition/removal.
+     *
+     * Current V2 scope uses a prescribed fixed stable-phase set:
+     * updateState() rejects an update that would make a stable phase's
+     * amount non-positive, rather than removing that phase, and no
+     * unstable candidate is ever added.
+     */
     private void updateStablePhaseSet() {
         // To be implemented.
     }
@@ -5505,11 +5516,11 @@ public class EquilibriumSolverV2 {
             // ----------------------------------------------------------
 
             int[] offsets =
-                    work.model.sundmanOffsets();
+                    work.model.sublatticeOffsets();
 
             int[] nconst =
                     work.model
-                            .sundmanConstituentsPerSublattice();
+                            .constituentsPerSublattice();
 
             for (int s = 0;
                  s < nconst.length;

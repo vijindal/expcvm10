@@ -516,6 +516,84 @@ public abstract class GibbsEnergyModel {
     }
 
     // ══════════════════════════════════════════════════════════════════
+    // Site-Fraction Thermodynamics (Abstract - Each Model Implements)
+    //
+    // This is the direct, stateless, site-fraction-space contract used by
+    // the Sundman-algorithm equilibrium solver (EquilibriumSolverV2). It is
+    // intentionally separate from the legacy composition-facing
+    // evaluateG(x,T)/gradient(x,T)/hessian(x,T) methods above: y (site
+    // fractions / internal variables) and x (mole fractions) are different
+    // vectors in general (e.g. for a multi-sublattice CEF phase), and this
+    // block is never composition-facing.
+    // ══════════════════════════════════════════════════════════════════
+
+    /**
+     * Molar Gibbs energy G(Y) at fixed T, evaluated directly in
+     * site-fraction space.
+     *
+     * @param T temperature in Kelvin
+     * @param y site-fraction / internal-variable vector, length
+     *          {@link #numSiteVariables()}
+     * @return G in J/mol
+     */
+    public abstract double siteEnergy(double T, double[] y);
+
+    /**
+     * Gradient dG/dY at fixed T, in site-fraction space.
+     *
+     * @param T temperature in Kelvin
+     * @param y site-fraction vector
+     * @return dG/dY, length {@link #numSiteVariables()}
+     */
+    public abstract double[] siteGradient(double T, double[] y);
+
+    /**
+     * Hessian d2G/dYdY at fixed T, in site-fraction space.
+     *
+     * @param T temperature in Kelvin
+     * @param y site-fraction vector
+     * @return d2G/dYdY, {@link #numSiteVariables()} x {@link #numSiteVariables()}
+     */
+    public abstract double[][] siteHessian(double T, double[] y);
+
+    /**
+     * Element content M_A(Y): moles of each system component per formula
+     * unit, as a function of site fractions.
+     *
+     * @param y site-fraction vector
+     * @return M_A per component, length equal to the number of system
+     *         components
+     */
+    public abstract double[] elementAmounts(double[] y);
+
+    /**
+     * Jacobian dM_A/dY_i. M_A is linear in Y, so this is constant for a
+     * given phase model.
+     *
+     * @return dM_A/dY, sized [numComponents][{@link #numSiteVariables()}]
+     */
+    public abstract double[][] elementAmountsJacobian();
+
+    /**
+     * Site ratios a[s] for each sublattice (moles of sites per formula
+     * unit, per sublattice).
+     */
+    public abstract double[] siteRatios();
+
+    /** Number of sublattices ns. */
+    public abstract int numSublattices();
+
+    /** Number of site-fraction variables (length of y). */
+    public abstract int numSiteVariables();
+
+    /** Offset of each sublattice's constituent block within the flattened
+     *  site-fraction vector y. */
+    public abstract int[] sublatticeOffsets();
+
+    /** Number of constituents on each sublattice. */
+    public abstract int[] constituentsPerSublattice();
+
+    // ══════════════════════════════════════════════════════════════════
     // Equilibrium Matrix (Concrete Implementation)
     // ══════════════════════════════════════════════════════════════════
 

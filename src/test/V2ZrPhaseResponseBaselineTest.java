@@ -133,19 +133,19 @@ public class V2ZrPhaseResponseBaselineTest {
         // 2. Evaluate the converged reference state.
         // ------------------------------------------------------------
         double G0 =
-                cef.sundmanG(T, Y_STAR);
+                cef.siteEnergy(T, Y_STAR);
 
         double[] grad0 =
-                cef.sundmanGradient(T, Y_STAR);
+                cef.siteGradient(T, Y_STAR);
 
         double[][] hess0 =
-                cef.sundmanHessian(T, Y_STAR);
+                cef.siteHessian(T, Y_STAR);
 
         double[][] dMdY =
-                cef.sundmanMJacobian();
+                cef.elementAmountsJacobian();
 
         double[] M0 =
-                cef.sundmanM(Y_STAR);
+                cef.elementAmounts(Y_STAR);
 
         checkReferenceState(cef, M0);
 
@@ -177,13 +177,13 @@ public class V2ZrPhaseResponseBaselineTest {
                 calculateCG(
                         e,
                         grad0,
-                        cef.sundmanNumSiteVariables());
+                        cef.numSiteVariables());
 
         double[][] cA =
                 calculateCA(
                         e,
                         dMdY,
-                        cef.sundmanNumSiteVariables(),
+                        cef.numSiteVariables(),
                         M0.length);
 
         System.out.println();
@@ -374,13 +374,13 @@ public class V2ZrPhaseResponseBaselineTest {
                 initialY.clone();
 
         int nip =
-                phase.sundmanNumSiteVariables();
+                phase.numSiteVariables();
 
         int nc =
                 targetM.length;
 
         int ns =
-                phase.sundmanNumSublattices();
+                phase.numSublattices();
 
         int n =
                 nip + ns;
@@ -393,18 +393,18 @@ public class V2ZrPhaseResponseBaselineTest {
              iter++) {
 
             double[] gy =
-                    phase.sundmanGradient(
+                    phase.siteGradient(
                             T, y);
 
             double[][] gyy =
-                    phase.sundmanHessian(
+                    phase.siteHessian(
                             T, y);
 
             double[] M =
-                    phase.sundmanM(y);
+                    phase.elementAmounts(y);
 
             double[][] dMdY =
-                    phase.sundmanMJacobian();
+                    phase.elementAmountsJacobian();
 
             double[] residual =
                     new double[n];
@@ -426,10 +426,10 @@ public class V2ZrPhaseResponseBaselineTest {
             // Stationarity Jacobian wrt gamma
             // --------------------------------------------------------
             int[] offsets =
-                    phase.sundmanOffsets();
+                    phase.sublatticeOffsets();
 
             int[] nconst =
-                    phase.sundmanConstituentsPerSublattice();
+                    phase.constituentsPerSublattice();
 
             for (int i = 0; i < nip; i++) {
 
@@ -701,10 +701,10 @@ public class V2ZrPhaseResponseBaselineTest {
             double[][] hessian) {
 
         int nip =
-                phase.sundmanNumSiteVariables();
+                phase.numSiteVariables();
 
         int ns =
-                phase.sundmanNumSublattices();
+                phase.numSublattices();
 
         double[][] E =
                 new double[nip + ns][nip + ns];
@@ -717,10 +717,10 @@ public class V2ZrPhaseResponseBaselineTest {
         }
 
         int[] offsets =
-                phase.sundmanOffsets();
+                phase.sublatticeOffsets();
 
         int[] nconst =
-                phase.sundmanConstituentsPerSublattice();
+                phase.constituentsPerSublattice();
 
         for (int s = 0; s < ns; s++) {
 
@@ -841,10 +841,10 @@ public class V2ZrPhaseResponseBaselineTest {
             double[][] cA) {
 
         int[] offsets =
-                phase.sundmanOffsets();
+                phase.sublatticeOffsets();
 
         int[] nconst =
-                phase.sundmanConstituentsPerSublattice();
+                phase.constituentsPerSublattice();
 
         double tol =
                 1.0e-12;
