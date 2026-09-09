@@ -14,7 +14,16 @@
 > real repeated loop within one calculation, not a single handoff. See
 > "Target data flow, revision 3" and the revised Step 3 below for the
 > current design; Step 3's original framing (an optional, GUI-only caching
-> decision) is superseded.
+> decision) is superseded. A third addition, same day, per the user asking
+> whether this design honors Sundman 2021's step/mapping state machine
+> (Algorithms B/C1/C2) and grid minimizer (§2.3.3): direct investigation
+> found the state machine is already fully implemented in
+> `DiagramTracer`/`LineStepper`/`PhaseChangeHandler` (no new work needed),
+> and the grid minimizer already covers every calculation type this plan
+> wires up (via the legacy `EquilibriumSolver`) — the one real gap,
+> `EquilibriumSolverV2` having no grid minimizer at all, is out of scope
+> here since V2 isn't wired into `CalculationSession` in this pass. See
+> Step 5 below.
 
 ## Current data flow (as-is, PNG figure)
 
@@ -583,14 +592,107 @@ call sites during implementation, and only change it if it's a clean,
 low-risk win; do not force it if it turns out `EquilibriumResult` is already
 relied upon as-is elsewhere in the GUI layer.
 
+### Step 5 — Step/mapping state machine and grid minimizer: confirmed status, one real gap
+
+**Investigation finding (2026-09-09):** the user asked whether the Sundman
+2021 Algorithms B/C1/C2 (step/mapping state machine: nodes with exits,
+line-following, phase-change-triggered node creation) and the grid
+minimizer (Section 2.3.3: an initial stable-phase-set/composition guess
+built from a grid scan, used to seed Algorithm A before Newton iteration)
+are represented in this codebase's Calculation Layer. A direct investigation
+(not assumption) found:
+
+**The step/mapping state machine already exists and needs no new
+addition.** It is not a gap — it is implemented, and the code's own doc
+comments explicitly claim the Sundman correspondence:
+- **`calc/diagram/DiagramTracer.java`** is self-documented as *"Algorithm
+  B — Phase diagram orchestrator"*. `calculate(...)` dispatches on
+  `axes.length`: 1 axis → `calculateStep(...)` (a simpler inline
+  scan-and-detect loop), 2+ axes → `calculateMap(...)` (the full
+  node/exit graph traversal: `findInitialNode()` →
+  `while (unvisited exits): LineStepper.followLine(...)`, then
+  `PhaseChangeHandler.handle(...)` on a detected phase-set change).
+- **`calc/diagram/LineStepper.java`** is self-documented as *"Algorithm
+  C1 — ZPF line following"*: increments an axis, calls the equilibrium
+  solver, retries with a halved step on non-convergence (bounded retry
+  count), and signals a phase-set change for `PhaseChangeHandler` to
+  handle.
+- **`calc/diagram/PhaseChangeHandler.java`** is self-documented as
+  *"Algorithm C2 — Phase change handler"*: brackets and bisects the
+  crossing, solves the equilibrium there, de-duplicates against existing
+  nodes, creates a `DiagramNode`, and builds new `DiagramExit`s (or
+  delegates to `InvariantHandler` when the Gibbs phase rule marks the
+  point as invariant).
+- **`DiagramNode`/`DiagramExit`/`DiagramLine`/`PhaseDiagram`** already
+  form the node/exit graph the paper describes (fixed phase, forbidden
+  phase, axis index, direction, visited flag on each exit; a global
+  unvisited-exit queue on `PhaseDiagram`).
+- One minor structural asymmetry, not a functional gap: STEP mode
+  (`calculateStep`) re-implements its own flat scan-and-node loop rather
+  than reusing `LineStepper`/`PhaseChangeHandler` the way MAP mode does.
+  Both still correctly detect phase-set changes and build nodes; this is
+  a code-duplication observation, not a missing capability. Not changing
+  this in the current pass — flagged for awareness only.
+
+**Conclusion:** `CalculationSession.calculatePhaseDiagram(...)` delegating
+straight to `DiagramTracer.calculate(...)` (as already sketched in Step 3)
+is correct and complete — the Algorithm B/C1/C2 machinery it needs is
+already there. No new state machine needs to be added at the Calculation
+Layer for this.
+
+**The real gap: the grid minimizer is not consistently used across
+calculation types.** The user's premise — "grid minimizer is an integral
+part of any of these calculation types: single point, step, map, phase
+diagram" — is exactly right per Sundman 2021 §2.3.3, and the investigation
+found this is *inconsistently* true in the code:
+
+| Solver | Grid minimizer? | Evidence |
+|---|---|---|
+| `calc/equil/EquilibriumSolver.java` (legacy, production) | **Yes** | Constructs `new GridMinimizer()`; `solve(...)` calls `gridMinimizer.initialize(candidates, T, P, compOverAll)` before any Newton iteration. |
+| `calc/equil/EquilibriumSolverV2.java` (Sundman/Algorithm-A rewrite) | **No** | Its own Javadoc admits this: *"NOT Sundman's grid/global initializer... the initial stable set is unconditionally candidate 0 alone (no phase selection, no miscibility-gap detection)."* Hardcodes `stablePhases = new int[] {0}` and seeds every candidate's constitution naively from the overall composition. |
+| `calc.equil.sundman.SundmanEquilibriumSolver` (separate, older pipeline) | **Yes** | Via `SundmanInitialEstimate`, which wraps the same `GridMinimizer.initialize(...)`. |
+
+`GridMinimizer.java` itself (`calc/equil/GridMinimizer.java`) is a real,
+working implementation — builds a uniform composition grid per phase,
+evaluates G with an inner site-fraction descent, computes the lower convex
+hull (exact for binaries via a monotone-chain hull; an acknowledged
+non-general fallback for ternary+ systems, `allHullPoints`), and returns an
+initial stable-phase set + compositions + lever-rule amounts. So the
+building block exists and is already proven inside `EquilibriumSolver`
+and `SundmanEquilibriumSolver` — it just isn't wired into
+`EquilibriumSolverV2`.
+
+**Consequence for `CalculationSession`:** because `calculateEquilibrium(...)`
+in the Step 3 sketch calls `new EquilibriumSolver()` (the legacy solver,
+deliberately chosen in Step 3 because it's the production one), single-point
+calculations through `CalculationSession` **do** get the grid minimizer for
+free — no gap there today. `DiagramTracer`/`LineStepper`/`PhaseChangeHandler`
+also call into `EquilibriumSolver`-family code per the existing
+implementation (not `EquilibriumSolverV2`), so step/map/phase-diagram
+calculations through `CalculationSession` also get it for free. **The only
+place the grid minimizer is actually missing is `EquilibriumSolverV2`
+itself** — and `EquilibriumSolverV2` is not wired into `CalculationSession`
+or any use case in this plan (see "Explicitly out of scope" below,
+unchanged). So there is no *new* work required in this pass to satisfy
+"grid minimizer is integral to every calculation type" — it already holds
+for every calculation type this plan actually wires up.
+
+**What this means for later, when `EquilibriumSolverV2` wiring does
+happen** (the separate, already-identified follow-on): giving V2 a grid
+minimizer (reusing `GridMinimizer` rather than writing a second one) should
+be a prerequisite of that follow-on, not an afterthought — flagged here so
+it isn't lost. Adding it as an explicit line item to whatever plan covers
+that follow-on is the right place for it, not this one.
+
 ## Explicitly out of scope for this pass
 
 - **`EquilibriumSolverV2` wiring** (retyping `PhaseWork.model` from concrete
   `CefPhaseModelAdapter` to `GibbsEnergyModel`, relaxing its `instanceof`
-  gate, hooking it into any use case) — separate, larger, already-identified
-  follow-on from the RK/CEF merge work. `ThermodynamicSystem` is solver-
-  agnostic (it just produces `List<GibbsEnergyModel>`), so it will work
-  with V2 unchanged whenever that follow-on happens — no rework needed here.
+  gate, hooking it into any use case, **and giving it a grid minimizer —
+  see Step 5 above**) — separate, larger, already-identified follow-on from
+  the RK/CEF merge work. `ThermodynamicSystem` is solver-agnostic (it just
+  produces `List<GibbsEnergyModel>`), so it will work with V2 unchanged
+  whenever that follow-on happens — no rework needed here.
 - **Relocating `EquilibriumResult`** out of `system.ports` — cosmetic,
   touches many files, no functional benefit; not part of this pass.
 - **Any change to `PhaseModelFactory`, `TdbParser`, `RkGibbs`, `CefGibbs`,**
