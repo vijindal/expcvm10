@@ -1,5 +1,17 @@
 # Implement the documented Core Data Flow (UI → System → Calculation → UI)
 
+> **Revision note (2026-09-09):** Steps 1-2 below are implemented and
+> committed. Step 3 was substantially revised after direct discussion with
+> the user: model details (database/elements/phases) and calculation
+> details (calc type/parameters) are two separate actions the UI performs,
+> and the `ThermodynamicSystem` built from the first should be reusable
+> across multiple calculations as long as model details don't change. A new
+> UI-agnostic coordinator class, `CalculationSession`, was introduced into
+> the design to own this lifecycle — explicitly so it can be driven by any
+> future UI (GUI, CLI, API), not just the Swing GUI. See "Target data flow,
+> revision 2" and the revised Step 3 below for the current design; Step 3's
+> original framing (an optional, GUI-only caching decision) is superseded.
+
 ## Current data flow (as-is, PNG figure)
 
 ![Current core data flow](dataflow_current.png)
@@ -95,7 +107,7 @@ list. `EquilibriumSolverV2` (dashed, grey) is drawn to show it exists in the
 Calculation Layer folder but has **no edge** into any use case today — it is
 reachable only from its own test files.
 
-## Target data flow (to-be, after this plan's Steps 1-2)
+## Target data flow, revision 1 (after Steps 1-2 only — superseded below)
 
 ```mermaid
 flowchart TB
@@ -128,12 +140,59 @@ flowchart TB
     style NEWCLASS fill:#1e4620,color:#fff
 ```
 
-The only structural change is the introduction of `system/ThermodynamicSystem.java`
-(green) as the single, shared entry point for "parse TDB + build phase
-models" — both use cases call the same static factory instead of each
-inlining the same five steps. Solver/tracer call sites, `PhaseModelFactory`,
-`TdbParser`, and every model class (`RkGibbs`, `CefPhaseModelAdapter`, etc.)
-are untouched.
+This was the only structural change from Steps 1-2: the introduction of
+`system/ThermodynamicSystem.java` as the single, shared entry point for
+"parse TDB + build phase models." This is what's actually implemented and
+committed today — but it does NOT yet give system reuse *across* separate
+use-case calls (each `execute()` still builds its own fresh system, just
+via shared code). See revision 2 below for the design that adds that.
+
+## Target data flow, revision 2 (adds `CalculationSession` — current design)
+
+```mermaid
+flowchart TB
+    subgraph UI["UI LAYER  (many possible callers)"]
+        GUI3["GUI: ui/gui/MainController.java"]
+        CLI3["CLI (future)"]
+        API3["API (future)"]
+    end
+
+    subgraph SESSION["COORDINATOR — NEW, UI-agnostic"]
+        CS["CalculationSession<br/>setModel(tdbPath, elements, phases)<br/>calculateEquilibrium(T, P, comp)<br/>calculatePhaseDiagram(axes, ...)<br/>holds: currentKey, currentSystem"]
+    end
+
+    subgraph SYS3["THERMODYNAMIC SYSTEM LAYER"]
+        TS3["system/ThermodynamicSystem.java<br/>build(tdbFilePath, elements, phases)"]
+    end
+
+    subgraph CALC3["CALCULATION LAYER"]
+        SOLVER3["calc/equil/EquilibriumSolver.java"]
+        TRACER3["calc/diagram/DiagramTracer.java"]
+    end
+
+    GUI3 -->|"setModel(...) then calculate*(...)"| CS
+    CLI3 -.->|"same two calls"| CS
+    API3 -.->|"same two calls"| CS
+
+    CS -->|"only if model details changed"| TS3
+    CS -->|"currentSystem().phaseModels()"| SOLVER3
+    CS -->|"currentSystem().phaseModels()"| TRACER3
+
+    SOLVER3 --> CS
+    TRACER3 --> CS
+    CS --> GUI3
+
+    style CS fill:#4a2d6b,color:#fff
+```
+
+`CalculationSession` (purple) is the single choke point every caller goes
+through. It holds the currently-built `ThermodynamicSystem` and a key
+(tdbFilePath + elements + phases) identifying what it was built from;
+`setModel(...)` rebuilds only when that key changes, otherwise it's a
+no-op and the existing system is reused. `EquilibriumUseCase`/
+`PhaseDiagramUseCase` continue to exist as the GUI-specific request/result
+DTO glue, but their sequencing logic moves to call through
+`CalculationSession` rather than `ThermodynamicSystem.build()` directly.
 
 ## Context
 
@@ -295,17 +354,131 @@ assembled through one shared path instead of two copies.
 `StepCalculationUseCase` (which today constructs its own `PhaseDiagramUseCase`
 internally) needs no direct change — it inherits the fix by delegating.
 
-### Step 3 — (Optional, only if Step 1-2 reveal it's easy) Session-level reuse
+### Step 3 — `CalculationSession`: explicit model/calculation lifecycle, reused across UIs  (REVISED — supersedes the original Step 3)
 
-The doc's "built once... remains fixed throughout the calculation" is fully
-satisfied by Steps 1-2 for the lifetime of *one* `execute()` call. Whether to
-go further — caching a `ThermodynamicSystem` across multiple independent
-use-case calls in the same UI session (e.g. `MainController` holds the last
-built system and reuses it if the request's tdbFilePath/elements/phases are
-unchanged) — is a genuine judgment call with UI-lifecycle implications
-(cache invalidation when the user picks a different TDB file or phase list).
-Recommend treating this as a follow-up decision after Steps 1-2 land and are
-verified, not bundling it into this pass.
+**Design decision (2026-09-09), from direct discussion with the user:**
+Steps 1-2 satisfy "built once, remains fixed" only for the lifetime of one
+`execute()` call. The user's actual intent is broader and changes the shape
+of this step:
+
+- The UI supplies **model details** (database path, element list, phase
+  names) and, **separately**, **calculation details** (calculation type,
+  calculation-specific parameters: T, P, composition, axes, etc.) — these
+  are two distinct actions, not one bundled request.
+- Sending model details must produce a fully-built `ThermodynamicSystem`
+  (array of ready-to-use `GibbsEnergyModel` instances — expressions +
+  parameters already assembled) that the UI then holds and can reuse.
+- Only *after* a system exists does the UI send calculation details to run
+  a calculation against it.
+- The system should be **reused across multiple calculations** as long as
+  the model details (database, elements, phases) haven't changed — e.g. run
+  a single-point calc, then a phase diagram, on the same system, with no
+  TDB re-parse in between. It should rebuild only when model details
+  actually change.
+- A new coordinating class — **`CalculationSession`** — sits above all
+  three layers and owns this lifecycle. It is deliberately **not** a GUI
+  class: the user wants it usable by "many UI layers such GUI, CLI, API,"
+  so it lives free of any Swing/GUI dependency and any one use case's
+  assumptions, in its own package (e.g. `session.CalculationSession` or
+  `ui.session.CalculationSession` — TBD at implementation time, see naming
+  question below).
+- `CalculationSession` does no thermodynamics or numerics itself. It holds
+  state (the currently-built `ThermodynamicSystem`, if any) and forwards:
+  building the system to `ThermodynamicSystem.build(...)` (System Layer),
+  running a calculation to the appropriate Calculation Layer entry point
+  (`EquilibriumSolver`, `DiagramTracer`, etc.), passing along the held
+  system. It is the **single choke point** every caller (GUI, CLI, future
+  API) goes through — no caller talks to `ThermodynamicSystem.build()` or a
+  solver directly.
+
+**Revised lifecycle (method-level):**
+
+```java
+package system.session;  // or a dedicated top-level "session" package — see naming note
+
+public final class CalculationSession {
+
+    // Immutable value identifying "what system is currently loaded"
+    public record ModelKey(String tdbFilePath, List<String> elements, List<String> phases) {}
+
+    private ModelKey currentKey;              // null until setModel() first called
+    private ThermodynamicSystem currentSystem; // null until setModel() first called
+
+    /**
+     * Ensures a ThermodynamicSystem exists for the given model details.
+     * Rebuilds ONLY if key differs from the currently held one; otherwise
+     * this is a no-op and the existing system is reused as-is.
+     */
+    public void setModel(String tdbFilePath, List<String> elements, List<String> phases)
+            throws IOException {
+        ModelKey requested = new ModelKey(tdbFilePath, elements, phases);
+        if (requested.equals(currentKey)) return;   // reuse -- no rebuild
+        this.currentSystem = ThermodynamicSystem.build(tdbFilePath, elements, phases);
+        this.currentKey = requested;
+    }
+
+    /** True once setModel() has succeeded at least once. */
+    public boolean hasModel() { return currentSystem != null; }
+
+    /** The currently held system, or throws if setModel() hasn't been called. */
+    public ThermodynamicSystem currentSystem() {
+        if (currentSystem == null)
+            throw new IllegalStateException("No model set -- call setModel() first");
+        return currentSystem;
+    }
+
+    /**
+     * Runs a single-point equilibrium calculation against the currently
+     * held system. Requires setModel() to have been called first.
+     */
+    public EquilibriumResult calculateEquilibrium(double T, double P, double[] compOverAll) {
+        return new EquilibriumSolver().solve(T, P, compOverAll, currentSystem().phaseModels());
+    }
+
+    /**
+     * Runs a phase-diagram calculation against the currently held system.
+     */
+    public PhaseDiagram calculatePhaseDiagram(AxisConfig[] axes, double[] startAxes,
+                                               double fixedT, double fixedP, double[] comp) {
+        return new DiagramTracer().calculate(
+                currentSystem().phaseModels(), axes, startAxes, fixedT, fixedP, comp);
+    }
+}
+```
+
+**Naming/placement, still to confirm before implementation:**
+`CalculationSession` needs a package that is neither `ui.*` (it must be
+UI-agnostic, per the "many UI layers" requirement) nor `system.*` alone (it
+spans System + Calculation). A new top-level package, e.g. `session/`
+(sibling to `ui/`, `system/`, `calc/`), is the natural fit — this itself
+would become a 4th top-level source directory, which is a small, visible
+structural change worth flagging explicitly before landing it. Raise this
+as a naming/placement question at implementation time rather than deciding
+unilaterally now.
+
+**How each UI layer would use it (illustrative, not yet implemented):**
+```java
+// GUI (MainController), CLI, or a future API controller -- same calls:
+CalculationSession session = new CalculationSession();
+session.setModel("data/VZR-re2.TDB", List.of("V", "ZR"), List.of("LIQUID", "BCC_A2"));
+EquilibriumResult r1 = session.calculateEquilibrium(2000, 101325, new double[]{0.5, 0.5});
+// ... user changes T only, model unchanged -- setModel() below is a no-op:
+session.setModel("data/VZR-re2.TDB", List.of("V", "ZR"), List.of("LIQUID", "BCC_A2"));
+EquilibriumResult r2 = session.calculateEquilibrium(1800, 101325, new double[]{0.5, 0.5});
+```
+
+**Relationship to the existing use-case classes:** `EquilibriumUseCase` and
+`PhaseDiagramUseCase` (Steps 1-2, already landed) do not disappear — they
+remain the GUI-specific glue that builds `CalculationRequest`/
+`PhaseDiagramRequest` DTOs from raw GUI parameters and converts results to
+GUI-facing shapes (`PhaseDiagramResult` conversion, etc.). What changes is
+that their *internals* would delegate the build-system/run-calculation
+sequencing to a shared `CalculationSession` instead of each independently
+calling `ThermodynamicSystem.build()` — this is what actually gives the
+"same system reused across a single-point calc and a phase diagram calc"
+behavior, which Steps 1-2 alone do not provide (each use case still builds
+its own fresh system today, just via the shared class rather than
+duplicated inline code).
 
 ### Step 4 — Result-flow consistency (small, mechanical)
 
@@ -332,7 +505,12 @@ relied upon as-is elsewhere in the GUI layer.
   touches many files, no functional benefit; not part of this pass.
 - **Any change to `PhaseModelFactory`, `TdbParser`, `RkGibbs`, `CefGibbs`,**
   or any model/database-layer class — this plan only touches the use-case
-  layer and adds one new orchestrating class.
+  layer and adds two new coordinating classes (`ThermodynamicSystem`,
+  `CalculationSession`).
+- **Any CLI or API implementation** — `CalculationSession` is designed to be
+  usable by a future CLI/API, but building either of those is not part of
+  this plan. The design goal is only that `CalculationSession` itself has
+  no GUI dependency, so building a CLI/API later is additive.
 
 ## Verification
 
@@ -351,3 +529,19 @@ relied upon as-is elsewhere in the GUI layer.
   candidates list within a single diagram calculation) is unaffected —
   `ThermodynamicSystem.phaseModels()` is passed once at the top of
   `PhaseDiagramUseCase.execute()`, same as today's `candidates` list.
+
+**Additional verification for Step 3 (`CalculationSession`), once implemented:**
+- Unit test `CalculationSession` directly (no GUI): call `setModel(...)`
+  twice with identical arguments and assert the second call does NOT
+  rebuild (e.g. assert `currentSystem()` returns the same object reference,
+  or instrument/mock `ThermodynamicSystem.build` call count).
+- Call `setModel(...)` with different `phases` and assert a rebuild DID
+  happen (different object reference, or an updated phase-model list).
+- Run `calculateEquilibrium(...)` before any `setModel(...)` call and
+  assert it throws `IllegalStateException` rather than NPEing or silently
+  building a system with no data.
+- End-to-end: `setModel(...)` once, then call `calculateEquilibrium(...)`
+  followed by `calculatePhaseDiagram(...)` on the same session instance,
+  and confirm both succeed against the one held system with no re-parse of
+  the TDB file in between (verifiable by logging or a call-count check on
+  `ThermodynamicSystem.build`).
