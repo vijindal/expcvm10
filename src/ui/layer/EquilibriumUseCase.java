@@ -1,16 +1,13 @@
 package ui.layer;
 
+import system.ThermodynamicSystem;
 import system.ports.DatabasePort;
 import system.ports.EquilibriumResult;
-import system.model.GibbsEnergyModel;
-import system.model.PhaseModelFactory;
 import calc.equil.EquilibriumSolver;
 import ui.request.CalculationRequest;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import java.util.logging.Logger;
 
 /**
@@ -55,42 +52,20 @@ public class EquilibriumUseCase {
      * @throws IOException if the TDB file cannot be loaded
      */
     public EquilibriumResult execute(CalculationRequest request) throws IOException {
-        // ── 1. Load and extract TDB system via DatabasePort ────────────────
-        DatabasePort parser = new system.database.TdbParser();
-        parser.load(request.getTdbFilePath());
+        // ── 1. Build the thermodynamic system (TDB parse + phase models) ───
+        ThermodynamicSystem system = ThermodynamicSystem.build(
+                request.getTdbFilePath(), request.getElements(), request.getPhases());
 
-        String[] elemArray = request.getElements().toArray(new String[0]);
-        DatabasePort system = parser.extractSystem(elemArray);
-
-        // ── 2. Build GibbsEnergyModel for each requested phase ────────────────
-        List<?> modelList = system.buildPhaseModels(
-                request.getElements(), request.getPhases());
-
-        @SuppressWarnings("unchecked")
-        List<PhaseModelFactory.PhaseModel> phaseModels =
-            (List<PhaseModelFactory.PhaseModel>) (List<?>) modelList;
-
-        List<GibbsEnergyModel> candidates = new ArrayList<>();
-        for (PhaseModelFactory.PhaseModel pm : phaseModels) {
-            candidates.add(pm.toGibbsModel(request.getElements()));
-        }
-
-        if (candidates.isEmpty()) {
-            throw new IllegalStateException(
-                    "No phase models could be built for the requested phases: "
-                    + request.getPhases());
-        }
-
-        // ── 3. Overall composition from request ───────────────────────────
+        // ── 2. Overall composition from request ───────────────────────────
         double[] compOverAll = extractComposition(request);
         LOG.info("EquilibriumUseCase: T=" + request.getT()
                 + " P=" + request.getP()
                 + " phases=" + request.getPhases()
                 + " comp=" + Arrays.toString(compOverAll));
 
-        // ── 4. Solve ──────────────────────────────────────────────────────
+        // ── 3. Solve ──────────────────────────────────────────────────────
         return solver.solve(request.getT(), request.getP(),
-                            compOverAll, candidates);
+                            compOverAll, system.phaseModels());
     }
 
     // ------------------------------------------------------------------

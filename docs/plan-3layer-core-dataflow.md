@@ -222,7 +222,7 @@ duplicating the five-step sequence inline. Do not change any solver
 internals, any phase-model class, or the RK/CEF model hierarchy — this is
 purely a **wiring and object-introduction** change at the use-case layer.
 
-### Step 1 — Introduce `ThermodynamicSystem` (System Layer)
+### Step 1 — Introduce `ThermodynamicSystem` (System Layer)  ✅ DONE
 
 New class, e.g. `src/system/ThermodynamicSystem.java`:
 
@@ -253,7 +253,33 @@ list) currently inlined in both `EquilibriumUseCase.execute()` and
 `TdbParser`, `DatabasePort`, or `PhaseModelFactory` themselves — this class
 is a thin, single-purpose orchestrator over what already exists.
 
-### Step 2 — Update `EquilibriumUseCase` and `PhaseDiagramUseCase` to consume it
+**Implementation note:** `src/system/ThermodynamicSystem.java` was added as
+planned, matching the sketch above closely (constructor is private; `build()`
+is the only way to create one). Compiled cleanly across the whole project
+and verified against the existing baseline tests
+(`RkModelBaselineTest`, `V2ZrGibbsBaselineTest`, `V2ZrGibbsLiteratureBaselineTest`,
+`EMatNCTest` — all still PASS, unaffected since this change doesn't touch
+the model layer). A new smoke test,
+`src/test/ThermodynamicSystemSmokeTest.java`, exercises
+`EquilibriumUseCase.execute()` end-to-end through the new shared path and
+asserts its output (iteration count, stable-phase count, final `mu[]`) is
+bit-for-bit identical to the pre-refactor code path for the same inputs —
+verified by running the identical scenario against a stashed copy of the
+pre-refactor source before restoring these changes.
+
+**Bonus fix (see Step 2 below):** while wiring `PhaseDiagramUseCase` through
+`ThermodynamicSystem`, found and fixed a pre-existing latent bug: its
+`execute()` did an unchecked cast straight from
+`List<PhaseModelFactory.PhaseModel>` to `List<GibbsEnergyModel>` — but
+`PhaseModel` does not implement `GibbsEnergyModel` (it's a plain data
+holder). This would have thrown `ClassCastException` the first time any
+code called a `GibbsEnergyModel` method on an element of that list. Not
+something introduced or asked for; flagged and fixed since
+`ThermodynamicSystem.build()` naturally performs the correct
+`pm.toGibbsModel(elements)` unwrap (mirroring what `EquilibriumUseCase`
+already did correctly) as part of the same change.
+
+### Step 2 — Update `EquilibriumUseCase` and `PhaseDiagramUseCase` to consume it  ✅ DONE
 
 Replace the duplicated 5-step block in each `execute()` method with:
 ```java

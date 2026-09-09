@@ -1,5 +1,6 @@
 package ui.layer;
 
+import system.ThermodynamicSystem;
 import system.ports.DatabasePort;
 import system.ports.EquilibriumResult;
 import system.model.GibbsEnergyModel;
@@ -52,26 +53,12 @@ public class PhaseDiagramUseCase {
      */
     public PhaseDiagramResult execute(PhaseDiagramRequest request) throws IOException {
 
-        // ── 1. Load TDB and extract system via DatabasePort ─────────────────
-        DatabasePort parser = new system.database.TdbParser();
-        parser.load(request.getTdbFilePath());
+        // ── 1. Build the thermodynamic system (TDB parse + phase models) ───
+        ThermodynamicSystem system = ThermodynamicSystem.build(
+                request.getTdbFilePath(), request.getElements(), request.getPhases());
+        List<GibbsEnergyModel> candidates = system.phaseModels();
 
-        String[]  elemArray = request.getElements().toArray(new String[0]);
-        DatabasePort system = parser.extractSystem(elemArray);
-
-        // ── 2. Build phase models via DatabasePort ─────────────────────────
-        List<?> modelList = system.buildPhaseModels(
-                request.getElements(), request.getPhases());
-
-        @SuppressWarnings("unchecked")
-        List<GibbsEnergyModel> candidates = (List<GibbsEnergyModel>) (List<?>) modelList;
-
-        if (candidates.isEmpty()) {
-            throw new IllegalStateException(
-                    "No phase models built for: " + request.getPhases());
-        }
-
-        // ── 3. Resolve start composition ─────────────────────────────────
+        // ── 2. Resolve start composition ─────────────────────────────────
         int      nc   = request.getElements().size();
         double[] comp = request.getStartComposition();
         if (comp == null) {
@@ -79,7 +66,7 @@ public class PhaseDiagramUseCase {
             for (int i = 0; i < nc; i++) comp[i] = 1.0 / nc;
         }
 
-        // ── 4. Run DiagramTracer ──────────────────────────────────────────
+        // ── 3. Run DiagramTracer ──────────────────────────────────────────
         AxisConfig[] axes        = request.axisArray();
         double[]     startAxes   = request.startAxisValues();
 
@@ -91,7 +78,7 @@ public class PhaseDiagramUseCase {
                 candidates, axes, startAxes,
                 request.getFixedT(), request.getFixedP(), comp);
 
-        // ── 5. Convert to result DTO ──────────────────────────────────────
+        // ── 4. Convert to result DTO ──────────────────────────────────────
         return convert(diagram, request, candidates);
     }
 
