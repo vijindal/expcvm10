@@ -9,7 +9,7 @@ import system.model.cef.CefInteractionParam;
 import system.model.cef.CefPhaseModelAdapter;
 import system.model.cef.MagneticContribution;
 import system.model.cef.SgtePolynomial;
-import system.model.rk.RkPhaseModelAdapter;
+import system.model.rk.RkGibbs;
 import system.model.rk.RkPhaseModelFactory;
 
 import java.util.ArrayList;
@@ -158,7 +158,7 @@ public class PhaseModelFactory {
          */
         if (phase.getNumSubLat() == 1) {
 
-            RkPhaseModelAdapter rk =
+            RkGibbs rk =
                     RkPhaseModelFactory.build(
                             phaseName,
                             elements,

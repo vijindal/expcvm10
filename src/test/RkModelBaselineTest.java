@@ -25,8 +25,8 @@ import java.util.List;
  *
  * MODEL: LIQUID is (V,Zr)1, a plain one-sublattice substitutional
  * (Redlich-Kister) solution -- NOT a multi-sublattice CEF phase. In
- * this codebase such phases are built as an {@code RkPhaseModelAdapter}
- * / {@code RkGibbs} (see {@code system.model.rk}), reached via
+ * this codebase such phases are built directly as a {@code RkGibbs}
+ * (see {@code system.model.rk}), reached via
  * {@code PhaseModelFactory.PhaseModel.alternateModel} /
  * {@code PhaseModelFactory.toGibbsModel()} -- {@code PhaseModel.gibbs}
  * (the CEF path) is null for LIQUID. This test exercises exactly that
@@ -43,10 +43,9 @@ import java.util.List;
  *
  * This test does NOT build or reconstruct any RK formula of its own --
  * it exercises ONLY the RK model already implemented in
- * {@code system.model.rk} ({@link system.model.rk.RkGibbs} via
- * {@link system.model.rk.RkPhaseModelAdapter}, reached through
- * {@code TdbParser}/{@code PhaseModelFactory} exactly as production
- * code would), and checks that model's output against points digitized
+ * {@code system.model.rk} ({@link system.model.rk.RkGibbs}, reached
+ * through {@code TdbParser}/{@code PhaseModelFactory} exactly as
+ * production code would), and checks that model's output against points digitized
  * directly from the published Fig. 10 solid curve (pixel calibration
  * against the figure's own axis ticks: x_Zr: 0-1.0, x=791-2772 px; H:
  * 0 to -5000 J/mol, y=523-2503 px, on a 10x render of the source PDF

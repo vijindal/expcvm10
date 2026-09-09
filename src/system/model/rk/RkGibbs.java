@@ -3,7 +3,10 @@ package system.model.rk;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import system.model.GibbsEnergyModel;
+import system.model.PhaseEquilData;
 import system.model.unary.ElementGibbs;
+import util.Matrix;
 
 /**
  * Redlich-Kister (RK) molar Gibbs energy evaluator for an {@code nc}-component solution phase.
@@ -77,7 +80,10 @@ import system.model.unary.ElementGibbs;
  * This class belongs in {@code domain/} — it is a pure thermodynamic model
  * with no knowledge of file I/O, UI, or external frameworks.
  */
-public class RkGibbs {
+public class RkGibbs extends GibbsEnergyModel {
+
+    private static final java.util.logging.Logger LOG =
+            java.util.logging.Logger.getLogger(RkGibbs.class.getName());
 
     // ------------------------------------------------------------------
     // Constants
@@ -111,6 +117,8 @@ public class RkGibbs {
     /** Quaternary interaction parameters (all quartets i<j<k<l). */
     private final List<QuaternaryParam> quaternaries;
 
+    /** Element symbols, ordered to match composition/site-fraction indices. */
+    private final ArrayList<String> elementNames_value;
 
     // ------------------------------------------------------------------
     // Construction
@@ -125,11 +133,13 @@ public class RkGibbs {
      * @param binaries     binary RK parameters (all i<j pairs needed)
      * @param ternaries    ternary RK parameters (may be empty)
      * @param quaternaries quaternary RK parameters (may be empty)
+     * @param elementNames ordered element symbols, length nc
      */
     public RkGibbs(int nc, ElementGibbs[] g0, String phaseName,
                    List<BinaryParam>     binaries,
                    List<TernaryParam>    ternaries,
-                   List<QuaternaryParam> quaternaries) {
+                   List<QuaternaryParam> quaternaries,
+                   List<String>          elementNames) {
         if (g0 == null || g0.length != nc)
             throw new IllegalArgumentException("g0 must be non-null with length equal to nc");
         if (phaseName == null || phaseName.isEmpty())
@@ -140,6 +150,290 @@ public class RkGibbs {
         this.binaries    = Collections.unmodifiableList(new ArrayList<>(binaries));
         this.ternaries   = Collections.unmodifiableList(new ArrayList<>(ternaries));
         this.quaternaries = Collections.unmodifiableList(new ArrayList<>(quaternaries));
+        this.elementNames_value = elementNames != null
+                ? new ArrayList<>(elementNames) : new ArrayList<>();
+
+        // Initialize GibbsEnergyModel state arrays
+        this.x = new double[nc];
+        this.y = new double[nc];
+        this.g0List = new double[nc];
+        this.g0TList = new double[nc];
+        this.g0PList = new double[nc];
+        this.cachedGx = new double[nc];
+        this.cachedGTx = new double[nc];
+        this.cachedGPx = new double[nc];
+        this.cachedGxx = new double[nc][nc];
+
+        // Populate G0 lists at reference temperature
+        double refT = 298.15;
+        populateG0Lists(g0Elements(), getPhaseName(), refT);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Phase Identity (Concrete Implementation)
+    // ══════════════════════════════════════════════════════════════════
+
+    @Override public String phaseName()        { return phaseName; }
+    @Override public String modelType()        { return "RK"; }
+    @Override public ArrayList<String> elementNames() { return new ArrayList<>(elementNames_value); }
+    @Override public String[] componentList()  { return elementNames_value.toArray(new String[0]); }
+    @Override public int numComponents()       { return nc; }
+    @Override public int numInternalParams()   { return nc; }
+    @Override public int numTotalParams()      { return nc; }
+    @Override public double nfu()              { return 1.0; }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Legacy Composition-Space G Evaluation (GibbsEnergyModel contract)
+    // ══════════════════════════════════════════════════════════════════
+
+    @Override
+    public double evaluateG() {
+        cachedG = evaluate(y, T);
+        return cachedG;
+    }
+
+    @Override
+    public double evaluateG(double[] x, double T) {
+        return evaluate(x, T);
+    }
+
+    @Override
+    public double evaluateGT() {
+        cachedGT = temperatureDerivative(y, T);
+        return cachedGT;
+    }
+
+    @Override
+    public double evaluateGP() {
+        cachedGP = 0.0;  // RK has no P-dependence
+        return cachedGP;
+    }
+
+    @Override
+    public double[] evaluateGx() {
+        cachedGx = gradient(y, T);
+        return cachedGx.clone();
+    }
+
+    @Override
+    public double[] evaluateGTx() {
+        cachedGTx = gradientDT(y, T);
+        return cachedGTx.clone();
+    }
+
+    @Override
+    public double[] evaluateGPx() {
+        cachedGPx = new double[nc];  // RK has no P-dependence
+        return cachedGPx;
+    }
+
+    @Override
+    public double[][] evaluateGxx() {
+        cachedGxx = hessian(y, T);
+        return cloneMatrix(cachedGxx);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Internal Variable Management (RK: y = x)
+    // ══════════════════════════════════════════════════════════════════
+
+    @Override
+    public double[] getInitialInternalVars(double[] x) {
+        return x.clone();  // RK: y = x
+    }
+
+    @Override
+    public double[] compositionFromInternal(double[] y) {
+        return y.clone();  // RK: x = y
+    }
+
+    @Override
+    public boolean isValid(double[] y) {
+        double sum = 0;
+        for (int i = 0; i < y.length; i++) {
+            if (y[i] < -1e-12) return false;
+            sum += y[i];
+        }
+        return Math.abs(sum - 1.0) < 1e-6;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Site-Fraction Thermodynamics (RK: one sublattice, Y = X, no
+    // vacancies -- the ns=1 specialization of the general CEF contract)
+    // ══════════════════════════════════════════════════════════════════
+
+    @Override
+    public double siteEnergy(double T, double[] y) {
+        return evaluate(y, T);
+    }
+
+    @Override
+    public double[] siteGradient(double T, double[] y) {
+        return gradient(y, T);
+    }
+
+    @Override
+    public double[][] siteHessian(double T, double[] y) {
+        return hessian(y, T);
+    }
+
+    /** RK: M_A(Y) = Y_A directly (one constituent per element, nfu=1). */
+    @Override
+    public double[] elementAmounts(double[] y) {
+        return y.clone();
+    }
+
+    /** RK: dM_A/dY_i is the identity matrix (M_A = Y_A). */
+    @Override
+    public double[][] elementAmountsJacobian() {
+        double[][] identity = new double[nc][nc];
+        for (int i = 0; i < nc; i++) {
+            identity[i][i] = 1.0;
+        }
+        return identity;
+    }
+
+    /** RK: a single sublattice with site ratio 1.0. */
+    @Override
+    public double[] siteRatios() {
+        return new double[] { 1.0 };
+    }
+
+    @Override
+    public int numSublattices() {
+        return 1;
+    }
+
+    @Override
+    public int numSiteVariables() {
+        return nc;
+    }
+
+    @Override
+    public int[] sublatticeOffsets() {
+        return new int[] { 0 };
+    }
+
+    @Override
+    public int[] constituentsPerSublattice() {
+        return new int[] { nc };
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Full Per-Phase Computation
+    // ══════════════════════════════════════════════════════════════════
+
+    @Override
+    public PhaseEquilData compute(double T, double P, double[] y,
+                                  double deltaT, double deltaP, double[] mu) {
+        // Step 1: evaluate G and all derivatives
+        double     GN    = evaluate(y, T);
+        double[]   GxN   = gradient(y, T);
+        double[][] GxxN  = hessian(y, T);
+        double[]   GxTN  = gradientDT(y, T);
+        double[]   GxPN  = new double[nc];  // no P-dependence in RK
+
+        // Step 2: assemble phase matrix M (nc+1)×(nc+1)
+        double[][] M = new double[nc + 1][nc + 1];
+        for (int i = 0; i < nc; i++) {
+            for (int j = 0; j < nc; j++) {
+                M[i][j] = GxxN[i][j];
+            }
+            M[i][nc] = 1.0;
+            M[nc][i] = 1.0;
+        }
+
+        // Step 3: invert M, extract top-left nc×nc block → eMat
+        Matrix matM  = new Matrix(M);
+        Matrix matMI = matM.inverse();
+        double[][] eMat = new double[nc][nc];
+        for (int i = 0; i < nc; i++)
+            for (int j = 0; j < nc; j++)
+                eMat[i][j] = matMI.get(i, j);
+
+        // Step 4: composition response coefficients
+        double[] cG = new double[nc];
+        double[] cT = new double[nc];
+        double[] cP = new double[nc];
+        for (int i = 0; i < nc; i++) {
+            for (int k = 0; k < nc; k++) {
+                cG[i] -= eMat[i][k] * GxN[k];
+                cT[i] -= eMat[i][k] * GxTN[k];
+                cP[i] -= eMat[i][k] * GxPN[k];
+            }
+        }
+
+        // Step 5: linearised composition change
+        double[] delyN = new double[nc];
+        for (int i = 0; i < nc; i++) {
+            delyN[i] = cG[i] + cT[i] * deltaT + cP[i] * deltaP;
+            for (int j = 0; j < nc; j++) {
+                delyN[i] += eMat[i][j] * mu[j];
+            }
+        }
+
+        // For RK, deln == dely and x == y
+        double[] delnN = delyN;
+        double[] x = y.clone();
+
+        // For RK: M^α_A = x^α_A (since nfu=1)
+        double[] mA = x.clone();
+
+        // For RK: eMatNC = eMat (already in composition space)
+        double[][] eMatNC = eMat;
+
+        // Energy parameter list
+        double[] eList = buildEList(y, T, GN);
+
+        return new PhaseEquilData(GN, delyN, delnN, x, mA, eMat, eMatNC, cG, cT, cP, eList);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Output / Debugging
+    // ══════════════════════════════════════════════════════════════════
+
+    @Override
+    public void printPhaseInfo() {
+        LOG.fine("Phase: " + phaseName + " (RK model)");
+        LOG.fine("Components: " + elementNames_value);
+        LOG.fine("T = " + T + " K, P = " + P + " Pa");
+        LOG.fine("Composition x = " + java.util.Arrays.toString(x));
+    }
+
+    @Override
+    public void printDerivatives() {
+        LOG.fine("G = " + cachedG);
+        LOG.fine("dG/dT = " + cachedGT + ", dG/dP = " + cachedGP);
+        LOG.fine("dG/dx = " + java.util.Arrays.toString(cachedGx));
+        LOG.finer("d2G/dTdx = " + java.util.Arrays.toString(cachedGTx));
+        LOG.finer("d2G/dPdx = " + java.util.Arrays.toString(cachedGPx));
+        LOG.finer("d2G/dxdx = " + java.util.Arrays.deepToString(cachedGxx));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Private Helpers (per-phase computation)
+    // ══════════════════════════════════════════════════════════════════
+
+    private double[] buildEList(double[] x, double T, double GN) {
+        int nBin  = binaries.size();
+        int nTern = ternaries.size();
+        int nQuat = quaternaries.size();
+        double[] eList = new double[nc + nBin + nTern + nQuat];
+
+        int idx = 0;
+        for (int i = 0; i < nc; i++) {
+            eList[idx++] = g0Component(i, T);
+        }
+        for (BinaryParam p : binaries) {
+            eList[idx++] = p.L(x, T);
+        }
+        for (TernaryParam p : ternaries) {
+            eList[idx++] = p.L(x, T);
+        }
+        for (QuaternaryParam p : quaternaries) {
+            eList[idx++] = p.L(T);
+        }
+        return eList;
     }
 
     // ------------------------------------------------------------------

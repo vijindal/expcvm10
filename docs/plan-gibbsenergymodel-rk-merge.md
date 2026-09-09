@@ -137,7 +137,7 @@ scope here.
    re-running `RkModelBaselineTest`, `V2ZrGibbsBaselineTest`, and
    `V2ZrGibbsLiteratureBaselineTest` (all PASS, no regression).
 
-2. **Merge `RkPhaseModelAdapter` into `RkGibbs`**: `RkGibbs` becomes
+2. ✅ **DONE.** **Merge `RkPhaseModelAdapter` into `RkGibbs`**: `RkGibbs` becomes
    `public class RkGibbs extends GibbsEnergyModel`, absorbing
    `RkPhaseModelAdapter`'s entire current body as-is:
    - The `phaseName`/`elementNames` fields and constructor parameter (moved
@@ -161,7 +161,7 @@ scope here.
      (e.g. `RkModelBaselineTest`) can keep using them directly.
    - Delete `RkPhaseModelAdapter.java` once its body has moved.
 
-3. **Update the two production construction sites** (both confirmed by direct
+3. ✅ **DONE.** **Update the two production construction sites** (both confirmed by direct
    read, not just grep):
    - `src/system/model/rk/RkPhaseModelFactory.java:47-82` — `build()`
      currently does `RkGibbs gibbs = new RkGibbs(nc, g0Elements, phaseName,
@@ -176,7 +176,7 @@ scope here.
      `PhaseModel.forAlternateModel(phaseName, rk)`, which already takes a
      `GibbsEnergyModel`.
 
-4. **Update `src/test/RkModelBaselineTest.java`** — it already reaches the
+4. ✅ **DONE.** **Update `src/test/RkModelBaselineTest.java`** — it already reaches the
    model only through `PhaseModelFactory.toGibbsModel()` (returns
    `pm.alternateModel` typed as `GibbsEnergyModel`), so it likely needs no
    source change at all; re-run to confirm it still passes against the same
@@ -184,15 +184,24 @@ scope here.
    the correct model class name (now `RkGibbs` instead of
    `RkPhaseModelAdapter`).
 
-5. **Fix any other RK-specific reference.** Whole-tree grep for
+5. ✅ **DONE.** **Fix any other RK-specific reference.** Whole-tree grep for
    `RkPhaseModelAdapter`/`new RkGibbs(` found no other production callers
    beyond the two factory files above. The broader 21-file grep from initial
    exploration turned out to be dominated by files that call the *legacy*
    `GibbsEnergyModel` surface on **`CefPhaseModelAdapter`** instances (not
    RK) — those are entirely unaffected by this purely-additive merge and need
-   no changes. Confirm this during implementation with a final grep for
-   `RkPhaseModelAdapter` after the rename/delete to make sure nothing was
-   missed (the compiler will also catch any remaining reference).
+   no changes. Confirmed post-merge: final grep for `RkPhaseModelAdapter`
+   across `src/` returns zero matches; `RkPhaseModelAdapter.java` deleted.
+
+## Status: all 5 steps complete
+
+Verified via whole-project `javac` compile (clean, `EXIT=0`),
+`RkModelBaselineTest` (49 digitized Fig. 10 points, PASS, now printing
+`system.model.rk.RkGibbs` as the model class), `V2ZrGibbsBaselineTest` /
+`V2ZrGibbsLiteratureBaselineTest` (CEF path, no regression), and `EMatNCTest`
+(legacy `EquilibriumSolver`-path consumer on `CefPhaseModelAdapter`, confirms
+the legacy surface was correctly left untouched). Solver-side wiring for
+`EquilibriumSolverV2` (see below) remains explicitly deferred.
 
 ## Solver wiring — explicitly deferred, not part of this pass
 

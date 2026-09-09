@@ -14,12 +14,11 @@ import java.util.TreeMap;
 import java.util.logging.Logger;
 
 /**
- * Factory that builds a {@link RkPhaseModelAdapter} for a named phase
- * directly from a parsed {@link tdb} database object.
+ * Factory that builds a {@link RkGibbs} model for a named phase directly
+ * from a parsed {@link tdb} database object.
  *
- * <p>Bridges the legacy TDB parameter format into the clean
- * {@link RkGibbs} + {@link RkPhaseModelAdapter} model hierarchy used by
- * {@link calc.equil.EquilibriumSolver}.
+ * <p>Bridges the legacy TDB parameter format into the clean {@link RkGibbs}
+ * model used by {@link calc.equil.EquilibriumSolver}.
  *
  * <h2>What it does</h2>
  * <ol>
@@ -27,8 +26,8 @@ import java.util.logging.Logger;
  *       G°(T) from the TDB SGTE polynomials.</li>
  *   <li>Scans TDB {@code PARAMETER L(...)} entries for the phase and extracts
  *       {@link BinaryParam} objects (a[s] + b[s]·T form).</li>
- *   <li>Constructs {@link RkGibbs} with ElementGibbs[] and phase name,
- *       then wraps it in {@link RkPhaseModelAdapter}.</li>
+ *   <li>Constructs {@link RkGibbs} with ElementGibbs[], phase name, and
+ *       element list.</li>
  * </ol>
  */
 public class RkPhaseModelFactory {
@@ -36,17 +35,17 @@ public class RkPhaseModelFactory {
     private static final Logger LOG = Logger.getLogger(RkPhaseModelFactory.class.getName());
 
     /**
-     * Build an {@link RkPhaseModelAdapter} for {@code phaseName} using the
+     * Build an {@link RkGibbs} model for {@code phaseName} using the
      * provided element list and TDB database.
      *
      * @param phaseName  TDB phase name, e.g. "LIQUID", "BCC_A2"
      * @param elements   ordered list of element symbols (defines component indices)
      * @param database   fully-parsed tdb object (subFuncExpInParam already run)
-     * @return ready-to-use {@link RkPhaseModelAdapter}
+     * @return ready-to-use {@link RkGibbs}
      */
-    public static RkPhaseModelAdapter build(String phaseName,
-                                            List<String> elements,
-                                            tdb database) {
+    public static RkGibbs build(String phaseName,
+                                 List<String> elements,
+                                 tdb database) {
         int nc = elements.size();
 
         // ── Step 1: Build ElementGibbs for each component (moved to model layer) ──
@@ -75,10 +74,10 @@ public class RkPhaseModelFactory {
         List<QuaternaryParam> quaternaries = Collections.emptyList();
 
         // ── Step 3: Assemble model ────────────────────────────────────────
-        RkGibbs gibbs = new RkGibbs(nc, g0Elements, phaseName, binaries, ternaries, quaternaries);
-        // RkPhaseModelAdapter constructor will automatically populate g0List,
-        // g0TList, g0PList via the inherited populateG0Lists() method
-        return new RkPhaseModelAdapter(gibbs, phaseName, new ArrayList<>(elements));
+        // RkGibbs constructor automatically populates g0List, g0TList,
+        // g0PList via the inherited populateG0Lists() method.
+        return new RkGibbs(nc, g0Elements, phaseName, binaries, ternaries,
+                quaternaries, new ArrayList<>(elements));
     }
 
     // ------------------------------------------------------------------
