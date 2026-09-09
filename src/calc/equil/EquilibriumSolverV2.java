@@ -92,7 +92,29 @@ public class EquilibriumSolverV2 {
     /** Internal-variable corrections for each stable phase. */
     private double[][] deltaPhaseInternalVars;
 
-    private double acceptedStepScale = 1.0;
+    /** Total Gibbs energy of the accepted stable-phase state before update. */
+    private double previousTotalG;
+
+    /** Element amounts of the accepted stable-phase state before update. */
+    private double[] previousTotalAmounts;
+
+    /** Stable-phase amounts at the exact point where the global matrix was built. */
+    private double[] previousPhaseAmounts;
+
+    /** Stable-phase Gibbs energies at the exact point where the global matrix was built. */
+    private double[] previousPhaseG;
+
+    /** Element amounts M_A of each stable phase at matrix-assembly point. */
+    private double[][] previousPhaseMA;
+
+    /**
+     * Chemical potentials from BEFORE the most recent updateState() call,
+     * used by checkConvergence() to compute the actual DeltaMu = newLambda
+     * - previousMu. mu itself is overwritten with newLambda during
+     * updateState(), so comparing newLambda against the (already-updated)
+     * mu would spuriously always give DeltaMu = 0.
+     */
+    private double[] previousMu;
 
     // ================================================================
     // Single-phase kernel state (first Sundman implementation increment)
@@ -102,6 +124,13 @@ public class EquilibriumSolverV2 {
     private double lastStep;
 
     private PhaseWork phaseWork;
+
+    /**
+     * Phase-level Sundman state for every candidate phase.
+     *
+     * Index i corresponds to phaseModels.get(i).
+     */
+    private List<PhaseWork> phaseWorks;
 
     private static final double SOLVER_TOL = 1.0e-10;
     private static final int MAX_INTERNAL_ITER = 50;
@@ -146,7 +175,10 @@ public class EquilibriumSolverV2 {
      * inverse e_ij together with c_iG and c_iA, used at fixed T, P to
      * express the site-fraction correction as
      *
-     *     Delta y_i = c_iG + sum_A c_iA * Delta mu_A.
+     *     Delta y_i = c_iG + sum_A c_iA * lambda_A.
+     *
+     * lambda_A is the new (absolute) chemical potential from Sundman's
+     * Eq. (58), not an increment Delta mu_A.
      */
     private static final class PhaseResponse {
 
@@ -171,6 +203,88 @@ public class EquilibriumSolverV2 {
 
     private int maxIterations = 100;
     private double tolerance = 1.0e-10;
+
+    // ================================================================
+    // Test-only controlled initialization hook
+    // ================================================================
+
+    /**
+     * Prescribed initial multiphase state used by {@link #initialize()}
+     * in place of the normal single-phase starting guess, when set.
+     *
+     * This exists ONLY to let end-to-end tests reproduce a controlled
+     * starting point (e.g. a known two-phase constitution/amount set)
+     * while still exercising the actual public {@link #solve} iteration.
+     * It does not change solver mathematics.
+     */
+    private static final class TestInitialState {
+
+        final int[] stablePhases;
+        final double[][] y;
+        final double[] phaseAmounts;
+
+        TestInitialState(
+                int[] stablePhases,
+                double[][] y,
+                double[] phaseAmounts) {
+
+            this.stablePhases = stablePhases;
+            this.y = y;
+            this.phaseAmounts = phaseAmounts;
+        }
+    }
+
+    private TestInitialState testInitialState;
+
+    /**
+     * Package-private test hook: prescribe the initial stable-phase set,
+     * per-phase constitutions, and phase amounts that {@link #solve}
+     * will start from, instead of the normal single-phase initial guess.
+     *
+     * Intended for end-to-end tests that need to reproduce a controlled
+     * starting point (already validated against a separate matrix-level
+     * test) through the actual public solve() iteration. This does not
+     * alter solver mathematics, line search, convergence, or phase
+     * management -- it only overrides the starting point that
+     * {@link #initialize()} would otherwise construct.
+     *
+     * Must be called before {@link #solve}.
+     *
+     * @param stablePhases   candidate-phase indices that start stable
+     * @param initialY       initial site-fraction vector per stable
+     *                       phase, indexed in the same order as
+     *                       {@code stablePhases}
+     * @param initialAmounts initial phase amount per stable phase,
+     *                       indexed in the same order as
+     *                       {@code stablePhases}
+     */
+    void setInitialStateForTest(
+            int[] stablePhases,
+            double[][] initialY,
+            double[] initialAmounts) {
+
+        if (stablePhases == null
+                || initialY == null
+                || initialAmounts == null) {
+
+            throw new IllegalArgumentException(
+                    "Test initial state arrays must not be null.");
+        }
+
+        if (stablePhases.length != initialY.length
+                || stablePhases.length != initialAmounts.length) {
+
+            throw new IllegalArgumentException(
+                    "Test initial state arrays must have matching "
+                    + "stable-phase length.");
+        }
+
+        this.testInitialState =
+                new TestInitialState(
+                        stablePhases.clone(),
+                        initialY.clone(),
+                        initialAmounts.clone());
+    }
 
     // ================================================================
     // Constructor
@@ -285,14 +399,15 @@ public class EquilibriumSolverV2 {
             // ========================================================
 
             /*
-             * For fixed T and P the global unknown corrections are:
+             * For fixed T and P the global unknowns are:
              *
-             *   Δμ_A
+             *   lambda_A  (new, absolute chemical potentials -- not
+             *              increments Delta mu_A)
              *   Δω_α
              *
              * The equations are:
              *
-             *   G_M^α - Σ_A M_A^α μ_A = 0
+             *   G_M^α - Σ_A M_A^α λ_A = 0
              *
              * and the element mass balances:
              *
@@ -308,8 +423,11 @@ public class EquilibriumSolverV2 {
             /*
              * Solve for:
              *
-             *   Δμ_A
-             *   Δω_α
+             *   lambda_A = new chemical potentials
+             *   DeltaOmega_alpha = phase-amount corrections
+             *
+             * lambda_A are the new chemical potentials of Sundman's
+             * global equilibrium equations, not Delta(mu_A).
              */
             solveEquilibriumMatrix();
 
@@ -319,13 +437,14 @@ public class EquilibriumSolverV2 {
             // ========================================================
 
             /*
-             * For every phase α and internal variable i:
-             *
-             *   ΔY_i^α =
-             *       c_iG^α
-             *       + Σ_A c_iA^α Δμ_A
+             * DeltaY_i^alpha =
+             *     c_iG^alpha
+             *     + Σ_A c_iA^alpha * lambda_A
              *
              * for fixed T and P.
+             *
+             * lambda_A are the new chemical potentials obtained
+             * from the global Sundman equilibrium matrix.
              *
              * Variable-T/P terms will later add:
              *
@@ -333,6 +452,105 @@ public class EquilibriumSolverV2 {
              *       c_iP^α ΔP
              */
             calculateInternalCorrections();
+
+            // ========================================================
+            // DIAGNOSTIC: pre-update Sundman-equation snapshot
+            // ========================================================
+            //
+            // Print the state the update is about to apply, so the
+            // Sundman equations themselves can be inspected directly
+            // rather than by tuning a damping factor.
+            // ========================================================
+
+            System.out.println();
+            System.out.println(
+                    "=== Sundman iteration " + iteration + " ===");
+
+            for (int k = 0;
+                 k < stablePhases.length;
+                 k++) {
+
+                int p =
+                        stablePhases[k];
+
+                PhaseWork w =
+                        phaseWorks.get(p);
+
+                System.out.println(
+                        "Phase " + k
+                        + " (" + w.model.phaseName() + ")"
+                        + " omega = " + phaseAmounts[k]);
+
+                System.out.println(
+                        "  G = " + w.G);
+
+                double maxAbsCG =
+                        0.0;
+
+                for (double v : w.response.cG) {
+                    maxAbsCG =
+                            Math.max(
+                                    maxAbsCG,
+                                    Math.abs(v));
+                }
+
+                System.out.println(
+                        "  max|cG| = " + maxAbsCG);
+            }
+
+            System.out.println("lambda:");
+            System.out.println(
+                    "  " + Arrays.toString(newLambda));
+
+            System.out.println("DeltaOmega:");
+            System.out.println(
+                    "  " + Arrays.toString(deltaPhaseAmounts));
+
+            for (int k = 0;
+                 k < stablePhases.length;
+                 k++) {
+
+                int p =
+                        stablePhases[k];
+
+                PhaseWork w =
+                        phaseWorks.get(p);
+
+                System.out.println(
+                        "DeltaY (phase "
+                        + w.model.phaseName() + "):");
+                System.out.println(
+                        "  " + Arrays.toString(
+                                deltaPhaseInternalVars[k]));
+            }
+
+            for (int A = 0;
+                 A < targetAmounts.length;
+                 A++) {
+
+                double represented =
+                        0.0;
+
+                for (int k = 0;
+                     k < stablePhases.length;
+                     k++) {
+
+                    int p =
+                            stablePhases[k];
+
+                    PhaseWork w =
+                            phaseWorks.get(p);
+
+                    represented +=
+                            phaseAmounts[k]
+                            * w.mA[A];
+                }
+
+                System.out.println(
+                        "Mass residual A=" + A
+                        + " : "
+                        + (targetAmounts[A] - represented));
+            }
 
             // ========================================================
             // STEP 6
@@ -463,21 +681,30 @@ public class EquilibriumSolverV2 {
             double[] mA;
 
             /*
-             * Current implementation has one active CEF phase.
-             * Use the accepted phaseWork state directly.
+             * Every candidate phase (stable or not) has its own
+             * PhaseWork, evaluated by evaluateAllPhases() each
+             * iteration -- do not assume candidate 0 is the only
+             * active phase. Use the PhaseWork keyed by candidate index
+             * i directly, rather than the single-phase phaseWork alias
+             * (which only ever pointed at slot 0).
              */
-            if (i == 0
-                    && phaseWork != null
-                    && phaseWork.model == model) {
+            if (phaseWorks != null
+                    && i < phaseWorks.size()
+                    && phaseWorks.get(i) != null
+                    && phaseWorks.get(i).model == model
+                    && phaseWorks.get(i).y != null) {
+
+                PhaseWork work =
+                        phaseWorks.get(i);
 
                 y =
-                        phaseWork.y.clone();
+                        work.y.clone();
 
                 g =
-                        phaseWork.G;
+                        work.G;
 
                 mA =
-                        phaseWork.mA.clone();
+                        work.mA.clone();
 
                 /*
                  * Calculate composition from M_A so that the returned
@@ -553,8 +780,13 @@ public class EquilibriumSolverV2 {
                 }
             }
 
+            /*
+             * Sundman Eq. (62), driving force:
+             *
+             *     D^beta = -G^beta + sum_A lambda_A * M_A^beta
+             */
             double drivingForce =
-                    g;
+                    -g;
 
             if (Double.isFinite(g)
                     && mA != null) {
@@ -573,11 +805,32 @@ public class EquilibriumSolverV2 {
 
             if (isStable[i]) {
 
+                /*
+                 * phaseAmounts is indexed by STABLE SLOT, not candidate
+                 * index -- do not assume candidatePhase[i] ->
+                 * phaseAmounts[i]. Find the stable slot k such that
+                 * stablePhases[k] == i explicitly.
+                 */
                 double amount =
-                        (phaseAmounts != null
-                                && i < phaseAmounts.length)
-                                ? phaseAmounts[i]
-                                : 0.0;
+                        0.0;
+
+                if (stablePhases != null
+                        && phaseAmounts != null) {
+
+                    for (int k = 0;
+                         k < stablePhases.length;
+                         k++) {
+
+                        if (stablePhases[k] == i
+                                && k < phaseAmounts.length) {
+
+                            amount =
+                                    phaseAmounts[k];
+
+                            break;
+                        }
+                    }
+                }
 
                 stableResults.add(
                         new EquilibriumResult.PhaseResult(
@@ -620,130 +873,162 @@ public class EquilibriumSolverV2 {
     // ================================================================
 
     /**
-     * Initialize the first V2 equilibrium problem.
+     * Initialize the phase-indexed V2 state.
      *
-     * Current implementation scope:
-     *   - exactly one candidate phase
-     *   - CEF phase only
-     *   - fixed T and P
-     *   - closed system
+     * Current scope:
+     *   - arbitrary number of candidate phases may be supplied;
+     *   - only one phase is initially selected as stable;
+     *   - CEF phases only.
      *
-     * The system-level targetAmounts remain normalized so that
-     *
-     *      sum_A N_A = 1
-     *
-     * while the phase amount is initialized from the CEF formula-unit
-     * site ratio. For a single phase:
-     *
-     *      N_A = omega * M_A
-     *
-     * and therefore
-     *
-     *      omega = N_total / sum_A M_A
-     *
-     * once the initial constitution has been constructed.
+     * The initial stable phase is candidate 0.  Phase selection will be
+     * implemented later in updateStablePhaseSet().
      */
     private void initialize() {
 
-        if (phaseModels == null || phaseModels.isEmpty()) {
+        if (phaseModels == null
+                || phaseModels.isEmpty()) {
+
             throw new IllegalStateException(
                     "No candidate phase models are available.");
         }
 
-        if (phaseModels.size() != 1) {
-            throw new UnsupportedOperationException(
-                    "EquilibriumSolverV2 initialization currently "
-                    + "supports one phase only.");
-        }
+        final int nph =
+                phaseModels.size();
 
-        GibbsEnergyModel model =
-                phaseModels.get(0);
-
-        if (!(model instanceof CefPhaseModelAdapter)) {
-            throw new UnsupportedOperationException(
-                    "EquilibriumSolverV2 first implementation "
-                    + "requires a CEF phase model.");
-        }
-
-        CefPhaseModelAdapter cef =
-                (CefPhaseModelAdapter) model;
-
-        double[] xOverall =
-                targetComposition();
+        phaseWorks =
+                new ArrayList<>(nph);
 
         /*
-         * Construct a valid initial constitution using the generic
-         * CEF initializer. No phase-specific constitution is used.
+         * ------------------------------------------------------------
+         * Build phase work objects for ALL candidate phases.
+         * ------------------------------------------------------------
          */
-        double[] y =
-                initializeSinglePhaseState(
-                        cef,
-                        xOverall);
+        for (int p = 0;
+             p < nph;
+             p++) {
 
-        phaseWork =
-                new PhaseWork(cef);
+            GibbsEnergyModel model =
+                    phaseModels.get(p);
 
-        phaseWork.y =
-                y.clone();
+            if (!(model instanceof CefPhaseModelAdapter)) {
 
-        /*
-         * Evaluate the initial CEF state.
-         */
-        evaluateSinglePhaseState(
-                cef,
-                phaseWork.y);
+                throw new UnsupportedOperationException(
+                        "EquilibriumSolverV2 currently requires "
+                        + "CEF candidate phases. Phase "
+                        + p + " (" + model.phaseName()
+                        + ") is not a CefPhaseModelAdapter.");
+            }
 
-        /*
-         * For a one-phase closed system, the initial phase amount is
-         *
-         *      omega = N_total / sum_A M_A.
-         *
-         * Since targetAmounts are normalized to N_total = 1,
-         * this becomes 1 / sum_A M_A.
-         *
-         * For V2ZR, sum_A M_A = 3, hence omega = 1/3 for
-         * one mole of total elements under the N_total=1 convention.
-         */
-        double totalM = 0.0;
+            CefPhaseModelAdapter cef =
+                    (CefPhaseModelAdapter) model;
 
-        for (double value : phaseWork.mA) {
-            totalM += value;
+            PhaseWork work =
+                    new PhaseWork(cef);
+
+            /*
+             * For initialization only, seed every candidate phase with
+             * a constitution corresponding to the requested overall
+             * composition.
+             *
+             * Later the grid/global initializer will replace this with
+             * proper phase-specific starting constitutions.
+             */
+            work.y =
+                    initializeSinglePhaseState(
+                            cef,
+                            targetComposition());
+
+            evaluatePhaseWork(work);
+
+            phaseWorks.add(work);
         }
 
-        if (!(totalM > 0.0) || !Double.isFinite(totalM)) {
-            throw new IllegalStateException(
-                    "Invalid initial phase formula-unit amount: "
-                    + totalM);
+        if (testInitialState != null) {
+
+            /*
+             * ------------------------------------------------------------
+             * Test-only controlled initial state (see
+             * setInitialStateForTest()).  Overrides the default
+             * single-phase starting guess with a prescribed stable-phase
+             * set, per-phase constitution, and phase amounts.
+             * ------------------------------------------------------------
+             */
+            stablePhases =
+                    testInitialState.stablePhases.clone();
+
+            phaseAmounts =
+                    testInitialState.phaseAmounts.clone();
+
+            for (int k = 0;
+                 k < stablePhases.length;
+                 k++) {
+
+                int p =
+                        stablePhases[k];
+
+                PhaseWork work =
+                        phaseWorks.get(p);
+
+                work.y =
+                        testInitialState.y[k].clone();
+
+                evaluatePhaseWork(work);
+            }
+
+        } else {
+
+            /*
+             * ------------------------------------------------------------
+             * First stable phase = candidate 0.
+             *
+             * This is only the starting stable set.  Actual phase
+             * selection is a later step.
+             * ------------------------------------------------------------
+             */
+            stablePhases =
+                    new int[] {0};
+
+            /*
+             * One phase amount per stable phase.
+             */
+            phaseAmounts =
+                    new double[] {
+                        initialPhaseAmount(
+                                phaseWorks.get(0))
+                    };
         }
 
-        phaseAmounts =
-                new double[] {
-                        1.0 / totalM
-                };
-
         /*
-         * Stable phase set initially contains the single candidate.
+         * Internal variables are retained per candidate phase.
          */
-        stablePhases =
-                new int[] {0};
-
         phaseInternalVars =
-                new double[phaseModels.size()][];
+                new double[nph][];
 
-        phaseInternalVars[0] =
-                phaseWork.y.clone();
+        for (int p = 0;
+             p < nph;
+             p++) {
+
+            phaseInternalVars[p] =
+                    phaseWorks.get(p).y.clone();
+        }
 
         /*
-         * Initialize chemical potentials through the phase stationarity
-         * relation. The resulting values are only the initial Lagrange
-         * multipliers; the global Sundman system will subsequently update
-         * them.
+         * ------------------------------------------------------------
+         * Temporary compatibility alias.
+         *
+         * Existing single-phase methods still use phaseWork.
+         * ------------------------------------------------------------
+         */
+        phaseWork =
+                phaseWorks.get(
+                        stablePhases[0]);
+
+        /*
+         * Initial chemical potentials are obtained from the initially
+         * selected stable phase only.
          */
         calculateChemicalPotentials();
 
-        /*
-         * Synchronize the public solver state.
-         */
         mu =
                 (phaseWork.mu != null)
                         ? phaseWork.mu.clone()
@@ -756,62 +1041,69 @@ public class EquilibriumSolverV2 {
                 Double.POSITIVE_INFINITY;
     }
 
+    /**
+     * Evaluate all candidate phase states.
+     *
+     * Every candidate has its own PhaseWork.  The method does not decide
+     * stability; it only evaluates the thermodynamic state of each phase.
+     */
     private void evaluateAllPhases() {
 
-        if (phaseModels == null || phaseModels.isEmpty()) {
+        if (phaseModels == null
+                || phaseModels.isEmpty()) {
+
             throw new IllegalStateException(
                     "No candidate phase models are available.");
         }
 
-        if (phaseModels.size() != 1) {
-            throw new UnsupportedOperationException(
-                    "First Sundman implementation increment supports "
-                    + "one phase only.");
+        if (phaseWorks == null
+                || phaseWorks.size() != phaseModels.size()) {
+
+            throw new IllegalStateException(
+                    "Phase-work state is not synchronized with "
+                    + "the candidate phase list.");
         }
 
-        GibbsEnergyModel gm = phaseModels.get(0);
+        for (int p = 0;
+             p < phaseModels.size();
+             p++) {
 
-        if (!(gm instanceof CefPhaseModelAdapter)) {
-            throw new UnsupportedOperationException(
-                    "First Sundman implementation increment requires "
-                    + "a CEF phase model.");
+            PhaseWork work =
+                    phaseWorks.get(p);
+
+            GibbsEnergyModel model =
+                    phaseModels.get(p);
+
+            if (work.model != model) {
+
+                throw new IllegalStateException(
+                        "PhaseWork/model mismatch at phase "
+                        + p + ": "
+                        + model.phaseName());
+            }
+
+            /*
+             * Evaluate only; do not alter the accepted constitution.
+             */
+            evaluatePhaseWork(work);
+
+            /*
+             * Keep phaseInternalVars synchronized.
+             */
+            if (phaseInternalVars != null
+                    && p < phaseInternalVars.length) {
+
+                phaseInternalVars[p] =
+                        work.y.clone();
+            }
         }
 
-        CefPhaseModelAdapter cef =
-                (CefPhaseModelAdapter) gm;
-
-        if (phaseWork == null
-                || phaseWork.model != cef) {
-
-            phaseWork = new PhaseWork(cef);
-
-            phaseWork.y =
-                    cef.getInitialInternalVars(
-                            targetComposition());
-
-        } else {
-            // Keep the current constitution.
-            phaseWork.y =
-                    phaseWork.y.clone();
-        }
-
-        phaseWork.G =
-                cef.sundmanG(T, phaseWork.y);
-
-        phaseWork.gy =
-                cef.sundmanGradient(
-                        T, phaseWork.y);
-
-        phaseWork.gyy =
-                cef.sundmanHessian(
-                        T, phaseWork.y);
-
-        phaseWork.mA =
-                cef.sundmanM(
-                        phaseWork.y);
-
-        phaseWork.dMdY =
-                cef.sundmanMJacobian();
+        /*
+         * Temporary compatibility alias:
+         * phaseWork represents the first candidate phase.
+         */
+        phaseWork =
+                phaseWorks.get(0);
     }
 
     /**
@@ -1267,6 +1559,7 @@ public class EquilibriumSolverV2 {
      * (Sundman Eq. 43-44) without an intervening field read.
      */
     private double[][] buildSundmanPhaseMatrix(
+            PhaseWork work,
             CefPhaseModelAdapter phase) {
 
         int nip =
@@ -1281,7 +1574,7 @@ public class EquilibriumSolverV2 {
         // G_YY
         for (int i = 0; i < nip; i++) {
             for (int j = 0; j < nip; j++) {
-                e[i][j] = phaseWork.gyy[i][j];
+                e[i][j] = work.gyy[i][j];
             }
         }
 
@@ -1344,10 +1637,11 @@ public class EquilibriumSolverV2 {
      * This method only calculates the phase-response coefficients.
      */
     private PhaseResponse calculatePhaseResponse(
+            PhaseWork work,
             CefPhaseModelAdapter phase) {
 
         double[][] phaseMatrix =
-                buildSundmanPhaseMatrix(phase);
+                buildSundmanPhaseMatrix(work, phase);
 
         double[][] inverse =
                 invertMatrix(phaseMatrix);
@@ -1374,9 +1668,9 @@ public class EquilibriumSolverV2 {
                 new double[nc][nip];
 
         // ------------------------------------------------------------
-        // c_iG
+        // c_iG -- Sundman Eq. (44), positive sign:
         //
-        //     c_iG = - sum_j e_ij * dG/dY_j
+        //     c_iG = sum_j e_ij * dG/dY_j
         // ------------------------------------------------------------
 
         for (int i = 0; i < nip; i++) {
@@ -1387,10 +1681,10 @@ public class EquilibriumSolverV2 {
 
                 sum +=
                         inverse[i][j]
-                        * phaseWork.gy[j];
+                        * work.gy[j];
             }
 
-            cG[i] = -sum;
+            cG[i] = sum;
         }
 
         // ------------------------------------------------------------
@@ -1409,7 +1703,7 @@ public class EquilibriumSolverV2 {
 
                     sum +=
                             inverse[i][j]
-                            * phaseWork.dMdY[A][j];
+                            * work.dMdY[A][j];
                 }
 
                 cA[A][i] = sum;
@@ -1897,6 +2191,181 @@ public class EquilibriumSolverV2 {
     }
 
     /**
+     * Evaluate one PhaseWork object from its current constitution.
+     */
+    private void evaluatePhaseWork(
+            PhaseWork work) {
+
+        if (work == null
+                || work.model == null) {
+
+            throw new IllegalArgumentException(
+                    "PhaseWork must contain a CEF model.");
+        }
+
+        if (work.y == null) {
+
+            throw new IllegalStateException(
+                    "PhaseWork constitution is null.");
+        }
+
+        work.G =
+                work.model.sundmanG(
+                        T,
+                        work.y);
+
+        work.gy =
+                work.model.sundmanGradient(
+                        T,
+                        work.y);
+
+        work.gyy =
+                work.model.sundmanHessian(
+                        T,
+                        work.y);
+
+        work.mA =
+                work.model.sundmanM(
+                        work.y);
+
+        work.dMdY =
+                work.model.sundmanMJacobian();
+    }
+
+    /**
+     * Initial formula-unit amount for one phase under the present
+     * normalized-system convention.
+     *
+     * N_total = 1, hence
+     *
+     *     omega = 1 / sum_A M_A.
+     */
+    private double initialPhaseAmount(
+            PhaseWork work) {
+
+        double totalM =
+                0.0;
+
+        for (double value : work.mA) {
+
+            if (!Double.isFinite(value)) {
+
+                throw new IllegalStateException(
+                        "Non-finite initial M_A value: "
+                        + value);
+            }
+
+            totalM += value;
+        }
+
+        if (!(totalM > 0.0)) {
+
+            throw new IllegalStateException(
+                    "Invalid total initial phase M: "
+                    + totalM);
+        }
+
+        return 1.0 / totalM;
+    }
+
+    /**
+     * Calculate total element amounts and total Gibbs energy for the
+     * current stable-phase state.
+     *
+     *     N_A = sum_k omega_k M_A^k
+     *
+     *     G   = sum_k omega_k G^k
+     */
+    private StateTotals calculateStableStateTotals() {
+
+        if (stablePhases == null
+                || stablePhases.length == 0) {
+
+            throw new IllegalStateException(
+                    "No stable phases are available.");
+        }
+
+        if (phaseAmounts == null
+                || phaseAmounts.length != stablePhases.length) {
+
+            throw new IllegalStateException(
+                    "phaseAmounts/stablePhases dimension mismatch.");
+        }
+
+        final int nc =
+                targetAmounts.length;
+
+        StateTotals totals =
+                new StateTotals(nc);
+
+        for (int k = 0;
+             k < stablePhases.length;
+             k++) {
+
+            int p =
+                    stablePhases[k];
+
+            PhaseWork work =
+                    phaseWorks.get(p);
+
+            double omega =
+                    phaseAmounts[k];
+
+            if (!Double.isFinite(omega)
+                    || omega <= 0.0) {
+
+                throw new IllegalStateException(
+                        "Invalid phase amount for phase "
+                        + work.model.phaseName()
+                        + ": " + omega);
+            }
+
+            if (work.mA == null
+                    || work.mA.length != nc) {
+
+                throw new IllegalStateException(
+                        "Invalid M_A vector for phase "
+                        + work.model.phaseName());
+            }
+
+            if (!Double.isFinite(work.G)) {
+
+                throw new IllegalStateException(
+                        "Non-finite G for phase "
+                        + work.model.phaseName());
+            }
+
+            totals.totalG +=
+                    omega * work.G;
+
+            for (int A = 0;
+                 A < nc;
+                 A++) {
+
+                totals.amounts[A] +=
+                        omega * work.mA[A];
+            }
+        }
+
+        return totals;
+    }
+
+    private static final class StateTotals {
+
+        final double[] amounts;
+        double totalG;
+
+        StateTotals(int nc) {
+
+            amounts =
+                    new double[nc];
+
+            totalG =
+                    0.0;
+        }
+    }
+
+    /**
      * Performs the generic single-phase constrained Newton iteration.
      *
      * This is the first real equilibrium kernel of the new solver.
@@ -2254,329 +2723,147 @@ public class EquilibriumSolverV2 {
     }
 
     /**
-     * Evaluates the Sundman phase-response coefficients (Eq. 43-44) for
-     * the current phase and stores them in {@link PhaseWork#response}.
+     * Build Sundman phase responses for every candidate phase.
+     *
+     * Phase stability is deliberately not considered here.
      */
     private void buildPhaseResponses() {
 
-        if (phaseWork == null) {
+        if (phaseWorks == null
+                || phaseWorks.size() != phaseModels.size()) {
+
             throw new IllegalStateException(
-                    "Phase has not been evaluated.");
+                    "Phase-work state is not initialized.");
         }
 
-        phaseWork.response =
-                calculatePhaseResponse(
-                        phaseWork.model);
-    }
+        for (PhaseWork work : phaseWorks) {
 
-    /**
-     * Diagnostic for the sign convention of the Sundman phase response.
-     *
-     * The thermodynamic stationarity condition is
-     *
-     *     G_Y - J_M^T lambda - C^T gamma = 0.
-     *
-     * Consequently the linearized phase correction is driven by
-     *
-     *     -G_Y + J_M^T lambda.
-     *
-     * This diagnostic compares the two possible conventions:
-     *
-     *     dy_plus  =  +cG + cA^T lambda
-     *     dy_minus =  -cG + cA^T lambda
-     *
-     * against the direct Newton correction obtained from the complete
-     * constrained KKT system at the current phase state.
-     *
-     * No solver state is modified.
-     */
-    private void diagnosePhaseResponseSign() {
+            work.response =
+                    calculatePhaseResponse(
+                            work,
+                            work.model);
 
-        if (phaseWork == null) {
-            throw new IllegalStateException(
-                    "Phase has not been evaluated.");
-        }
+            int nc =
+                    targetAmounts.length;
 
-        if (phaseWork.response == null) {
-            throw new IllegalStateException(
-                    "Phase response has not been calculated.");
-        }
+            int nip =
+                    work.model
+                            .sundmanNumSiteVariables();
 
-        if (phaseWork.mu == null) {
-            throw new IllegalStateException(
-                    "Chemical potentials are not available.");
-        }
+            work.massResponse =
+                    new double[nc][nc];
 
-        final int nip =
-                phaseWork.model.sundmanNumSiteVariables();
-
-        final int nc =
-                targetAmounts.length;
-
-        final int ns =
-                phaseWork.model.sundmanNumSublattices();
-
-        // ------------------------------------------------------------
-        // 1. Candidate Sundman responses
-        // ------------------------------------------------------------
-
-        double[] dyPlus =
-                new double[nip];
-
-        double[] dyMinus =
-                new double[nip];
-
-        for (int i = 0; i < nip; i++) {
-
-            double plus =
-                    phaseWork.response.cG[i];
-
-            double minus =
-                    -phaseWork.response.cG[i];
+            work.massGResponse =
+                    new double[nc];
 
             for (int A = 0; A < nc; A++) {
 
-                double contribution =
-                        phaseWork.response.cA[A][i]
-                        * phaseWork.mu[A];
+                for (int i = 0; i < nip; i++) {
 
-                plus += contribution;
-                minus += contribution;
-            }
+                    double dM =
+                            work.dMdY[A][i];
 
-            dyPlus[i] = plus;
-            dyMinus[i] = minus;
-        }
+                    work.massGResponse[A] +=
+                            dM
+                            * work.response.cG[i];
 
-        // ------------------------------------------------------------
-        // 2. Direct KKT Newton correction
-        //
-        // Solve:
-        //
-        // [ GYY  -JM^T  -C^T ] [dy    ] =
-        // [ JM     0      0  ] [dmu   ]
-        // [ C      0      0  ] [dgamma]
-        //
-        // with residual:
-        //
-        // [ GY - JM^T mu - C^T gamma ]
-        // [ M - targetM               ]
-        // [ C(Y)                      ]
-        //
-        // The negative sign in front of GY comes from Newton's method.
-        // ------------------------------------------------------------
+                    for (int B = 0; B < nc; B++) {
 
-        double[] targetM =
-                initializeSinglePhaseTargetM(
-                        phaseWork.model,
-                        targetComposition());
-
-        int n =
-                nip + nc + ns;
-
-        double[][] A =
-                new double[n][n];
-
-        double[] rhs =
-                new double[n];
-
-        // GYY
-        for (int i = 0; i < nip; i++) {
-            for (int j = 0; j < nip; j++) {
-                A[i][j] =
-                        phaseWork.gyy[i][j];
+                        work.massResponse[A][B] +=
+                                dM
+                                * work.response.cA[B][i];
+                    }
+                }
             }
         }
 
-        // -JM^T / -JM
-        for (int i = 0; i < nip; i++) {
-
-            for (int Aidx = 0;
-                 Aidx < nc;
-                 Aidx++) {
-
-                double v =
-                        phaseWork.dMdY[Aidx][i];
-
-                A[i][nip + Aidx] = -v;
-                A[nip + Aidx][i] = -v;
-            }
-        }
-
-        // -C^T / -C
-        int[] offsets =
-                phaseWork.model.sundmanOffsets();
-
-        int[] nconst =
-                phaseWork.model
-                        .sundmanConstituentsPerSublattice();
-
-        for (int s = 0; s < ns; s++) {
-
-            int col =
-                    nip + nc + s;
-
-            for (int i = 0; i < nconst[s]; i++) {
-
-                int k =
-                        offsets[s] + i;
-
-                A[k][col] = -1.0;
-                A[col][k] = -1.0;
-            }
-        }
-
-        // Stationarity residual.
-        for (int i = 0; i < nip; i++) {
-
-            double r =
-                    phaseWork.gy[i];
-
-            for (int Aidx = 0;
-                 Aidx < nc;
-                 Aidx++) {
-
-                r -=
-                        phaseWork.dMdY[Aidx][i]
-                        * phaseWork.mu[Aidx];
-            }
-
-            int s =
-                    sublatticeOf(
-                            i,
-                            offsets,
-                            nconst);
-
-            r -=
-                    phaseWork.gamma[s];
-
-            rhs[i] = -r;
-        }
-
-        // M-target residual.
-        for (int Aidx = 0;
-             Aidx < nc;
-             Aidx++) {
-
-            rhs[nip + Aidx] =
-                    -(phaseWork.mA[Aidx]
-                            - targetM[Aidx]);
-        }
-
-        // Sublattice normalization residual.
-        for (int s = 0; s < ns; s++) {
-
-            double sum = 0.0;
-
-            for (int i = 0; i < nconst[s]; i++) {
-
-                sum +=
-                        phaseWork.y[
-                                offsets[s] + i];
-            }
-
-            rhs[nip + nc + s] =
-                    -(sum - 1.0);
-        }
-
-        double[] direct =
-                solveLinearSystem(A, rhs);
-
-        double[] dyDirect =
-                Arrays.copyOfRange(
-                        direct,
-                        0,
-                        nip);
-
-        // ------------------------------------------------------------
-        // 3. Compare
-        // ------------------------------------------------------------
-
-        double errPlus =
-                vectorDifferenceNorm(
-                        dyPlus,
-                        dyDirect);
-
-        double errMinus =
-                vectorDifferenceNorm(
-                        dyMinus,
-                        dyDirect);
-
-        System.out.println();
-        System.out.println(
-                "Sundman phase-response sign diagnostic");
-        System.out.println(
-                "--------------------------------------");
-
-        System.out.println(
-                "mu = "
-                + Arrays.toString(
-                        phaseWork.mu));
-
-        System.out.println(
-                "cG = "
-                + Arrays.toString(
-                        phaseWork.response.cG));
-
-        System.out.println(
-                "dy(+cG + cA*mu) = "
-                + Arrays.toString(dyPlus));
-
-        System.out.println(
-                "dy(-cG + cA*mu) = "
-                + Arrays.toString(dyMinus));
-
-        System.out.println(
-                "dy(direct KKT)   = "
-                + Arrays.toString(dyDirect));
-
-        System.out.printf(
-                "||dyPlus  - dyDirect||  = %.15e%n",
-                errPlus);
-
-        System.out.printf(
-                "||dyMinus - dyDirect||  = %.15e%n",
-                errMinus);
-
-        if (errMinus < errPlus) {
-
-            System.out.println();
-            System.out.println(
-                    "RESULT: -cG + cA*mu matches the direct "
-                    + "Newton correction better.");
-
-        } else {
-
-            System.out.println();
-            System.out.println(
-                    "RESULT: +cG + cA*mu matches the direct "
-                    + "Newton correction better.");
+        /*
+         * Restore phase 0 alias.
+         */
+        if (!phaseWorks.isEmpty()) {
+            phaseWork =
+                    phaseWorks.get(0);
         }
     }
 
     /**
-     * Euclidean norm of a-b.
+     * Verify the indexed phase state and response data.
      */
-    private static double vectorDifferenceNorm(
-            double[] a,
-            double[] b) {
+    private void validatePhaseIndexedState() {
 
-        if (a.length != b.length) {
-            throw new IllegalArgumentException(
-                    "Vector-length mismatch.");
+        if (phaseWorks == null) {
+
+            throw new IllegalStateException(
+                    "phaseWorks is null.");
         }
 
-        double sum = 0.0;
+        System.out.println();
+        System.out.println(
+                "Phase-indexed state");
+        System.out.println(
+                "------------------");
 
-        for (int i = 0; i < a.length; i++) {
+        for (int p = 0;
+             p < phaseWorks.size();
+             p++) {
 
-            double d =
-                    a[i] - b[i];
+            PhaseWork work =
+                    phaseWorks.get(p);
 
-            sum += d * d;
+            if (work.y == null
+                    || work.mA == null
+                    || work.response == null) {
+
+                throw new IllegalStateException(
+                        "Incomplete PhaseWork at index "
+                        + p);
+            }
+
+            double totalM =
+                    0.0;
+
+            for (double value :
+                    work.mA) {
+
+                totalM += value;
+            }
+
+            System.out.printf(
+                    "phase %d: %s%n",
+                    p,
+                    phaseModels.get(p).phaseName());
+
+            System.out.printf(
+                    "  G      = %.15f%n",
+                    work.G);
+
+            System.out.printf(
+                    "  M      = %s%n",
+                    Arrays.toString(work.mA));
+
+            System.out.printf(
+                    "  sum(M) = %.15f%n",
+                    totalM);
+
+            System.out.printf(
+                    "  Y      = %s%n",
+                    Arrays.toString(work.y));
+
+            System.out.printf(
+                    "  cG norm = %.15e%n",
+                    vectorNorm(work.response.cG));
+
+            if (work.response.cA.length
+                    != targetAmounts.length) {
+
+                throw new IllegalStateException(
+                        "Wrong cA dimension at phase "
+                        + p);
+            }
         }
 
-        return Math.sqrt(sum);
+        System.out.println(
+                "Phase-indexed state validation: PASS");
     }
 
     /**
@@ -2651,226 +2938,393 @@ public class EquilibriumSolverV2 {
     }
 
     /**
-     * Build the Sundman global equilibrium matrix for the current stable
-     * phase set.
+     * Build the generic multiphase Sundman global equilibrium matrix.
      *
-     * Current implementation increment:
-     *     one stable CEF phase only
+     * Current thermodynamic scope:
+     *
      *     fixed T
      *     fixed P
      *     closed system
      *
-     * For one phase, the unknowns are:
+     * Stable phases are indexed through:
      *
-     *     mu_1 ... mu_nc, DeltaOmega
+     *     stablePhases[k]  -> candidate phase index
+     *     phaseWorks[p]    -> thermodynamic data for candidate p
+     *     phaseAmounts[k]  -> omega of stable phase k
      *
-     * The matrix is the generalization of Sundman Eq. (58):
+     * Unknown vector:
      *
-     *             | M_1 ... M_nc | 0 |
-     *             | alpha R_11 ...  | M_1 |
-     *             |       ...       | ... |
-     *             | alpha R_nc1 ... | M_nc|
+     *     z =
+     *     [ lambda_1 ... lambda_nc
+     *       DeltaOmega_1 ... DeltaOmega_np ]
      *
-     * where
+     * where:
      *
-     *     R_AB = sum_i (dM_A/dY_i) c_iB
+     *     lambda_A       = new element chemical potentials
+     *     DeltaOmega_k   = correction to stable phase k amount
      *
-     * and
+     * For every stable phase alpha:
      *
-     *     q_A = sum_i (dM_A/dY_i) c_iG.
+     *     G_M^alpha = sum_A M_A^alpha * lambda_A
      *
-     * The equations are:
+     * For every element A:
      *
-     *     sum_A M_A mu_A = G_M
+     *     sum_alpha omega_alpha
+     *         sum_B R_AB^alpha * lambda_B
      *
-     * and
+     *     + sum_alpha M_A^alpha * DeltaOmega_alpha
      *
-     *     alpha sum_B R_AB mu_B + M_A DeltaOmega
-     *         = alpha q_A
+     *     = -sum_alpha omega_alpha * q_A^alpha
      *
-     * for each element A.
+     * with
      *
-     * This is the first global Sundman matrix only.  Phase addition/removal
-     * and multiple stable phases are intentionally not included yet.
+     *     R_AB^alpha =
+     *         sum_i (dM_A/dY_i) c_iB
+     *
+     *     q_A^alpha =
+     *         sum_i (dM_A/dY_i) c_iG
+     *
+     * This is the fixed-T/P multiphase form corresponding to
+     * Sundman's Eq. (59).
      */
     private void buildEquilibriumMatrix() {
 
-        if (phaseWork == null) {
+        if (phaseWorks == null
+                || phaseWorks.isEmpty()) {
+
             throw new IllegalStateException(
-                    "Phase state has not been initialized.");
+                    "Phase-indexed state has not been initialized.");
         }
 
         if (stablePhases == null
-                || stablePhases.length != 1
-                || stablePhases[0] != 0) {
+                || stablePhases.length == 0) {
 
-            throw new UnsupportedOperationException(
-                    "First global Sundman implementation supports "
-                    + "one stable phase only.");
+            throw new IllegalStateException(
+                    "No stable phases are available.");
         }
 
-        if (phaseWork.response == null) {
+        if (phaseAmounts == null
+                || phaseAmounts.length != stablePhases.length) {
+
             throw new IllegalStateException(
-                    "Phase-response coefficients have not been built.");
+                    "phaseAmounts/stablePhases dimension mismatch: "
+                    + "amounts="
+                    + (phaseAmounts == null
+                            ? -1
+                            : phaseAmounts.length)
+                    + ", stablePhases="
+                    + stablePhases.length);
         }
 
         final int nc =
                 targetAmounts.length;
 
-        final int nUnknown =
-                nc + 1;       // nc chemical potentials + DeltaOmega
-
-        final double omega =
-                phaseAmounts[0];
-
-        if (!Double.isFinite(omega)
-                || omega <= 0.0) {
-
-            throw new IllegalStateException(
-                    "Invalid stable-phase amount: " + omega);
-        }
+        final int np =
+                stablePhases.length;
 
         /*
-         * ------------------------------------------------------------
-         * Mass-response terms
+         * Number of global unknowns:
          *
-         *     R_AB =
-         *         sum_i dM_A/dY_i * c_iB
-         *
-         *     q_A =
-         *         sum_i dM_A/dY_i * c_iG
-         * ------------------------------------------------------------
+         *     nc chemical potentials
+         *     np phase-amount corrections
          */
-        double[][] R =
-                new double[nc][nc];
+        final int n =
+                nc + np;
 
-        double[] q =
-                new double[nc];
+        double[][] A =
+                new double[n][n];
 
-        final int nip =
-                phaseWork.model
-                        .sundmanNumSiteVariables();
+        double[] b =
+                new double[n];
 
-        for (int A = 0; A < nc; A++) {
+        // ------------------------------------------------------------
+        // Validate stable-phase mapping and gather phase data.
+        // ------------------------------------------------------------
 
-            for (int i = 0; i < nip; i++) {
+        for (int k = 0; k < np; k++) {
 
-                double dMAdYi =
-                        phaseWork.dMdY[A][i];
+            int phaseIndex =
+                    stablePhases[k];
 
-                q[A] +=
-                        dMAdYi
-                        * phaseWork.response.cG[i];
+            if (phaseIndex < 0
+                    || phaseIndex >= phaseWorks.size()) {
 
-                for (int B = 0; B < nc; B++) {
+                throw new IllegalStateException(
+                        "Invalid stable phase index "
+                        + phaseIndex);
+            }
 
-                    R[A][B] +=
-                            dMAdYi
-                            * phaseWork.response.cA[B][i];
-                }
+            PhaseWork work =
+                    phaseWorks.get(phaseIndex);
+
+            if (work == null
+                    || work.model == null) {
+
+                throw new IllegalStateException(
+                        "Missing PhaseWork for stable phase "
+                        + phaseIndex);
+            }
+
+            if (work.response == null) {
+
+                throw new IllegalStateException(
+                        "Missing Sundman response for stable phase "
+                        + phaseIndex
+                        + " ("
+                        + work.model.phaseName()
+                        + ").");
+            }
+
+            if (work.mA == null
+                    || work.mA.length != nc) {
+
+                throw new IllegalStateException(
+                        "M_A dimension mismatch for stable phase "
+                        + work.model.phaseName()
+                        + ": expected "
+                        + nc
+                        + ", got "
+                        + (work.mA == null
+                                ? -1
+                                : work.mA.length));
+            }
+
+            double omega =
+                    phaseAmounts[k];
+
+            if (!Double.isFinite(omega)
+                    || omega <= 0.0) {
+
+                throw new IllegalStateException(
+                        "Invalid amount for stable phase "
+                        + work.model.phaseName()
+                        + ": "
+                        + omega);
             }
         }
 
-        /*
-         * ------------------------------------------------------------
-         * Allocate global system
-         *
-         * row 0       : phase equilibrium
-         * rows 1..nc  : element mass balances
-         *
-         * columns 0..nc-1 : mu_A
-         * column nc       : DeltaOmega
-         * ------------------------------------------------------------
-         */
-        double[][] A =
-                new double[nUnknown][nUnknown];
+        // ============================================================
+        // PHASE-EQUILIBRIUM ROWS
+        //
+        // Row k:
+        //
+        //     sum_A M_A^alpha lambda_A = G_M^alpha
+        //
+        // Columns nc...nc+np-1 are zero.
+        // ============================================================
 
-        double[] b =
-                new double[nUnknown];
+        for (int k = 0; k < np; k++) {
 
-        /*
-         * ------------------------------------------------------------
-         * Row 0: stable-phase Gibbs equilibrium
-         *
-         *     G_M = sum_A M_A mu_A
-         *
-         * Sundman Eq. (49), specialized to one phase.
-         * ------------------------------------------------------------
-         */
-        for (int Aidx = 0;
-             Aidx < nc;
-             Aidx++) {
+            int phaseIndex =
+                    stablePhases[k];
 
-            A[0][Aidx] =
-                    phaseWork.mA[Aidx];
+            PhaseWork work =
+                    phaseWorks.get(phaseIndex);
+
+            int row =
+                    k;
+
+            for (int Aidx = 0;
+                 Aidx < nc;
+                 Aidx++) {
+
+                A[row][Aidx] =
+                        work.mA[Aidx];
+            }
+
+            b[row] =
+                    work.G;
         }
 
-        /*
-         * There is no DeltaOmega term in the phase-equilibrium equation.
-         */
-        A[0][nc] = 0.0;
+        // ============================================================
+        // ELEMENT MASS-BALANCE RESPONSE ROWS
+        //
+        // Global element equation:
+        //
+        //   sum_alpha omega_alpha
+        //       sum_B R_AB^alpha lambda_B
+        //
+        //   + sum_alpha M_A^alpha DeltaOmega_alpha
+        //
+        //   = r_A - q_A
+        //
+        // where
+        //
+        //   r_A =
+        //       N_A(target)
+        //       - sum_alpha omega_alpha M_A^alpha
+        //
+        //   q_A =
+        //       sum_alpha omega_alpha q_A^alpha.
+        //
+        // For an exactly mass-balanced state r_A = 0 and
+        // the equation reduces to Sundman's Eq. (58)/(59).
+        // ============================================================
 
-        b[0] =
-                phaseWork.G;
-
-        /*
-         * ------------------------------------------------------------
-         * Rows 1..nc: element balance differential equations
-         *
-         *     omega * sum_B R_AB lambda_B
-         *       + M_A * DeltaOmega
-         *       = -omega * q_A
-         *
-         * This is Sundman's Eq. (57)/(58) for the present one-phase
-         * fixed-T/P case.
-         * ------------------------------------------------------------
-         */
         for (int Aidx = 0;
              Aidx < nc;
              Aidx++) {
 
             int row =
-                    Aidx + 1;
+                    np + Aidx;
 
-            /*
-             * Chemical-potential columns.
-             */
-            for (int B = 0;
-                 B < nc;
-                 B++) {
+            // --------------------------------------------------------
+            // lambda_B columns
+            // --------------------------------------------------------
 
-                A[row][B] =
-                        omega * R[Aidx][B];
+            for (int Bidx = 0;
+                 Bidx < nc;
+                 Bidx++) {
+
+                double value =
+                        0.0;
+
+                for (int k = 0;
+                     k < np;
+                     k++) {
+
+                    int phaseIndex =
+                            stablePhases[k];
+
+                    PhaseWork work =
+                            phaseWorks.get(
+                                    phaseIndex);
+
+                    double omega =
+                            phaseAmounts[k];
+
+                    value +=
+                            omega
+                            * work.massResponse[Aidx][Bidx];
+                }
+
+                A[row][Bidx] =
+                        value;
             }
 
-            /*
-             * Phase amount correction column.
-             */
-            A[row][nc] =
-                    phaseWork.mA[Aidx];
+            // --------------------------------------------------------
+            // DeltaOmega columns
+            //
+            // coefficient = M_A^alpha
+            // --------------------------------------------------------
 
-            /*
-             * Right-hand side from the closed-system mass balance:
-             *
-             *     omega * R_AB * lambda_B
-             *       + M_A * DeltaOmega
-             *       = -omega * q_A
-             */
+            for (int k = 0;
+                 k < np;
+                 k++) {
+
+                int phaseIndex =
+                        stablePhases[k];
+
+                PhaseWork work =
+                        phaseWorks.get(
+                                phaseIndex);
+
+                A[row][nc + k] =
+                        work.mA[Aidx];
+            }
+
+            // --------------------------------------------------------
+            // RHS
+            //
+            //     b_A = r_A - q_A
+            //
+            // where
+            //
+            //     r_A = N_A(target) - sum_alpha omega_alpha M_A^alpha
+            //     q_A = sum_alpha omega_alpha q_A^alpha
+            //
+            // For an exactly mass-balanced state r_A = 0, reducing to
+            // Sundman's b_A = -q_A.
+            // --------------------------------------------------------
+
+            double q =
+                    0.0;
+
+            double represented =
+                    0.0;
+
+            for (int k = 0;
+                 k < np;
+                 k++) {
+
+                int phaseIndex =
+                        stablePhases[k];
+
+                PhaseWork work =
+                        phaseWorks.get(
+                                phaseIndex);
+
+                double omega =
+                        phaseAmounts[k];
+
+                q +=
+                        omega
+                        * work.massGResponse[Aidx];
+
+                represented +=
+                        omega
+                        * work.mA[Aidx];
+            }
+
+            double massResidual =
+                    targetAmounts[Aidx]
+                    - represented;
+
             b[row] =
-                    -omega * q[Aidx];
+                    massResidual
+                    - q;
         }
 
-        /*
-         * Save for solveEquilibriumMatrix().
-         */
-        equilibriumMatrix = A;
-        equilibriumRhs = b;
+        equilibriumMatrix =
+                A;
+
+        equilibriumRhs =
+                b;
 
         /*
-         * Save the response terms in the PhaseWork object for diagnostics.
+         * ------------------------------------------------------------
+         * Diagnostics
+         * ------------------------------------------------------------
          */
-        phaseWork.massResponse = R;
-        phaseWork.massGResponse = q;
+        System.out.println();
+        System.out.println(
+                "Multiphase Sundman equilibrium matrix");
+        System.out.println(
+                "--------------------------------------");
+
+        System.out.println(
+                "Number of stable phases = "
+                + np);
+
+        System.out.println(
+                "Number of components    = "
+                + nc);
+
+        System.out.println(
+                "Matrix size             = "
+                + n + " x " + n);
+
+        for (int i = 0;
+             i < n;
+             i++) {
+
+            System.out.printf(
+                    "row %d : ",
+                    i);
+
+            for (int j = 0;
+                 j < n;
+                 j++) {
+
+                System.out.printf(
+                        "% .12e ",
+                        A[i][j]);
+            }
+
+            System.out.printf(
+                    " | % .12e%n",
+                    b[i]);
+        }
     }
 
     /**
@@ -2920,23 +3374,21 @@ public class EquilibriumSolverV2 {
     /**
      * Solve the current global Sundman equilibrium system.
      *
-     * For the present one-phase, fixed-T, fixed-P implementation the
-     * unknown vector is
+     * Unknown vector:
      *
-     *     [ lambda_1 ... lambda_nc | DeltaOmega ]
+     *     [ lambda_1 ... lambda_nc
+     *       DeltaOmega_1 ... DeltaOmega_np ]
      *
-     * where lambda_A are the NEW chemical potentials obtained from
-     * Sundman's equilibrium matrix (Eq. 58).
+     * where:
+     *
+     *     lambda_A      = newly calculated element chemical potentials
+     *     DeltaOmega_k  = phase-amount correction for stable phase k
      *
      * IMPORTANT:
-     *     lambda_A are NOT chemical-potential increments.
+     *     lambda_A are the new Sundman chemical potentials, not increments.
      *
-     * The phase-constitution correction of Eq. (43) uses these new
-     * lambda_A values directly:
-     *
-     *     DeltaY_i = c_iG + sum_A c_iA * lambda_A
-     *
-     * State variables are not modified in this method.
+     * The method is fully phase-indexed.  It does not modify the accepted
+     * thermodynamic state; that is done later by updateState().
      */
     private void solveEquilibriumMatrix() {
 
@@ -2947,25 +3399,44 @@ public class EquilibriumSolverV2 {
                     "Global equilibrium matrix has not been built.");
         }
 
+        if (stablePhases == null
+                || stablePhases.length == 0) {
+
+            throw new IllegalStateException(
+                    "No stable phases are available.");
+        }
+
         final int nc =
                 targetAmounts.length;
 
-        final int n =
-                equilibriumRhs.length;
+        final int np =
+                stablePhases.length;
 
-        if (n != nc + 1) {
+        final int n =
+                nc + np;
+
+        // ------------------------------------------------------------
+        // 1. Dimension checks
+        // ------------------------------------------------------------
+
+        if (equilibriumRhs.length != n) {
 
             throw new IllegalStateException(
-                    "Current one-phase global system must have "
-                    + (nc + 1)
-                    + " unknowns, but has "
-                    + n);
+                    "Global system RHS has length "
+                    + equilibriumRhs.length
+                    + ", expected "
+                    + n
+                    + " (nc=" + nc
+                    + ", np=" + np + ").");
         }
 
         if (equilibriumMatrix.length != n) {
 
             throw new IllegalStateException(
-                    "Global equilibrium matrix row dimension mismatch.");
+                    "Global equilibrium matrix has "
+                    + equilibriumMatrix.length
+                    + " rows, expected "
+                    + n + ".");
         }
 
         for (int i = 0; i < n; i++) {
@@ -2974,13 +3445,24 @@ public class EquilibriumSolverV2 {
                     || equilibriumMatrix[i].length != n) {
 
                 throw new IllegalStateException(
-                        "Global equilibrium matrix must be square.");
+                        "Global equilibrium matrix must be "
+                        + n + " x " + n
+                        + "; row " + i
+                        + " is invalid.");
             }
+        }
 
-            if (!Double.isFinite(equilibriumRhs[i])) {
+        // ------------------------------------------------------------
+        // 2. Finiteness check
+        // ------------------------------------------------------------
+
+        for (int i = 0; i < n; i++) {
+
+            if (!Double.isFinite(
+                    equilibriumRhs[i])) {
 
                 throw new IllegalStateException(
-                        "Non-finite RHS at row "
+                        "Non-finite equilibrium RHS at row "
                         + i + ": "
                         + equilibriumRhs[i]);
             }
@@ -2991,15 +3473,20 @@ public class EquilibriumSolverV2 {
                         equilibriumMatrix[i][j])) {
 
                     throw new IllegalStateException(
-                            "Non-finite matrix entry ["
+                            "Non-finite equilibrium matrix entry ["
                             + i + "][" + j + "]: "
                             + equilibriumMatrix[i][j]);
                 }
             }
         }
 
+        // ------------------------------------------------------------
+        // 3. Solve A*x = b
+        // ------------------------------------------------------------
+
         Matrix A =
-                new Matrix(equilibriumMatrix);
+                new Matrix(
+                        equilibriumMatrix);
 
         Matrix b =
                 new Matrix(
@@ -3010,17 +3497,14 @@ public class EquilibriumSolverV2 {
 
         try {
 
-            /*
-             * This is a square global Newton/Sundman system.
-             * Use the ordinary project matrix solver.
-             */
-            x = A.solve(b);
+            x =
+                    A.solve(b);
 
         } catch (RuntimeException ex) {
 
             throw new IllegalStateException(
                     "Failed to solve global Sundman "
-                    + "equilibrium matrix.",
+                    + "equilibrium system.",
                     ex);
         }
 
@@ -3032,10 +3516,17 @@ public class EquilibriumSolverV2 {
             throw new IllegalStateException(
                     "Unexpected global solution length: "
                     + solution.length
-                    + ", expected " + n);
+                    + ", expected "
+                    + n + ".");
         }
 
-        for (int i = 0; i < solution.length; i++) {
+        // ------------------------------------------------------------
+        // 4. Check solution
+        // ------------------------------------------------------------
+
+        for (int i = 0;
+             i < solution.length;
+             i++) {
 
             if (!Double.isFinite(solution[i])) {
 
@@ -3046,39 +3537,77 @@ public class EquilibriumSolverV2 {
             }
         }
 
-        /*
-         * ------------------------------------------------------------
-         * Partition the solution.
-         *
-         * solution[0 .. nc-1] = NEW chemical potentials lambda_A
-         * solution[nc]         = DeltaOmega
-         * ------------------------------------------------------------
-         */
+        // ------------------------------------------------------------
+        // 5. Partition solution
+        //
+        //     [ lambda_1 ... lambda_nc ]
+        //     [ DeltaOmega_1 ... DeltaOmega_np ]
+        // ------------------------------------------------------------
+
         newLambda =
                 Arrays.copyOfRange(
                         solution,
                         0,
                         nc);
 
+        /*
+         * IMPORTANT:
+         *
+         * deltaPhaseAmounts is indexed by STABLE-PHASE SLOT k,
+         * not by candidate-phase index.
+         *
+         * Therefore:
+         *
+         *     deltaPhaseAmounts[k]
+         *
+         * corresponds to
+         *
+         *     stablePhases[k].
+         */
         deltaPhaseAmounts =
-                new double[1];
-
-        deltaPhaseAmounts[0] =
-                solution[nc];
+                Arrays.copyOfRange(
+                        solution,
+                        nc,
+                        nc + np);
 
         /*
-         * Keep complete vector for diagnostics.
+         * Keep the complete solved vector for diagnostics.
          */
         equilibriumUnknowns =
                 solution.clone();
 
         /*
-         * ------------------------------------------------------------
-         * Verify A*x = b.
-         * ------------------------------------------------------------
+         * Keep the explicit phase-correction alias synchronized.
          */
+        phaseAmountCorrections =
+                deltaPhaseAmounts.clone();
+
+        // ------------------------------------------------------------
+        // 6. Verify A*x = b
+        // ------------------------------------------------------------
+
         double residual =
                 equilibriumLinearResidualNorm();
+
+        if (!Double.isFinite(residual)) {
+
+            throw new IllegalStateException(
+                    "Global linear-system residual is non-finite.");
+        }
+
+        final double LINEAR_TOL =
+                1.0e-8;
+
+        if (residual > LINEAR_TOL) {
+
+            throw new IllegalStateException(
+                    "Excessive global linear-system residual: "
+                    + residual);
+        }
+
+        // ------------------------------------------------------------
+        // 7. Diagnostics
+        // ------------------------------------------------------------
 
         System.out.println();
         System.out.println(
@@ -3090,9 +3619,9 @@ public class EquilibriumSolverV2 {
                 "newLambda = "
                 + Arrays.toString(newLambda));
 
-        System.out.printf(
-                "DeltaOmega = %.15e%n",
-                deltaPhaseAmounts[0]);
+        System.out.println(
+                "DeltaOmega = "
+                + Arrays.toString(deltaPhaseAmounts));
 
         System.out.println(
                 "Solution = "
@@ -3102,11 +3631,25 @@ public class EquilibriumSolverV2 {
                 "Linear-system residual = %.15e%n",
                 residual);
 
-        if (residual > 1.0e-8) {
+        System.out.println();
+        System.out.println(
+                "Phase amount corrections");
 
-            throw new IllegalStateException(
-                    "Excessive global linear-system residual: "
-                    + residual);
+        for (int k = 0;
+             k < np;
+             k++) {
+
+            int phaseIndex =
+                    stablePhases[k];
+
+            PhaseWork work =
+                    phaseWorks.get(phaseIndex);
+
+            System.out.printf(
+                    "  phase %d (%s): DeltaOmega = %.15e%n",
+                    phaseIndex,
+                    work.model.phaseName(),
+                    deltaPhaseAmounts[k]);
         }
     }
 
@@ -3150,48 +3693,49 @@ public class EquilibriumSolverV2 {
     }
 
     /**
-     * Calculate the internal-constitution correction from Sundman's
-     * phase-response equation (Eq. 43).
+     * Calculate Sundman internal-variable corrections for every stable phase.
      *
-     * At fixed T and P:
+     * At fixed T and P, Sundman's Eq. (43) gives
      *
-     *     DeltaY_i =
-     *          c_iG
-     *          + sum_A c_iA * lambda_A
+     *     DeltaY_i^alpha =
+     *          c_iG^alpha
+     *          + sum_A c_iA^alpha * lambda_A
      *
-     * where lambda_A are the NEW chemical potentials obtained from the
-     * global equilibrium matrix.
+     * where lambda_A are the NEW element chemical potentials obtained from
+     * the global equilibrium matrix.
      *
-     * IMPORTANT:
-     *     lambda_A are not Delta(mu_A).
+     * Stable-phase indexing:
      *
-     * The correction is calculated only; the accepted phase state is
-     * not modified here.
+     *     k                  = stable-phase slot
+     *     stablePhases[k]    = candidate-phase index
+     *     phaseWorks[p]      = PhaseWork for candidate p
+     *     deltaPhaseInternalVars[k] = DeltaY for stable phase k
+     *
+     * This method calculates corrections only. It does not modify the
+     * accepted phase state; updateState() will do that later.
      */
     private void calculateInternalCorrections() {
 
-        if (phaseWork == null) {
+        if (phaseWorks == null
+                || phaseWorks.isEmpty()) {
 
             throw new IllegalStateException(
-                    "Phase state has not been initialized.");
+                    "Phase-indexed state has not been initialized.");
         }
 
-        if (phaseWork.response == null) {
+        if (stablePhases == null
+                || stablePhases.length == 0) {
 
             throw new IllegalStateException(
-                    "Phase response has not been calculated.");
+                    "No stable phases are available.");
         }
 
         if (newLambda == null) {
 
             throw new IllegalStateException(
                     "New chemical potentials have not been "
-                    + "obtained from the global equilibrium system.");
+                            + "obtained from the global equilibrium matrix.");
         }
-
-        final int nip =
-                phaseWork.model
-                        .sundmanNumSiteVariables();
 
         final int nc =
                 targetAmounts.length;
@@ -3199,112 +3743,243 @@ public class EquilibriumSolverV2 {
         if (newLambda.length != nc) {
 
             throw new IllegalStateException(
-                    "Chemical-potential vector length mismatch.");
+                    "Chemical-potential vector length mismatch: "
+                            + "newLambda="
+                            + newLambda.length
+                            + ", expected="
+                            + nc);
         }
 
-        deltaPhaseInternalVars =
-                new double[phaseModels.size()][];
-
-        double[] deltaY =
-                new double[nip];
+        final int np =
+                stablePhases.length;
 
         /*
-         * Sundman Eq. (43):
+         * One DeltaY vector per stable-phase slot.
          *
-         *     DeltaY_i =
-         *          c_iG
-         *          + sum_A c_iA * lambda_A
+         * This is intentionally indexed by stable-phase slot rather than
+         * candidate-phase index. The mapping is:
+         *
+         *     stablePhases[k] -> phaseWorks[p]
+         *     deltaPhaseInternalVars[k] -> correction for that phase
          */
-        for (int i = 0; i < nip; i++) {
+        deltaPhaseInternalVars =
+                new double[np][];
 
-            double value =
-                    phaseWork.response.cG[i];
-
-            for (int A = 0; A < nc; A++) {
-
-                value +=
-                        phaseWork.response.cA[A][i]
-                        * newLambda[A];
-            }
-
-            if (!Double.isFinite(value)) {
-
-                throw new IllegalStateException(
-                        "Non-finite DeltaY[" + i + "]: "
-                        + value);
-            }
-
-            deltaY[i] = value;
-        }
-
-        deltaPhaseInternalVars[0] =
-                deltaY;
-
-        /*
-         * ------------------------------------------------------------
-         * Diagnostics
-         * ------------------------------------------------------------
-         */
         System.out.println();
         System.out.println(
-                "Internal-variable correction");
+                "Multiphase internal-variable corrections");
         System.out.println(
-                "----------------------------");
+                "---------------------------------------");
 
-        System.out.println(
-                "newLambda = "
-                + Arrays.toString(newLambda));
+        for (int k = 0;
+             k < np;
+             k++) {
 
-        System.out.println(
-                "cG = "
-                + Arrays.toString(
-                        phaseWork.response.cG));
+            int phaseIndex =
+                    stablePhases[k];
 
-        System.out.println(
-                "DeltaY = "
-                + Arrays.toString(deltaY));
+            if (phaseIndex < 0
+                    || phaseIndex >= phaseWorks.size()) {
 
-        System.out.printf(
-                "||DeltaY|| = %.15e%n",
-                vectorNorm(deltaY));
+                throw new IllegalStateException(
+                        "Invalid stable phase index "
+                                + phaseIndex
+                                + " at stable slot "
+                                + k);
+            }
 
-        double[] predictedY =
-                new double[nip];
+            PhaseWork work =
+                    phaseWorks.get(phaseIndex);
 
-        for (int i = 0; i < nip; i++) {
+            if (work == null
+                    || work.model == null) {
 
-            predictedY[i] =
-                    phaseWork.y[i]
-                    + deltaY[i];
+                throw new IllegalStateException(
+                        "Missing PhaseWork for stable phase "
+                                + phaseIndex);
+            }
+
+            if (work.response == null) {
+
+                throw new IllegalStateException(
+                        "Missing Sundman phase response for "
+                                + work.model.phaseName());
+            }
+
+            final int nip =
+                    work.model
+                            .sundmanNumSiteVariables();
+
+            if (work.response.cG == null
+                    || work.response.cG.length != nip) {
+
+                throw new IllegalStateException(
+                        "cG dimension mismatch for phase "
+                                + work.model.phaseName());
+            }
+
+            if (work.response.cA == null
+                    || work.response.cA.length != nc) {
+
+                throw new IllegalStateException(
+                        "cA element dimension mismatch for phase "
+                                + work.model.phaseName());
+            }
+
+            double[] deltaY =
+                    new double[nip];
+
+            // ------------------------------------------------------------
+            // Sundman Eq. (43):
+            //
+            //     DeltaY_i =
+            //          c_iG
+            //          + sum_A c_iA * lambda_A
+            // ------------------------------------------------------------
+
+            for (int i = 0;
+                 i < nip;
+                 i++) {
+
+                double value =
+                        work.response.cG[i];
+
+                for (int A = 0;
+                     A < nc;
+                     A++) {
+
+                    if (work.response.cA[A] == null
+                            || work.response.cA[A].length != nip) {
+
+                        throw new IllegalStateException(
+                                "cA["
+                                        + A
+                                        + "] dimension mismatch for phase "
+                                        + work.model.phaseName());
+                    }
+
+                    value +=
+                            work.response.cA[A][i]
+                            * newLambda[A];
+                }
+
+                if (!Double.isFinite(value)) {
+
+                    throw new IllegalStateException(
+                            "Non-finite DeltaY["
+                                    + i
+                                    + "] for phase "
+                                    + work.model.phaseName()
+                                    + ": "
+                                    + value);
+                }
+
+                deltaY[i] =
+                        value;
+            }
+
+            /*
+             * Store by stable-phase slot.
+             */
+            deltaPhaseInternalVars[k] =
+                    deltaY;
+
+            // ------------------------------------------------------------
+            // Diagnostics
+            // ------------------------------------------------------------
+
+            double norm =
+                    vectorNorm(deltaY);
+
+            double[] predictedY =
+                    new double[nip];
+
+            for (int i = 0;
+                 i < nip;
+                 i++) {
+
+                predictedY[i] =
+                        work.y[i]
+                        + deltaY[i];
+            }
+
+            boolean physicallyValid =
+                    work.model.isValid(
+                            predictedY);
+
+            System.out.println();
+            System.out.println(
+                    "Stable phase slot = "
+                            + k);
+
+            System.out.println(
+                    "Candidate phase   = "
+                            + phaseIndex);
+
+            System.out.println(
+                    "Phase             = "
+                            + work.model.phaseName());
+
+            System.out.println(
+                    "newLambda         = "
+                            + Arrays.toString(newLambda));
+
+            System.out.println(
+                    "cG                = "
+                            + Arrays.toString(
+                                    work.response.cG));
+
+            System.out.println(
+                    "DeltaY            = "
+                            + Arrays.toString(deltaY));
+
+            System.out.printf(
+                    "||DeltaY||        = %.15e%n",
+                    norm);
+
+            System.out.println(
+                    "Predicted Y       = "
+                            + Arrays.toString(predictedY));
+
+            System.out.println(
+                    "Predicted Y physically valid = "
+                            + physicallyValid);
         }
-
-        boolean valid =
-                phaseWork.model.isValid(
-                        predictedY);
-
-        System.out.println(
-                "Predicted Y = "
-                + Arrays.toString(predictedY));
-
-        System.out.println(
-                "Predicted Y physically valid = "
-                + valid);
     }
 
     /**
-     * Returns the norm of the current predicted CEF constitution change.
+     * Maximum norm of the internal-variable corrections over all
+     * currently stable phases.
      */
     private double internalCorrectionNorm() {
 
         if (deltaPhaseInternalVars == null
-                || deltaPhaseInternalVars.length == 0
-                || deltaPhaseInternalVars[0] == null) {
+                || stablePhases == null
+                || deltaPhaseInternalVars.length
+                        != stablePhases.length) {
 
             return Double.POSITIVE_INFINITY;
         }
 
-        return vectorNorm(
-                deltaPhaseInternalVars[0]);
+        double maximum =
+                0.0;
+
+        for (int k = 0;
+             k < stablePhases.length;
+             k++) {
+
+            if (deltaPhaseInternalVars[k] == null) {
+                return Double.POSITIVE_INFINITY;
+            }
+
+            maximum =
+                    Math.max(
+                            maximum,
+                            vectorNorm(
+                                    deltaPhaseInternalVars[k]));
+        }
+
+        return maximum;
     }
 
     /**
@@ -3400,287 +4075,1043 @@ public class EquilibriumSolverV2 {
     }
 
     /**
-     * Accept the current Sundman correction with backtracking.
+     * Recompute the sublattice Lagrange multipliers for one PhaseWork.
      *
-     * For the present implementation:
-     *   - one stable CEF phase
-     *   - fixed T and P
-     *   - closed system
+     * Stationarity:
      *
-     * The undamped correction is:
+     *     G_Y - J_M^T mu - C^T gamma = 0
      *
-     *     DeltaY_i =
-     *         c_iG + sum_A c_iA * lambda_A
+     * For each sublattice, gamma_s is obtained from the common value of
      *
-     * and
+     *     G_i - sum_A (dM_A/dY_i) mu_A
      *
-     *     DeltaOmega
-     *
-     * The full Newton/extrapolation step may leave the physical
-     * constitution domain when the current state is far from equilibrium.
-     * We therefore reduce the common step length until the trial
-     * constitution is physically valid and the constrained Gibbs energy
-     * does not increase.
-     *
-     * The accepted update is:
-     *
-     *     Y       <- Y       + alpha * DeltaY
-     *     Omega   <- Omega   + alpha * DeltaOmega
-     *     lambda  <- lambda  + alpha * (newLambda - lambda)
-     *
-     * This is a numerical globalization device; it does not alter the
-     * Sundman thermodynamic equations.
+     * over its constituents.
      */
-    private void updateState() {
+    private void recomputeSublatticeMultipliers(
+            PhaseWork work) {
 
-        if (phaseWork == null) {
-            throw new IllegalStateException(
-                    "Phase state has not been initialized.");
+        if (work == null
+                || work.model == null) {
+
+            throw new IllegalArgumentException(
+                    "PhaseWork must not be null.");
         }
 
-        if (deltaPhaseInternalVars == null
-                || deltaPhaseInternalVars.length == 0
-                || deltaPhaseInternalVars[0] == null) {
+        if (work.gy == null
+                || work.dMdY == null
+                || work.mu == null) {
 
             throw new IllegalStateException(
-                    "Internal-variable correction has not been calculated.");
+                    "Incomplete phase state for gamma calculation.");
         }
 
-        if (newLambda == null) {
+        int nip =
+                work.model
+                        .sundmanNumSiteVariables();
+
+        int nc =
+                targetAmounts.length;
+
+        int ns =
+                work.model
+                        .sundmanNumSublattices();
+
+        int[] offsets =
+                work.model
+                        .sundmanOffsets();
+
+        int[] nconst =
+                work.model
+                        .sundmanConstituentsPerSublattice();
+
+        if (work.gy.length != nip) {
+
             throw new IllegalStateException(
-                    "New chemical potentials have not been calculated.");
+                    "gy dimension mismatch for phase "
+                    + work.model.phaseName());
         }
 
-        if (deltaPhaseAmounts == null
-                || deltaPhaseAmounts.length != 1) {
+        if (work.mu.length != nc) {
 
             throw new IllegalStateException(
-                    "Single-phase amount correction is missing.");
+                    "mu dimension mismatch for phase "
+                    + work.model.phaseName());
         }
 
-        final double[] oldY =
-                phaseWork.y.clone();
+        double[] gamma =
+                new double[ns];
 
-        final double oldG =
-                phaseWork.G;
+        for (int s = 0;
+             s < ns;
+             s++) {
 
-        final double oldOmega =
-                phaseAmounts[0];
+            double sum =
+                    0.0;
 
-        final double[] oldMu =
-                (phaseWork.mu != null)
-                        ? phaseWork.mu.clone()
-                        : new double[newLambda.length];
+            int count =
+                    0;
 
-        final double[] deltaY =
-                deltaPhaseInternalVars[0];
+            int begin =
+                    offsets[s];
 
-        final double deltaOmega =
-                deltaPhaseAmounts[0];
+            int end =
+                    begin + nconst[s];
 
-        /*
-         * We use the new lambda from the global Sundman matrix as the
-         * target value. With alpha=1 this is the full paper update.
-         * For a damped step we interpolate toward it.
-         */
-        double alpha = 1.0;
-
-        boolean accepted = false;
-
-        final int MAX_BACKTRACK =
-                30;
-
-        double[] trialY =
-                new double[oldY.length];
-
-        double[] trialMu =
-                new double[oldMu.length];
-
-        double trialOmega =
-                oldOmega;
-
-        double trialG =
-                Double.NaN;
-
-        for (int attempt = 0;
-             attempt < MAX_BACKTRACK;
-             attempt++) {
-
-            // ------------------------------------------------------------
-            // 1. Trial constitution
-            // ------------------------------------------------------------
-
-            for (int i = 0;
-                 i < oldY.length;
+            for (int i = begin;
+                 i < end;
                  i++) {
 
-                trialY[i] =
-                        oldY[i]
-                        + alpha * deltaY[i];
+                double value =
+                        work.gy[i];
+
+                for (int A = 0;
+                     A < nc;
+                     A++) {
+
+                    value -=
+                            work.dMdY[A][i]
+                            * work.mu[A];
+                }
+
+                sum +=
+                        value;
+
+                count++;
             }
 
-            /*
-             * Never evaluate an invalid CEF constitution.
-             */
-            if (!phaseWork.model.isValid(trialY)) {
+            if (count <= 0) {
 
-                alpha *= 0.5;
-                continue;
+                throw new IllegalStateException(
+                        "Empty sublattice "
+                        + s
+                        + " for phase "
+                        + work.model.phaseName());
             }
 
-            // ------------------------------------------------------------
-            // 2. Trial phase amount
-            // ------------------------------------------------------------
-
-            trialOmega =
-                    oldOmega
-                    + alpha * deltaOmega;
-
-            if (!Double.isFinite(trialOmega)
-                    || trialOmega <= 0.0) {
-
-                alpha *= 0.5;
-                continue;
-            }
-
-            // ------------------------------------------------------------
-            // 3. Trial chemical potentials
-            // ------------------------------------------------------------
-
-            for (int A = 0;
-                 A < oldMu.length;
-                 A++) {
-
-                trialMu[A] =
-                        oldMu[A]
-                        + alpha
-                        * (newLambda[A] - oldMu[A]);
-            }
-
-            // ------------------------------------------------------------
-            // 4. Trial Gibbs energy
-            //
-            // The present problem is a one-phase closed-system problem
-            // with fixed element amounts, so comparing the constrained
-            // phase Gibbs energy provides a useful globalization test.
-            // ------------------------------------------------------------
-
-            trialG =
-                    phaseWork.model.sundmanG(
-                            T,
-                            trialY);
-
-            if (!Double.isFinite(trialG)) {
-
-                alpha *= 0.5;
-                continue;
-            }
-
-            /*
-             * Accept a step that lowers G.
-             *
-             * If we are already at numerical equilibrium, also allow an
-             * essentially neutral step.
-             */
-            final double ENERGY_TOL =
-                    1.0e-10
-                    * Math.max(
-                            1.0,
-                            Math.abs(oldG));
-
-            if (trialG <= oldG + ENERGY_TOL) {
-
-                accepted = true;
-                break;
-            }
-
-            alpha *= 0.5;
+            gamma[s] =
+                    sum / count;
         }
 
-        if (!accepted) {
-
-            throw new IllegalStateException(
-                    "Could not find a physically valid, "
-                    + "non-increasing Gibbs-energy step. "
-                    + "Full DeltaY="
-                    + Arrays.toString(deltaY));
-        }
-
-        // ------------------------------------------------------------
-        // 5. Commit accepted update
-        // ------------------------------------------------------------
-
-        phaseWork.y =
-                trialY.clone();
-
-        phaseWork.G =
-                trialG;
-
-        phaseAmounts[0] =
-                trialOmega;
-
-        phaseWork.mu =
-                trialMu.clone();
-
-        mu =
-                trialMu.clone();
-
-        /*
-         * Recompute gamma for the newly accepted mu and Y.
-         */
-        recomputeSublatticeMultipliers();
-
-        phaseInternalVars[0] =
-                phaseWork.y.clone();
-
-        acceptedStepScale =
-                alpha;
-
-        /*
-         * Record the accepted step, not the undamped step.
-         */
-        lastStep =
-                alpha * vectorNorm(deltaY);
-
-        System.out.println();
-        System.out.println(
-                "Accepted state update");
-        System.out.println(
-                "---------------------");
-
-        System.out.printf(
-                "Step scale   = %.15e%n",
-                alpha);
-
-        System.out.printf(
-                "DeltaOmega   = %.15e%n",
-                alpha * deltaOmega);
-
-        System.out.printf(
-                "G(old)       = %.15f%n",
-                oldG);
-
-        System.out.printf(
-                "G(new)       = %.15f%n",
-                trialG);
-
-        System.out.printf(
-                "Delta G      = %.15e%n",
-                trialG - oldG);
-
-        System.out.println(
-                "Y(new)       = "
-                + Arrays.toString(phaseWork.y));
-
-        System.out.println(
-                "mu(new)      = "
-                + Arrays.toString(mu));
+        work.gamma =
+                gamma;
     }
 
     /**
-     * Validate the current accepted one-phase state.
+     * Accept the current multiphase Sundman correction directly, with no
+     * line search or damping:
      *
-     * Checks:
+     *     Y_k(new)     = Y_k(old) + DeltaY_k
+     *     omega_k(new) = omega_k(old) + DeltaOmega_k
+     *     mu(new)      = newLambda
+     *
+     * If the full (alpha = 1) correction is not physically valid for
+     * every stable phase (invalid CEF constitution, or a non-positive
+     * phase amount), the update is REJECTED outright -- this is a fixed
+     * stable-phase-set solver; a negative/invalid phase amount is not
+     * silently handled by damping or by removing the phase here. Phase
+     * addition/removal is updateStablePhaseSet()'s responsibility (a
+     * no-op for now).
+     */
+    private void updateState() {
+
+        if (phaseWorks == null
+                || phaseWorks.isEmpty()) {
+
+            throw new IllegalStateException(
+                    "Phase-indexed state has not been initialized.");
+        }
+
+        if (stablePhases == null
+                || stablePhases.length == 0) {
+
+            throw new IllegalStateException(
+                    "No stable phases are available.");
+        }
+
+        if (phaseAmounts == null
+                || phaseAmounts.length != stablePhases.length) {
+
+            throw new IllegalStateException(
+                    "phaseAmounts/stablePhases dimension mismatch.");
+        }
+
+        if (deltaPhaseAmounts == null
+                || deltaPhaseAmounts.length != stablePhases.length) {
+
+            throw new IllegalStateException(
+                    "deltaPhaseAmounts/stablePhases dimension mismatch.");
+        }
+
+        if (deltaPhaseInternalVars == null
+                || deltaPhaseInternalVars.length != stablePhases.length) {
+
+            throw new IllegalStateException(
+                    "deltaPhaseInternalVars/stablePhases dimension mismatch.");
+        }
+
+        if (newLambda == null
+                || newLambda.length != targetAmounts.length) {
+
+            throw new IllegalStateException(
+                    "newLambda is unavailable or has wrong dimension.");
+        }
+
+        final int nc =
+                targetAmounts.length;
+
+        final int np =
+                stablePhases.length;
+
+        previousPhaseAmounts =
+                phaseAmounts.clone();
+
+        previousPhaseG =
+                new double[np];
+
+        previousPhaseMA =
+                new double[np][];
+
+        for (int k = 0;
+             k < np;
+             k++) {
+
+            int p =
+                    stablePhases[k];
+
+            PhaseWork work =
+                    phaseWorks.get(p);
+
+            previousPhaseG[k] =
+                    work.G;
+
+            previousPhaseMA[k] =
+                    work.mA.clone();
+        }
+
+        /*
+         * ------------------------------------------------------------
+         * Snapshot the accepted multiphase state before this update,
+         * for later comparison in validateMultiphaseUpdate() and for
+         * the DeltaMu convergence check.
+         * ------------------------------------------------------------
+         */
+        StateTotals oldTotals =
+                calculateStableStateTotals();
+
+        previousTotalG =
+                oldTotals.totalG;
+
+        previousTotalAmounts =
+                oldTotals.amounts.clone();
+
+        if (previousMu == null) {
+
+            previousMu =
+                    (mu != null)
+                            ? mu.clone()
+                            : new double[nc];
+
+        } else {
+
+            System.arraycopy(
+                    mu, 0,
+                    previousMu, 0,
+                    nc);
+        }
+
+        double[] newLambdaChecked =
+                newLambda.clone();
+
+        for (int A = 0;
+             A < nc;
+             A++) {
+
+            if (!Double.isFinite(
+                    newLambdaChecked[A])) {
+
+                throw new IllegalStateException(
+                        "Non-finite newLambda["
+                        + A
+                        + "]: "
+                        + newLambdaChecked[A]);
+            }
+        }
+
+        /*
+         * ------------------------------------------------------------
+         * 1. Construct the full (alpha = 1) trial state for every
+         *    stable phase, without committing anything.
+         * ------------------------------------------------------------
+         */
+        double[][] trialY =
+                new double[np][];
+
+        double[] trialOmega =
+                new double[np];
+
+        boolean physical =
+                true;
+
+        int invalidSlot =
+                -1;
+
+        for (int k = 0;
+             k < np
+                     && physical;
+             k++) {
+
+            int phaseIndex =
+                    stablePhases[k];
+
+            PhaseWork work =
+                    phaseWorks.get(phaseIndex);
+
+            double[] dy =
+                    deltaPhaseInternalVars[k];
+
+            if (dy == null
+                    || dy.length != work.y.length) {
+
+                throw new IllegalStateException(
+                        "DeltaY dimension mismatch for phase "
+                        + work.model.phaseName());
+            }
+
+            trialY[k] =
+                    new double[work.y.length];
+
+            for (int i = 0;
+                 i < work.y.length;
+                 i++) {
+
+                trialY[k][i] =
+                        work.y[i]
+                        + dy[i];
+            }
+
+            trialOmega[k] =
+                    phaseAmounts[k]
+                    + deltaPhaseAmounts[k];
+
+            if (!work.model.isValid(trialY[k])
+                    || !Double.isFinite(trialOmega[k])
+                    || trialOmega[k] <= 0.0) {
+
+                physical =
+                        false;
+
+                invalidSlot =
+                        k;
+            }
+        }
+
+        if (!physical) {
+
+            int phaseIndex =
+                    stablePhases[invalidSlot];
+
+            PhaseWork work =
+                    phaseWorks.get(phaseIndex);
+
+            throw new IllegalStateException(
+                    "Fixed-phase-set Sundman update is not physically "
+                    + "valid for phase "
+                    + work.model.phaseName()
+                    + " (stable slot "
+                    + invalidSlot
+                    + "): invalid constitution or non-positive "
+                    + "phase amount "
+                    + trialOmega[invalidSlot]
+                    + ". This solver does not add/remove phases or "
+                    + "damp the step; phase-set changes are "
+                    + "updateStablePhaseSet()'s responsibility.");
+        }
+
+        // ================================================================
+        // 2. Commit ALL stable phase updates simultaneously
+        // ================================================================
+
+        for (int k = 0;
+             k < np;
+             k++) {
+
+            int phaseIndex =
+                    stablePhases[k];
+
+            PhaseWork work =
+                    phaseWorks.get(
+                            phaseIndex);
+
+            // ------------------------------------------------------------
+            // Constitution and phase amount
+            // ------------------------------------------------------------
+            work.y =
+                    trialY[k];
+
+            phaseAmounts[k] =
+                    trialOmega[k];
+
+            phaseInternalVars[phaseIndex] =
+                    work.y.clone();
+
+            /*
+             * Re-evaluate the accepted thermodynamic state immediately.
+             */
+            evaluatePhaseWork(work);
+
+            // ------------------------------------------------------------
+            // Chemical potentials: mu(new) = newLambda, common to every
+            // stable phase, no artificial alpha.
+            // ------------------------------------------------------------
+            work.mu =
+                    newLambdaChecked.clone();
+
+            recomputeSublatticeMultipliers(
+                    work);
+        }
+
+        // ================================================================
+        // 3. Commit common chemical potentials
+        // ================================================================
+
+        mu =
+                newLambdaChecked.clone();
+
+        double maxDY =
+                0.0;
+
+        for (int k = 0;
+             k < np;
+             k++) {
+
+            maxDY =
+                    Math.max(
+                            maxDY,
+                            vectorNorm(
+                                    deltaPhaseInternalVars[k]));
+        }
+
+        lastStep =
+                maxDY;
+
+        /*
+         * Keep the phase-0 compatibility alias.
+         */
+        if (!phaseWorks.isEmpty()) {
+
+            phaseWork =
+                    phaseWorks.get(0);
+        }
+
+        // ================================================================
+        // 4. Diagnostics
+        // ================================================================
+
+        System.out.println();
+        System.out.println(
+                "Accepted multiphase state update");
+        System.out.println(
+                "---------------------------------");
+
+        System.out.println(
+                "mu(new) = "
+                + Arrays.toString(mu));
+
+        for (int k = 0;
+             k < np;
+             k++) {
+
+            int phaseIndex =
+                    stablePhases[k];
+
+            PhaseWork work =
+                    phaseWorks.get(
+                            phaseIndex);
+
+            System.out.printf(
+                    "phase slot %d (%s)%n",
+                    k,
+                    work.model.phaseName());
+
+            System.out.printf(
+                    "  DeltaOmega      = %.15e%n",
+                    deltaPhaseAmounts[k]);
+
+            System.out.printf(
+                    "  omega(new)      = %.15e%n",
+                    phaseAmounts[k]);
+
+            System.out.printf(
+                    "  ||DeltaY||      = %.15e%n",
+                    vectorNorm(
+                            deltaPhaseInternalVars[k]));
+
+            System.out.println(
+                    "  Y(new)          = "
+                    + Arrays.toString(work.y));
+        }
+    }
+
+    /**
+     * Verify the linearized mass-balance equation actually solved by the
+     * current global Sundman matrix.
+     *
+     * For each element A:
+     *
+     *   DN_A^(1) =
+     *
+     *       sum_k {
+     *
+     *           omega_k *
+     *           [ q_A^k + sum_B R_AB^k lambda_B ]
+     *
+     *           + M_A^k * DeltaOmega_k
+     *
+     *       }
+     *
+     * All quantities in this expression must be evaluated at the SAME
+     * matrix-assembly point.
+     *
+     * In particular, M_A must be the PRE-UPDATE phase amount.
+     *
+     * The global matrix guarantees:
+     *
+     *   DN_A^(1) = 0
+     *
+     * to numerical precision.
+     */
+    private double calculateFirstOrderMassResidual() {
+
+        if (previousPhaseAmounts == null
+                || previousPhaseMA == null) {
+
+            throw new IllegalStateException(
+                    "Pre-update phase data were not saved.");
+        }
+
+        if (deltaPhaseAmounts == null
+                || deltaPhaseAmounts.length
+                        != stablePhases.length) {
+
+            throw new IllegalStateException(
+                    "DeltaOmega/stable-phase dimension mismatch.");
+        }
+
+        if (newLambda == null) {
+
+            throw new IllegalStateException(
+                    "newLambda is not available.");
+        }
+
+        final int nc =
+                targetAmounts.length;
+
+        double maximum =
+                0.0;
+
+        for (int A = 0;
+             A < nc;
+             A++) {
+
+            double dN =
+                    0.0;
+
+            for (int k = 0;
+                 k < stablePhases.length;
+                 k++) {
+
+                int p =
+                        stablePhases[k];
+
+                PhaseWork work =
+                        phaseWorks.get(p);
+
+                /*
+                 * ALL quantities below refer to the point at which
+                 * buildEquilibriumMatrix() was assembled.
+                 */
+                double omega =
+                        previousPhaseAmounts[k];
+
+                double oldM =
+                        previousPhaseMA[k][A];
+
+                /*
+                 * Linearized phase composition response:
+                 *
+                 *     DM_A =
+                 *         q_A
+                 *         + sum_B R_AB lambda_B
+                 */
+                double dM =
+                        work.massGResponse[A];
+
+                for (int B = 0;
+                     B < nc;
+                     B++) {
+
+                    dM +=
+                            work.massResponse[A][B]
+                            * newLambda[B];
+                }
+
+                /*
+                 * Total first-order element change:
+                 *
+                 *     DN_A =
+                 *         omega * DM_A
+                 *         + M_A * DOmega
+                 */
+                dN +=
+                        omega * dM
+                        +
+                        oldM * deltaPhaseAmounts[k];
+            }
+
+            maximum =
+                    Math.max(
+                            maximum,
+                            Math.abs(dN));
+
+            System.out.printf(
+                    "First-order DeltaN[%d] = %.15e%n",
+                    A,
+                    dN);
+        }
+
+        return maximum;
+    }
+
+    /**
+     * Total Gibbs energy of the stable-phase state at the exact point
+     * where the global matrix was assembled (before this update).
+     */
+    private double calculatePreviousTotalG() {
+
+        if (previousPhaseAmounts == null
+                || previousPhaseG == null) {
+
+            throw new IllegalStateException(
+                    "Previous stable-phase state was not saved.");
+        }
+
+        double totalG =
+                0.0;
+
+        for (int k = 0;
+             k < stablePhases.length;
+             k++) {
+
+            totalG +=
+                    previousPhaseAmounts[k]
+                    * previousPhaseG[k];
+        }
+
+        return totalG;
+    }
+
+    /**
+     * Validate the current accepted multiphase state.
+     *
+     * This is intentionally independent of phase selection.  It checks:
+     *
+     *   - every stable phase has a valid constitution;
+     *   - every sublattice is normalized;
+     *   - every stable phase amount is positive;
+     *   - all phase thermodynamic quantities are finite;
+     *   - exact total element amounts before/after the update;
+     *   - exact nonlinear mass-balance change;
+     *   - first-order mass-balance prediction from the Sundman correction.
+     */
+    private void validateMultiphaseUpdate() {
+
+        if (stablePhases == null
+                || stablePhases.length == 0) {
+
+            throw new IllegalStateException(
+                    "No stable phases are available.");
+        }
+
+        final int nc =
+                targetAmounts.length;
+
+        final int np =
+                stablePhases.length;
+
+        /*
+         * ------------------------------------------------------------
+         * Current totals
+         * ------------------------------------------------------------
+         */
+        StateTotals current =
+                calculateStableStateTotals();
+
+        /*
+         * ------------------------------------------------------------
+         * State-level diagnostics
+         * ------------------------------------------------------------
+         */
+        double maxNormalizationResidual =
+                0.0;
+
+        double maxGibbsResidual =
+                0.0;
+
+        double maxStationarityResidual =
+                0.0;
+
+        for (int k = 0;
+             k < np;
+             k++) {
+
+            int p =
+                    stablePhases[k];
+
+            PhaseWork work =
+                    phaseWorks.get(p);
+
+            // ----------------------------------------------------------
+            // Finite thermodynamic quantities
+            // ----------------------------------------------------------
+
+            checkFinite(
+                    "G for phase " + work.model.phaseName(),
+                    work.G);
+
+            for (int A = 0;
+                 A < nc;
+                 A++) {
+
+                checkFinite(
+                        "M[" + A + "] for phase "
+                        + work.model.phaseName(),
+                        work.mA[A]);
+            }
+
+            // ----------------------------------------------------------
+            // Constitution validity
+            // ----------------------------------------------------------
+
+            if (work.y == null
+                    || !work.model.isValid(work.y)) {
+
+                throw new IllegalStateException(
+                        "Invalid accepted constitution for phase "
+                        + work.model.phaseName());
+            }
+
+            // ----------------------------------------------------------
+            // Phase amount
+            // ----------------------------------------------------------
+
+            double omega =
+                    phaseAmounts[k];
+
+            if (!Double.isFinite(omega)
+                    || omega <= 0.0) {
+
+                throw new IllegalStateException(
+                        "Invalid accepted amount for phase "
+                        + work.model.phaseName()
+                        + ": " + omega);
+            }
+
+            // ----------------------------------------------------------
+            // Sublattice normalization
+            // ----------------------------------------------------------
+
+            int[] offsets =
+                    work.model.sundmanOffsets();
+
+            int[] nconst =
+                    work.model
+                            .sundmanConstituentsPerSublattice();
+
+            for (int s = 0;
+                 s < nconst.length;
+                 s++) {
+
+                double sum =
+                        0.0;
+
+                for (int i = 0;
+                     i < nconst[s];
+                     i++) {
+
+                    sum +=
+                            work.y[
+                                    offsets[s] + i];
+                }
+
+                double r =
+                        sum - 1.0;
+
+                maxNormalizationResidual =
+                        Math.max(
+                                maxNormalizationResidual,
+                                Math.abs(r));
+            }
+
+            // ----------------------------------------------------------
+            // Phase Gibbs-equilibrium relation: G_M - sum_A M_A*mu_A
+            // ----------------------------------------------------------
+
+            double gibbsResidual =
+                    work.G;
+
+            for (int A = 0;
+                 A < nc;
+                 A++) {
+
+                gibbsResidual -=
+                        work.mA[A]
+                        * work.mu[A];
+            }
+
+            maxGibbsResidual =
+                    Math.max(
+                            maxGibbsResidual,
+                            Math.abs(gibbsResidual));
+
+            // ----------------------------------------------------------
+            // Phase-local stationarity
+            // ----------------------------------------------------------
+
+            double stationarity =
+                    phaseStationarityNorm(work);
+
+            maxStationarityResidual =
+                    Math.max(
+                            maxStationarityResidual,
+                            stationarity);
+        }
+
+        /*
+         * ------------------------------------------------------------
+         * Exact nonlinear mass-balance change
+         * ------------------------------------------------------------
+         */
+        double maxMassChange =
+                0.0;
+
+        for (int A = 0;
+             A < nc;
+             A++) {
+
+            double dN =
+                    current.amounts[A]
+                    - previousTotalAmounts[A];
+
+            maxMassChange =
+                    Math.max(
+                            maxMassChange,
+                            Math.abs(dN));
+        }
+
+        /*
+         * ------------------------------------------------------------
+         * Global element mass balance against the target composition.
+         *
+         *     N_A = sum_k omega_k M_A^k
+         *
+         * Do not use an extremely tight absolute tolerance here.
+         * This is a physical-state validation immediately after a
+         * damped Newton/Sundman update, not the final convergence test.
+         * ------------------------------------------------------------
+         */
+        double maxTargetMassResidual =
+                0.0;
+
+        for (int A = 0;
+             A < nc;
+             A++) {
+
+            double residual =
+                    current.amounts[A]
+                    - targetAmounts[A];
+
+            maxTargetMassResidual =
+                    Math.max(
+                            maxTargetMassResidual,
+                            Math.abs(residual));
+        }
+
+        /*
+         * Sundman's iterative procedure is based on the linearized
+         * balance followed by repeated re-evaluation/correction; it does
+         * not impose an absolute residual threshold here to terminate
+         * the iteration. checkConvergence() is the genuine convergence
+         * gate, so this is diagnostic only.
+         */
+        System.out.printf(
+                "nonlinear target mass residual = %.6e%n",
+                maxTargetMassResidual);
+
+        /*
+         * ------------------------------------------------------------
+         * First-order Sundman mass-balance prediction, evaluated at the
+         * exact point where the global matrix was assembled (before
+         * this update), via calculateFirstOrderMassResidual().
+         * ------------------------------------------------------------
+         */
+        System.out.println();
+        System.out.println(
+                "First-order mass-balance check");
+        System.out.println(
+                "-------------------------------");
+
+        double maxFirstOrderMassResidual =
+                calculateFirstOrderMassResidual();
+
+        /*
+         * ------------------------------------------------------------
+         * Previous total G, from the exact matrix-assembly snapshot.
+         * ------------------------------------------------------------
+         */
+        double previousG =
+                calculatePreviousTotalG();
+
+        /*
+         * ------------------------------------------------------------
+         * Report
+         * ------------------------------------------------------------
+         */
+        System.out.println();
+        System.out.println(
+                "Multiphase state validation");
+        System.out.println(
+                "---------------------------");
+
+        System.out.println(
+                "Previous total amounts = "
+                + Arrays.toString(
+                        previousTotalAmounts));
+
+        System.out.println(
+                "Current total amounts  = "
+                + Arrays.toString(
+                        current.amounts));
+
+        System.out.println(
+                "Target amounts         = "
+                + Arrays.toString(
+                        targetAmounts));
+
+        System.out.printf(
+                "Previous total G       = %.15f%n",
+                previousG);
+
+        System.out.printf(
+                "Current total G        = %.15f%n",
+                current.totalG);
+
+        System.out.printf(
+                "Delta G                = %.15e%n",
+                current.totalG
+                        - previousG);
+
+        System.out.printf(
+                "max exact Delta N_A    = %.6e%n",
+                maxMassChange);
+
+        System.out.printf(
+                "max target mass residual = %.6e%n",
+                maxTargetMassResidual);
+
+        System.out.printf(
+                "max 1st-order Delta N  = %.6e%n",
+                maxFirstOrderMassResidual);
+
+        System.out.printf(
+                "max normalization      = %.6e%n",
+                maxNormalizationResidual);
+
+        System.out.printf(
+                "max phase G relation   = %.6e%n",
+                maxGibbsResidual);
+
+        /*
+         * This is the nonlinear residual at the freshly updated
+         * constitution, using response coefficients that were built
+         * at the PREVIOUS constitution. It is not the equilibrium
+         * stationarity test -- that only becomes meaningful after the
+         * phase matrices/global matrix are rebuilt at the new state on
+         * the next full iteration.
+         */
+        System.out.printf(
+                "nonlinear post-step stationarity = %.6e%n",
+                maxStationarityResidual);
+    }
+
+    /**
+     * Phase-local stationarity residual:
+     *
+     *     || G_Y - J_M^T mu - C^T gamma ||
+     */
+    private double phaseStationarityNorm(
+            PhaseWork work) {
+
+        if (work.gy == null
+                || work.dMdY == null
+                || work.mu == null
+                || work.gamma == null) {
+
+            return Double.POSITIVE_INFINITY;
+        }
+
+        int nip =
+                work.model
+                        .sundmanNumSiteVariables();
+
+        int nc =
+                targetAmounts.length;
+
+        int[] offsets =
+                work.model.sundmanOffsets();
+
+        int[] nconst =
+                work.model
+                        .sundmanConstituentsPerSublattice();
+
+        double sum2 =
+                0.0;
+
+        for (int i = 0;
+             i < nip;
+             i++) {
+
+            double r =
+                    work.gy[i];
+
+            for (int A = 0;
+                 A < nc;
+                 A++) {
+
+                r -=
+                        work.dMdY[A][i]
+                        * work.mu[A];
+            }
+
+            int s =
+                    sublatticeOf(
+                            i,
+                            offsets,
+                            nconst);
+
+            r -=
+                    work.gamma[s];
+
+            sum2 +=
+                    r * r;
+        }
+
+        return Math.sqrt(sum2);
+    }
+
+    /**
+     * Validate the current accepted state.
+     *
+     * For a single stable phase, checks:
      *   1. physical CEF constitution
      *   2. finite thermodynamic quantities
      *   3. sublattice normalization
@@ -3689,26 +5120,56 @@ public class EquilibriumSolverV2 {
      *   6. phase-equilibrium relation
      *   7. phase stationarity relation
      *
-     * Current scope:
-     *   one stable CEF phase, fixed T and P, closed system.
+     * For a prescribed multiphase stable set (more than one stable
+     * phase), dispatches to {@link #validateMultiphaseUpdate()}
+     * instead -- see that method for its (intentionally more limited)
+     * scope.
      */
     private void validateState() {
 
-        if (phaseWork == null) {
+        if (phaseWork == null
+                && (phaseWorks == null
+                    || phaseWorks.isEmpty())) {
+
             throw new IllegalStateException(
                     "Phase state is not available.");
         }
 
-        if (phaseAmounts == null
-                || phaseAmounts.length != 1) {
+        if (phaseAmounts == null) {
 
             throw new IllegalStateException(
-                    "Expected exactly one phase amount.");
+                    "Phase amounts are not available.");
         }
 
         if (stablePhases == null
-                || stablePhases.length != 1
-                || stablePhases[0] != 0) {
+                || stablePhases.length == 0) {
+
+            throw new IllegalStateException(
+                    "No stable phases are available.");
+        }
+
+        /*
+         * The V2 solver now supports a prescribed multiphase stable set.
+         *
+         * Use the multiphase validator whenever more than one stable
+         * phase is present. The existing one-phase validation below
+         * remains unchanged.
+         */
+        if (stablePhases.length > 1) {
+
+            validateMultiphaseUpdate();
+
+            return;
+        }
+
+        if (phaseAmounts.length != 1) {
+
+            throw new IllegalStateException(
+                    "Single-phase validation requires exactly one "
+                    + "phase amount.");
+        }
+
+        if (stablePhases[0] != 0) {
 
             throw new IllegalStateException(
                     "Current validation supports one stable phase only.");
@@ -3956,34 +5417,40 @@ public class EquilibriumSolverV2 {
     }
 
     /**
-     * Check convergence of the current one-phase Sundman equilibrium.
+     * Check convergence of the current multiphase Sundman equilibrium.
      *
-     * Convergence requires BOTH:
+     * Convergence requires ALL of:
      *
-     *   A. small thermodynamic residuals
+     *   A. small thermodynamic residuals, over every stable phase
      *
      *      mass balance
      *      phase Gibbs relation
      *      phase stationarity
      *      sublattice constraints
      *
-     *   B. small accepted numerical changes
+     *   B. small accepted numerical changes, over every stable phase
      *
-     *      internal constitution
-     *      chemical potentials
-     *      phase amount
+     *      internal constitution   (DeltaY)
+     *      phase amount            (DeltaOmega)
+     *      chemical potentials     (DeltaMu = newLambda - previousMu)
      *
      * A small step alone is not considered sufficient evidence of
      * equilibrium.
      */
     private boolean checkConvergence() {
 
-        if (phaseWork == null) {
+        if (phaseWorks == null
+                || phaseWorks.isEmpty()) {
+            return false;
+        }
+
+        if (stablePhases == null
+                || stablePhases.length == 0) {
             return false;
         }
 
         if (phaseAmounts == null
-                || phaseAmounts.length != 1) {
+                || phaseAmounts.length != stablePhases.length) {
             return false;
         }
 
@@ -3995,60 +5462,166 @@ public class EquilibriumSolverV2 {
                         tolerance,
                         1.0e-12);
 
-        // ------------------------------------------------------------
-        // 1. Sublattice normalization
-        // ------------------------------------------------------------
+        final int nc =
+                targetAmounts.length;
 
-        int[] offsets =
-                phaseWork.model.sundmanOffsets();
-
-        int[] nconst =
-                phaseWork.model
-                        .sundmanConstituentsPerSublattice();
-
-        double maxConstraintResidual =
-                0.0;
-
-        for (int s = 0;
-             s < nconst.length;
-             s++) {
-
-            double sum = 0.0;
-
-            for (int i = 0;
-                 i < nconst[s];
-                 i++) {
-
-                sum +=
-                        phaseWork.y[
-                                offsets[s] + i];
-            }
-
-            maxConstraintResidual =
-                    Math.max(
-                            maxConstraintResidual,
-                            Math.abs(sum - 1.0));
-        }
-
-        // ------------------------------------------------------------
-        // 2. Element mass balance
-        //
-        //     N_A - omega*M_A
-        // ------------------------------------------------------------
+        final int np =
+                stablePhases.length;
 
         double maxMassResidual =
                 0.0;
 
-        double omega =
-                phaseAmounts[0];
+        double maxGibbsResidual =
+                0.0;
+
+        double maxSublatticeResidual =
+                0.0;
+
+        double maxStationarity =
+                0.0;
+
+        double maxDeltaY =
+                0.0;
+
+        double maxDeltaOmega =
+                0.0;
+
+        // ------------------------------------------------------------
+        // Per-phase residuals and steps.
+        // ------------------------------------------------------------
+
+        for (int k = 0;
+             k < np;
+             k++) {
+
+            int p =
+                    stablePhases[k];
+
+            PhaseWork work =
+                    phaseWorks.get(p);
+
+            // ----------------------------------------------------------
+            // Sublattice normalization
+            // ----------------------------------------------------------
+
+            int[] offsets =
+                    work.model.sundmanOffsets();
+
+            int[] nconst =
+                    work.model
+                            .sundmanConstituentsPerSublattice();
+
+            for (int s = 0;
+                 s < nconst.length;
+                 s++) {
+
+                double sum =
+                        0.0;
+
+                for (int i = 0;
+                     i < nconst[s];
+                     i++) {
+
+                    sum +=
+                            work.y[
+                                    offsets[s] + i];
+                }
+
+                maxSublatticeResidual =
+                        Math.max(
+                                maxSublatticeResidual,
+                                Math.abs(sum - 1.0));
+            }
+
+            // ----------------------------------------------------------
+            // Phase Gibbs-equilibrium residual: G_M - sum_A M_A*mu_A
+            // ----------------------------------------------------------
+
+            double gibbsResidual =
+                    work.G;
+
+            for (int A = 0;
+                 A < nc;
+                 A++) {
+
+                gibbsResidual -=
+                        work.mA[A]
+                        * work.mu[A];
+            }
+
+            maxGibbsResidual =
+                    Math.max(
+                            maxGibbsResidual,
+                            Math.abs(gibbsResidual));
+
+            // ----------------------------------------------------------
+            // Phase stationarity: || G_Y - JM^T*mu - C^T*gamma ||
+            // ----------------------------------------------------------
+
+            maxStationarity =
+                    Math.max(
+                            maxStationarity,
+                            phaseStationarityNorm(work));
+
+            // ----------------------------------------------------------
+            // Accepted internal-variable step for this phase.
+            // ----------------------------------------------------------
+
+            if (deltaPhaseInternalVars != null
+                    && k < deltaPhaseInternalVars.length
+                    && deltaPhaseInternalVars[k] != null) {
+
+                maxDeltaY =
+                        Math.max(
+                                maxDeltaY,
+                                vectorNorm(
+                                        deltaPhaseInternalVars[k]));
+            }
+
+            // ----------------------------------------------------------
+            // Accepted phase-amount step for this phase.
+            // ----------------------------------------------------------
+
+            if (deltaPhaseAmounts != null
+                    && k < deltaPhaseAmounts.length) {
+
+                maxDeltaOmega =
+                        Math.max(
+                                maxDeltaOmega,
+                                Math.abs(
+                                        deltaPhaseAmounts[k]));
+            }
+        }
+
+        // ------------------------------------------------------------
+        // Global element mass balance: N_A - sum_alpha omega_alpha*M_A
+        // ------------------------------------------------------------
 
         for (int A = 0;
-             A < targetAmounts.length;
+             A < nc;
              A++) {
+
+            double represented =
+                    0.0;
+
+            for (int k = 0;
+                 k < np;
+                 k++) {
+
+                int p =
+                        stablePhases[k];
+
+                PhaseWork work =
+                        phaseWorks.get(p);
+
+                represented +=
+                        phaseAmounts[k]
+                        * work.mA[A];
+            }
 
             double residual =
                     targetAmounts[A]
-                    - omega * phaseWork.mA[A];
+                    - represented;
 
             maxMassResidual =
                     Math.max(
@@ -4057,116 +5630,79 @@ public class EquilibriumSolverV2 {
         }
 
         // ------------------------------------------------------------
-        // 3. Phase Gibbs-equilibrium residual
+        // Chemical-potential step: DeltaMu = newLambda - previousMu.
         //
-        //     G_M - sum_A M_A*mu_A
+        // mu is already overwritten with newLambda by updateState() by
+        // the time this runs, so comparing newLambda against the
+        // CURRENT mu would spuriously always give zero. previousMu
+        // holds the value from BEFORE that update.
         // ------------------------------------------------------------
 
-        double muResidual =
-                phaseWork.G;
-
-        for (int A = 0;
-             A < targetAmounts.length;
-             A++) {
-
-            muResidual -=
-                    phaseWork.mA[A]
-                    * phaseWork.mu[A];
-        }
-
-        // ------------------------------------------------------------
-        // 4. Internal phase stationarity
-        // ------------------------------------------------------------
-
-        double stationarityResidual =
-                singlePhaseStationarityNorm();
-
-        // ------------------------------------------------------------
-        // 5. Thermodynamic residual
-        // ------------------------------------------------------------
-
-        double thermodynamicResidual =
-                Math.max(
-                        Math.max(
-                                maxMassResidual,
-                                Math.abs(muResidual)),
-                        Math.max(
-                                maxConstraintResidual,
-                                stationarityResidual));
-
-        // ------------------------------------------------------------
-        // 6. Constitution step
-        // ------------------------------------------------------------
-
-        double yStep =
-                internalCorrectionNorm();
-
-        // ------------------------------------------------------------
-        // 7. Phase-amount step
-        // ------------------------------------------------------------
-
-        double omegaStep =
-                (deltaPhaseAmounts != null
-                        && deltaPhaseAmounts.length == 1)
-                        ? Math.abs(
-                                acceptedStepScale
-                                * deltaPhaseAmounts[0])
-                        : Double.POSITIVE_INFINITY;
-
-        // ------------------------------------------------------------
-        // 8. Chemical-potential step
-        //
-        // newLambda is the newly calculated Sundman lambda.  Compare
-        // it with the currently accepted phaseWork.mu.
-        // ------------------------------------------------------------
-
-        double muStep =
+        double maxDeltaMu =
                 0.0;
 
         if (newLambda != null
-                && phaseWork.mu != null
-                && newLambda.length == phaseWork.mu.length) {
+                && previousMu != null
+                && newLambda.length == previousMu.length) {
 
             for (int A = 0;
                  A < newLambda.length;
                  A++) {
 
-                muStep =
+                maxDeltaMu =
                         Math.max(
-                                muStep,
+                                maxDeltaMu,
                                 Math.abs(
                                         newLambda[A]
-                                        - phaseWork.mu[A]));
+                                        - previousMu[A]));
             }
+
+        } else {
+
+            maxDeltaMu =
+                    Double.POSITIVE_INFINITY;
         }
 
-        /*
-         * When updateState() has already accepted the new lambda, the
-         * difference above is normally zero. Therefore the actual
-         * accepted state change is primarily represented by lastStep.
-         */
-        double acceptedStep =
-                lastStep;
-
         // ------------------------------------------------------------
-        // 9. Final decision
+        // Final decision.
         // ------------------------------------------------------------
 
-        boolean residualsConverged =
-                thermodynamicResidual
+        boolean massConverged =
+                maxMassResidual
                         <= residualTol;
 
-        boolean stepsConverged =
-                acceptedStep
-                        <= stepTol
-                && yStep
-                        <= stepTol
-                && omegaStep
+        boolean gibbsConverged =
+                maxGibbsResidual
+                        <= residualTol;
+
+        boolean sublatticeConverged =
+                maxSublatticeResidual
+                        <= residualTol;
+
+        boolean stationarityConverged =
+                maxStationarity
+                        <= residualTol;
+
+        boolean deltaYConverged =
+                maxDeltaY
+                        <= stepTol;
+
+        boolean deltaOmegaConverged =
+                maxDeltaOmega
+                        <= stepTol;
+
+        boolean deltaMuConverged =
+                maxDeltaMu
                         <= stepTol;
 
         boolean converged =
-                residualsConverged
-                        && stepsConverged;
+                massConverged
+                        && gibbsConverged
+                        && sublatticeConverged
+                        && stationarityConverged
+                        && deltaYConverged
+                        && deltaOmegaConverged
+                        && deltaMuConverged;
 
         System.out.println();
         System.out.println(
@@ -4180,39 +5716,27 @@ public class EquilibriumSolverV2 {
 
         System.out.printf(
                 "phase G relation  = %.6e%n",
-                Math.abs(muResidual));
+                maxGibbsResidual);
 
         System.out.printf(
                 "sublattice        = %.6e%n",
-                maxConstraintResidual);
+                maxSublatticeResidual);
 
         System.out.printf(
                 "stationarity      = %.6e%n",
-                stationarityResidual);
-
-        System.out.printf(
-                "thermodynamic     = %.6e%n",
-                thermodynamicResidual);
-
-        System.out.printf(
-                "accepted step     = %.6e%n",
-                acceptedStep);
+                maxStationarity);
 
         System.out.printf(
                 "DeltaY norm       = %.6e%n",
-                yStep);
+                maxDeltaY);
 
         System.out.printf(
                 "DeltaOmega        = %.6e%n",
-                omegaStep);
+                maxDeltaOmega);
 
-        System.out.println(
-                "Residual criterion = "
-                + residualsConverged);
-
-        System.out.println(
-                "Step criterion     = "
-                + stepsConverged);
+        System.out.printf(
+                "DeltaMu           = %.6e%n",
+                maxDeltaMu);
 
         System.out.println(
                 "CONVERGED          = "

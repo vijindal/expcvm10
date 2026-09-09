@@ -37,6 +37,7 @@ tasks.named('test', Test) {
         includeTestsMatching 'test.RkGibbsTest'
         includeTestsMatching 'thermocalc.cef.CefGibbsTest'
         includeTestsMatching 'thermocalc.cvm.CvmGibbsTest'
+        includeTestsMatching 'calc.equil.EquilibriumSolverV2TwoPhaseEndToEndTest'
     }
     workingDir = project.projectDir
     systemProperties System.properties.findAll { k, v ->
