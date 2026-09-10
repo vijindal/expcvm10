@@ -59,7 +59,7 @@ public final class SundmanInitialEstimate {
      * {@link GridMinimizer} run over the given candidates.
      *
      * @param candidates  all candidate phase models (must all be
-     *                    {@link CefPhaseModelAdapter} instances — the only
+     *                    {@link CefGibbs} instances — the only
      *                    model type Algorithm A currently supports)
      * @param T           temperature, K
      * @param P           pressure, Pa

@@ -86,7 +86,7 @@ public class TdbParser implements DatabasePort {
                                     List<String> phaseNames,
                                     PhaseModelKind kind) throws IOException {
 
-        List<system.model.PhaseModelFactory.PhaseModel> models = new ArrayList<>();
+        List<system.model.cef.CefGibbs> models = new ArrayList<>();
 
         // Step 1: extract affMap and pMap from TYPE_DEFINITION records
         // These contain MAGNETIC parameters: aff (value1) and p (value2)
@@ -114,7 +114,7 @@ public class TdbParser implements DatabasePort {
         // Step 3: build a PhaseModel for each requested phase
         for (String phaseName : phaseNames) {
             try {
-                system.model.PhaseModelFactory.PhaseModel model =
+                system.model.cef.CefGibbs model =
                     system.model.PhaseModelFactory.build(
                         phaseName,
                         filteredTdb,

@@ -2,7 +2,7 @@ package test;
 
 import session.CalculationSession;
 import system.model.GibbsEnergyModel;
-import system.model.cef.CefPhaseModelAdapter;
+import system.model.cef.CefGibbs;
 
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -12,7 +12,7 @@ import java.util.Map;
 /**
  * Reference-agreement baseline for the general n-sublattice Compound
  * Energy Formalism evaluator ({@code CefGibbs} via
- * {@code CefPhaseModelAdapter.siteEnergy}). It checks the evaluator
+ * {@code CefGibbs.siteEnergy}). It checks the evaluator
  * against two INDEPENDENT references, not just this project's own
  * database:
  *
@@ -378,7 +378,7 @@ public class CefLiteratureBaselineTest {
         System.out.println("Section A: V2ZR Gibbs energy vs. Cui et al. 2016, Fig. 9");
         System.out.println("============================================================");
 
-        CefPhaseModelAdapter phase = buildCef(A_TDB, Arrays.asList("V", "ZR"), A_PHASE);
+        CefGibbs phase = buildCef(A_TDB, Arrays.asList("V", "ZR"), A_PHASE);
         final double[] y = { 1.0, 0.0, 0.0, 1.0 };   // V:ZR stoichiometric end member
 
         System.out.printf("%-10s %-16s %-16s %-12s %-8s%n",
@@ -415,7 +415,7 @@ public class CefLiteratureBaselineTest {
         System.out.println("           at " + (int) D_T + " K vs. Cui et al. 2016, Fig. 10");
         System.out.println("============================================================");
 
-        CefPhaseModelAdapter liquid = buildCef(D_TDB, Arrays.asList("V", "ZR"), D_PHASE);
+        CefGibbs liquid = buildCef(D_TDB, Arrays.asList("V", "ZR"), D_PHASE);
 
         // Absolute enthalpy H = G - T dG/dT, via the model's own
         // evaluateG / evaluateGT (mole-fraction-facing surface: for a
@@ -454,7 +454,7 @@ public class CefLiteratureBaselineTest {
      * through the model's {@code evaluateG}/{@code evaluateGT} surface.
      * {@code (xV, xZr)} are the LIQUID's site fractions == mole fractions.
      */
-    private static double pureEnthalpy(CefPhaseModelAdapter gm, double xV, double xZr) {
+    private static double pureEnthalpy(CefGibbs gm, double xV, double xZr) {
         double[] x = { xV, xZr };
         gm.setTemperature(D_T);
         gm.setInternalVars(x);
@@ -476,7 +476,7 @@ public class CefLiteratureBaselineTest {
 
         // Cache one CEF model per (phase, elements) so setModel is not
         // re-run for every row.
-        Map<String, CefPhaseModelAdapter> cache = new LinkedHashMap<>();
+        Map<String, CefGibbs> cache = new LinkedHashMap<>();
 
         System.out.printf("%-11s %-14s %-8s %-20s %-20s %-16s %-12s%n",
                 "Phase", "elements", "T [K]", "project G [J/f.u.]",
@@ -496,7 +496,7 @@ public class CefLiteratureBaselineTest {
             double gRef = (Double) row[4];
 
             String key = phaseName + "|" + elementsCsv;
-            CefPhaseModelAdapter phase = cache.get(key);
+            CefGibbs phase = cache.get(key);
             if (phase == null) {
                 phase = buildCef(B_TDB, Arrays.asList(elementsCsv.split(",")), phaseName);
                 cache.put(key, phase);
@@ -537,7 +537,7 @@ public class CefLiteratureBaselineTest {
     // ------------------------------------------------------------------
 
     /** Build a phase through CalculationSession and assert it is CEF. */
-    private static CefPhaseModelAdapter buildCef(String tdb, List<String> elements,
+    private static CefGibbs buildCef(String tdb, List<String> elements,
                                                  String phaseName) throws Exception {
         CalculationSession session = new CalculationSession();
         session.setModel(tdb, elements, Arrays.asList(phaseName));
@@ -547,11 +547,11 @@ public class CefLiteratureBaselineTest {
                     + " model, but obtained " + models.size());
         }
         GibbsEnergyModel model = models.get(0);
-        if (!(model instanceof CefPhaseModelAdapter)) {
+        if (!(model instanceof CefGibbs)) {
             throw new IllegalStateException(phaseName
                     + " was not constructed as a CEF model (got "
                     + model.getClass().getSimpleName() + ").");
         }
-        return (CefPhaseModelAdapter) model;
+        return (CefGibbs) model;
     }
 }

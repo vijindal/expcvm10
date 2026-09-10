@@ -3,7 +3,7 @@ package test;
 import session.CalculationSession;
 import system.model.GibbsEnergyModel;
 import system.model.cef.CefGibbs;
-import system.model.cef.CefPhaseModelAdapter;
+import system.model.cef.CefGibbs;
 
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -16,7 +16,7 @@ import java.util.Map;
  *
  * <p>CEF: {@code G = G_ref + G_id + G_ex}. At a pure end-member (one
  * non-zero site fraction per sublattice) the ideal-mixing and excess
- * terms are identically zero, so {@code CefPhaseModelAdapter.siteEnergy}
+ * terms are identically zero, so {@code CefGibbs.siteEnergy}
  * there reduces to {@code G_ref = G(phase, X:Y;0)} -- the SGTE lattice
  * stability {@code n_1*GHSER(X) + n_2*GHSER(Y) + ...}.
  *
@@ -203,7 +203,7 @@ public class CefReferenceTermTest {
         System.out.println("    (2) siteEnergy(T, y_em) vs. pycalphad G  -- report-only.");
         System.out.println();
 
-        Map<String, CefPhaseModelAdapter> cache = new LinkedHashMap<>();
+        Map<String, CefGibbs> cache = new LinkedHashMap<>();
 
         System.out.printf("%-11s %-4s %-8s %-18s %-18s %-14s %-16s%n",
                 "Phase", "El", "T [K]", "siteEnergy [J/fu]", "pycalphad [J/fu]",
@@ -224,7 +224,7 @@ public class CefReferenceTermTest {
             double T = (Double) row[2];
             double gRef = (Double) row[3];
 
-            CefPhaseModelAdapter phase = cache.get(phaseName);
+            CefGibbs phase = cache.get(phaseName);
             if (phase == null) {
                 phase = buildCef(TDB, ELEMENTS, phaseName);
                 cache.put(phaseName, phase);
@@ -307,7 +307,7 @@ public class CefReferenceTermTest {
     }
 
 
-    private static CefPhaseModelAdapter buildCef(String tdb, List<String> elements,
+    private static CefGibbs buildCef(String tdb, List<String> elements,
                                                  String phaseName) throws Exception {
         CalculationSession session = new CalculationSession();
         session.setModel(tdb, elements, Arrays.asList(phaseName));
@@ -317,11 +317,11 @@ public class CefReferenceTermTest {
                     + " model, but obtained " + models.size());
         }
         GibbsEnergyModel model = models.get(0);
-        if (!(model instanceof CefPhaseModelAdapter)) {
+        if (!(model instanceof CefGibbs)) {
             throw new IllegalStateException(phaseName
                     + " was not constructed as a CEF model (got "
                     + model.getClass().getSimpleName() + ").");
         }
-        return (CefPhaseModelAdapter) model;
+        return (CefGibbs) model;
     }
 }

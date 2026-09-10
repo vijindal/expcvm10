@@ -1,7 +1,7 @@
 package calc.equil.sundman;
 
 import system.model.GibbsEnergyModel;
-import system.model.cef.CefPhaseModelAdapter;
+import system.model.cef.CefGibbs;
 
 /**
  * One candidate phase's state during Algorithm A (Sundman, Dupin &amp;
@@ -69,8 +69,8 @@ public final class SundmanPhase {
     public SundmanPhase(GibbsEnergyModel model, double[] yInit, double amount, boolean stable) {
         this.model = model;
         this.name = model.phaseName();
-        this.ns = model instanceof CefPhaseModelAdapter
-                ? ((CefPhaseModelAdapter) model).getGibbs().numSublattices() : 1;
+        this.ns = model instanceof CefGibbs
+                ? ((CefGibbs) model).getGibbs().numSublattices() : 1;
         this.nip = model.numInternalParams();
         this.nc = model.numComponents();
         this.y = yInit.clone();
@@ -88,8 +88,8 @@ public final class SundmanPhase {
         model.setComposition(model.compositionFromInternal(y));
         model.setTemperature(T);
         this.G = model.evaluateG(y, T);
-        if (model instanceof CefPhaseModelAdapter) {
-            CefPhaseModelAdapter cef = (CefPhaseModelAdapter) model;
+        if (model instanceof CefGibbs) {
+            CefGibbs cef = (CefGibbs) model;
             this.Gx = cef.getGibbs().dG_dy(T, y);
             this.Gxx = cef.getGibbs().d2G_dy2(T, y);
         } else {
@@ -137,24 +137,24 @@ public final class SundmanPhase {
     }
 
     public int[] offsets() {
-        return model instanceof CefPhaseModelAdapter
-                ? ((CefPhaseModelAdapter) model).getGibbs().offsets() : new int[]{0};
+        return model instanceof CefGibbs
+                ? ((CefGibbs) model).getGibbs().offsets() : new int[]{0};
     }
 
     public int[] constituentsPerSublattice() {
-        return model instanceof CefPhaseModelAdapter
-                ? ((CefPhaseModelAdapter) model).getGibbs().constituentsPerSublattice()
+        return model instanceof CefGibbs
+                ? ((CefGibbs) model).getGibbs().constituentsPerSublattice()
                 : new int[]{nc};
     }
 
     public double[] siteRatios() {
-        return model instanceof CefPhaseModelAdapter
-                ? ((CefPhaseModelAdapter) model).getGibbs().siteRatios() : new double[]{1.0};
+        return model instanceof CefGibbs
+                ? ((CefGibbs) model).getGibbs().siteRatios() : new double[]{1.0};
     }
 
     public int[][] elementMap() {
-        if (model instanceof CefPhaseModelAdapter) {
-            return ((CefPhaseModelAdapter) model).getElementIndexOnSublattice();
+        if (model instanceof CefGibbs) {
+            return ((CefGibbs) model).getElementIndexOnSublattice();
         }
         int[][] map = new int[1][nc];
         for (int i = 0; i < nc; i++) map[0][i] = i;

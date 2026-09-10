@@ -5,7 +5,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import system.model.GibbsEnergyModel;
-import system.model.cef.CefPhaseModelAdapter;
+import system.model.cef.CefGibbs;
 import system.ports.EquilibriumResult;
 import util.Matrix;
 import util.SingularValueDecomposition;
@@ -140,7 +140,7 @@ public class EquilibriumSolverV2 {
      */
     private static final class PhaseWork {
 
-        final CefPhaseModelAdapter model;
+        final CefGibbs model;
 
         double[] y;
         double G;
@@ -165,7 +165,7 @@ public class EquilibriumSolverV2 {
         /** q_A = sum_i (dM_A/dY_i) c_iG. */
         double[] massGResponse;
 
-        PhaseWork(CefPhaseModelAdapter model) {
+        PhaseWork(CefGibbs model) {
             this.model = model;
         }
     }
@@ -899,17 +899,17 @@ public class EquilibriumSolverV2 {
             GibbsEnergyModel model =
                     phaseModels.get(p);
 
-            if (!(model instanceof CefPhaseModelAdapter)) {
+            if (!(model instanceof CefGibbs)) {
 
                 throw new UnsupportedOperationException(
                         "EquilibriumSolverV2 currently requires "
                         + "CEF candidate phases. Phase "
                         + p + " (" + model.phaseName()
-                        + ") is not a CefPhaseModelAdapter.");
+                        + ") is not a CefGibbs.");
             }
 
-            CefPhaseModelAdapter cef =
-                    (CefPhaseModelAdapter) model;
+            CefGibbs cef =
+                    (CefGibbs) model;
 
             PhaseWork work =
                     new PhaseWork(cef);
@@ -1141,7 +1141,7 @@ public class EquilibriumSolverV2 {
      * No phase-specific expressions are used here.
      */
     private double[] initializeSinglePhaseState(
-            CefPhaseModelAdapter phase,
+            CefGibbs phase,
             double[] xOverall) {
 
         if (phase == null)
@@ -1153,7 +1153,7 @@ public class EquilibriumSolverV2 {
                     "Overall composition must not be null or empty.");
 
         /*
-         * CefPhaseModelAdapter.getInitialInternalVars() constructs a strictly
+         * CefGibbs.getInitialInternalVars() constructs a strictly
          * positive constitution satisfying the CEF sublattice-normalization
          * constraints and matching the requested overall composition as closely
          * as possible.
@@ -1176,7 +1176,7 @@ public class EquilibriumSolverV2 {
      * Returns the total number of sites per formula unit.
      */
     private double totalSiteRatio(
-            CefPhaseModelAdapter phase) {
+            CefGibbs phase) {
 
         double sum = 0.0;
 
@@ -1197,7 +1197,7 @@ public class EquilibriumSolverV2 {
      * corresponds to one mole of lattice sites.
      */
     private double[] initializeSinglePhaseTargetM(
-            CefPhaseModelAdapter phase,
+            CefGibbs phase,
             double[] xOverall) {
 
         double[] x =
@@ -1235,7 +1235,7 @@ public class EquilibriumSolverV2 {
      * C has dimensions ns x nip.
      */
     private double[][] buildSublatticeConstraintMatrix(
-            CefPhaseModelAdapter phase) {
+            CefGibbs phase) {
 
         int ns =
                 phase.numSublattices();
@@ -1277,7 +1277,7 @@ public class EquilibriumSolverV2 {
      *   nip + nElements + nSublattices
      */
     private double[][] buildSinglePhaseKktMatrix(
-            CefPhaseModelAdapter phase) {
+            CefGibbs phase) {
 
         int nip =
                 phase.numSiteVars();
@@ -1366,7 +1366,7 @@ public class EquilibriumSolverV2 {
      * ambiguity.
      */
     private double[] buildSinglePhaseResidual(
-            CefPhaseModelAdapter phase,
+            CefGibbs phase,
             double[] targetM) {
 
         int nip =
@@ -1478,7 +1478,7 @@ public class EquilibriumSolverV2 {
                     "Phase has not been evaluated.");
         }
 
-        CefPhaseModelAdapter model =
+        CefGibbs model =
                 phaseWork.model;
 
         int nip =
@@ -1549,7 +1549,7 @@ public class EquilibriumSolverV2 {
      */
     private double[][] buildSundmanPhaseMatrix(
             PhaseWork work,
-            CefPhaseModelAdapter phase) {
+            CefGibbs phase) {
 
         int nip =
                 phase.numSiteVars();
@@ -1627,7 +1627,7 @@ public class EquilibriumSolverV2 {
      */
     private PhaseResponse calculatePhaseResponse(
             PhaseWork work,
-            CefPhaseModelAdapter phase) {
+            CefGibbs phase) {
 
         double[][] phaseMatrix =
                 buildSundmanPhaseMatrix(work, phase);
@@ -2162,7 +2162,7 @@ public class EquilibriumSolverV2 {
      * trial constitution without disturbing the accepted state.
      */
     private void evaluateSinglePhaseState(
-            CefPhaseModelAdapter phase,
+            CefGibbs phase,
             double[] y) {
 
         phaseWork.G =
@@ -2370,7 +2370,7 @@ public class EquilibriumSolverV2 {
      * differently-named field alongside it.
      */
     private boolean solveSinglePhaseNewton(
-            CefPhaseModelAdapter phase,
+            CefGibbs phase,
             double[] targetM) {
 
         int nip =

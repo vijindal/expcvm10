@@ -1,7 +1,6 @@
 package system;
 
 import system.model.GibbsEnergyModel;
-import system.model.PhaseModelFactory;
 import system.model.PhaseModelKind;
 import system.ports.DatabasePort;
 
@@ -71,13 +70,10 @@ public final class ThermodynamicSystem {
         List<?> modelList = system.buildPhaseModels(elements, phases, kind);
 
         @SuppressWarnings("unchecked")
-        List<PhaseModelFactory.PhaseModel> rawModels =
-                (List<PhaseModelFactory.PhaseModel>) (List<?>) modelList;
+        List<system.model.cef.CefGibbs> rawModels =
+                (List<system.model.cef.CefGibbs>) (List<?>) modelList;
 
-        List<GibbsEnergyModel> models = new ArrayList<>();
-        for (PhaseModelFactory.PhaseModel pm : rawModels) {
-            models.add(pm.toGibbsModel(elements));
-        }
+        List<GibbsEnergyModel> models = new ArrayList<>(rawModels);
 
         if (models.isEmpty()) {
             throw new IllegalStateException(

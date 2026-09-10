@@ -3,7 +3,7 @@ package test;
 import session.CalculationSession;
 import system.model.GibbsEnergyModel;
 import system.model.cef.CefGibbs;
-import system.model.cef.CefPhaseModelAdapter;
+import system.model.cef.CefGibbs;
 
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -218,11 +218,11 @@ public class CefMixingTermsTest {
                     + " model, but obtained " + models.size());
         }
         GibbsEnergyModel model = models.get(0);
-        if (!(model instanceof CefPhaseModelAdapter)) {
+        if (!(model instanceof CefGibbs)) {
             throw new IllegalStateException(phaseName
                     + " was not constructed as a CEF model (got "
                     + model.getClass().getSimpleName() + ").");
         }
-        return ((CefPhaseModelAdapter) model).getGibbs();
+        return ((CefGibbs) model).getGibbs();
     }
 }

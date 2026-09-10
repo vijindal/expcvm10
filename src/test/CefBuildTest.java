@@ -1,7 +1,7 @@
 package test;
 
 import system.database.TdbParser;
-import system.model.PhaseModelFactory.PhaseModel;
+import system.model.cef.CefGibbs;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -121,7 +121,7 @@ public class CefBuildTest {
 
         // ── Build models ──────────────────────────────────────────────
         @SuppressWarnings("unchecked")
-        List<PhaseModel> models = (List<PhaseModel>)
+        List<CefGibbs> models = (List<CefGibbs>)
             parser.buildPhaseModels(elements, phases);
 
         // ── Print results ─────────────────────────────────────────────
@@ -130,42 +130,39 @@ public class CefBuildTest {
         System.out.println("Phases built     : " + models.size());
         System.out.println();
 
-        for (PhaseModel m : models) {
-            System.out.println("Phase  : " + m.phaseName);
-            System.out.println("  ns   : " + m.gibbs.numSublattices());
-            System.out.println("  nip  : " + m.gibbs.numSiteVars());
-            System.out.println("  a[]  : " + Arrays.toString(m.gibbs.siteRatios()));
-            System.out.println("  nc[] : " + Arrays.toString(m.gibbs.constituentsPerSublattice()));
-            System.out.println("  magnetic : " + m.hasMagnetic()
-                + (m.hasMagnetic()
-                   ? " (aff=" + m.aff + " p=" + m.p + ")"
-                   : ""));
+        for (CefGibbs m : models) {
+            System.out.println("Phase  : " + m.phaseName());
+            System.out.println("  ns   : " + m.numSublattices());
+            System.out.println("  nip  : " + m.numSiteVars());
+            System.out.println("  a[]  : " + Arrays.toString(m.siteRatios()));
+            System.out.println("  nc[] : " + Arrays.toString(m.constituentsPerSublattice()));
+            System.out.println("  magnetic : " + m.hasMagnetic());
             System.out.println();
         }
 
         // ── Spot-check: evaluate G for each phase at T=1000K ─────────
         System.out.println("=== G evaluation at T=1000K ===");
-        for (PhaseModel m : models) {
-            int nip = m.gibbs.numSiteVars();
+        for (CefGibbs m : models) {
+            int nip = m.numSiteVars();
             double[] y = new double[nip];
             // Equal distribution as starting point
             int offset = 0;
-            int[] nc = m.gibbs.constituentsPerSublattice();
-            for (int s = 0; s < m.gibbs.numSublattices(); s++) {
+            int[] nc = m.constituentsPerSublattice();
+            for (int s = 0; s < m.numSublattices(); s++) {
                 for (int i = 0; i < nc[s]; i++)
                     y[offset + i] = 1.0 / nc[s];
                 offset += nc[s];
             }
-            double G = m.gibbs.G(1000.0, y);
-            System.out.printf("  %-10s G = %14.2f J/mol%n", m.phaseName, G);
+            double G = m.G(1000.0, y);
+            System.out.printf("  %-10s G = %14.2f J/mol%n", m.phaseName(), G);
         }
 
         // Diagnostic: check G vs composition for each phase at several
         // compositions to verify grid minimizer inputs are correct
         System.out.println("\n=== G vs composition sweep ===");
         double[] xVals = {0.1, 0.3, 0.5, 0.67, 0.9};
-        for (PhaseModel m : models) {
-            System.out.println("Phase: " + m.phaseName);
+        for (CefGibbs m : models) {
+            System.out.println("Phase: " + m.phaseName());
             system.model.GibbsEnergyModel gm =
                 system.model.PhaseModelFactory.toGibbsModel(m, elements);
             for (double xV : xVals) {
@@ -208,7 +205,7 @@ public class CefBuildTest {
         // xZr=1.0: ΔGm=0
 
         List<system.model.GibbsEnergyModel> gibbsModels = new ArrayList<>();
-        for (PhaseModel m : models) {
+        for (CefGibbs m : models) {
             gibbsModels.add(system.model.PhaseModelFactory.toGibbsModel(
                 m, elements));
         }

@@ -2,7 +2,7 @@ package calc.equil.sundman;
 
 import system.ports.EquilibriumResult;
 import system.ports.EquilibriumResult.PhaseResult;
-import system.model.cef.CefPhaseModelAdapter;
+import system.model.cef.CefGibbs;
 
 import java.util.ArrayList;
 import java.util.List;

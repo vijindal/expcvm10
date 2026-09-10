@@ -4,7 +4,7 @@ import system.database.TdbParser;
 import system.model.GibbsEnergyModel;
 import system.model.PhaseEquilData;
 import system.model.PhaseModelFactory;
-import system.model.PhaseModelFactory.PhaseModel;
+import system.model.cef.CefGibbs;
 
 import java.util.Arrays;
 import java.util.List;
@@ -16,7 +16,7 @@ import java.util.List;
  *   (b) x = compositionFromInternal(y) is still the normalized mole
  *       fraction, unaffected by the mA change;
  *   (c) the real (non-identity) eMatNC[A][B] = dM_A[A]/dmu_B computed by
- *       CefPhaseModelAdapter.compute() matches a central-difference
+ *       CefGibbs.compute() matches a central-difference
  *       approximation, for BCC_A2 and V2ZR.
  *
  * This checks only that mA/eMatNC are internally consistent with the
@@ -59,8 +59,8 @@ public class EMatNCTest {
         System.out.println("=== M_A/eMatNC check: " + phaseName + " y=" + Arrays.toString(y) + " ===");
 
         @SuppressWarnings("unchecked")
-        List<PhaseModel> models = (List<PhaseModel>) parser.buildPhaseModels(elements, Arrays.asList(phaseName));
-        PhaseModel pm = models.get(0);
+        List<CefGibbs> models = (List<CefGibbs>) parser.buildPhaseModels(elements, Arrays.asList(phaseName));
+        CefGibbs pm = models.get(0);
         GibbsEnergyModel gm = PhaseModelFactory.toGibbsModel(pm, elements);
 
         double[] mu0 = {100.0, -50.0}; // arbitrary non-zero base point, away from mu=0 degeneracy

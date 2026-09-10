@@ -3,7 +3,7 @@ package test;
 import system.database.TdbParser;
 import system.model.GibbsEnergyModel;
 import system.model.PhaseModelFactory;
-import system.model.PhaseModelFactory.PhaseModel;
+import system.model.cef.CefGibbs;
 import system.ports.EquilibriumResult;
 
 import java.util.ArrayList;
@@ -25,8 +25,8 @@ public class Bcc1PhaseTest {
         List<String> phases = Arrays.asList("BCC_A2");
 
         @SuppressWarnings("unchecked")
-        List<PhaseModel> models = (List<PhaseModel>) parser.buildPhaseModels(elements, phases);
-        PhaseModel bcc = models.get(0);
+        List<CefGibbs> models = (List<CefGibbs>) parser.buildPhaseModels(elements, phases);
+        CefGibbs bcc = models.get(0);
         GibbsEnergyModel gm = PhaseModelFactory.toGibbsModel(bcc, elements);
 
         double T = 1200.0;

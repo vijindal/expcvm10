@@ -3,8 +3,7 @@ package calc.equil;
 import org.junit.jupiter.api.Test;
 
 import system.model.GibbsEnergyModel;
-import system.model.PhaseModelFactory;
-import system.model.cef.CefPhaseModelAdapter;
+import system.model.cef.CefGibbs;
 import system.ports.EquilibriumResult;
 
 import java.util.ArrayList;
@@ -96,8 +95,8 @@ public class EquilibriumSolverV2TwoPhaseEndToEndTest {
                 Arrays.asList(PHASE_A, PHASE_B);
 
         @SuppressWarnings("unchecked")
-        List<PhaseModelFactory.PhaseModel> raw =
-                (List<PhaseModelFactory.PhaseModel>)
+        List<CefGibbs> raw =
+                (List<CefGibbs>)
                         parser.buildPhaseModels(elements, phaseNames);
 
         assertEquals(
@@ -105,21 +104,9 @@ public class EquilibriumSolverV2TwoPhaseEndToEndTest {
                 raw.size(),
                 "Expected exactly two candidate phases.");
 
-        CefPhaseModelAdapter v2zr =
-                new CefPhaseModelAdapter(
-                        raw.get(0).gibbs,
-                        raw.get(0).magnetic,
-                        raw.get(0).phaseName,
-                        new ArrayList<>(elements),
-                        raw.get(0).constituentNames);
-
-        CefPhaseModelAdapter bcc =
-                new CefPhaseModelAdapter(
-                        raw.get(1).gibbs,
-                        raw.get(1).magnetic,
-                        raw.get(1).phaseName,
-                        new ArrayList<>(elements),
-                        raw.get(1).constituentNames);
+        // buildPhaseModels already returns fully-built CefGibbs models.
+        CefGibbs v2zr = raw.get(0);
+        CefGibbs bcc  = raw.get(1);
 
         List<GibbsEnergyModel> candidates =
                 Arrays.asList(v2zr, bcc);
