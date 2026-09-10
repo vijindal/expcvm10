@@ -13,6 +13,16 @@ Corrected topology (2026-09-09, per user):
 - System Layer <-> Calculation Layer is a real, repeated, two-way loop
   within one calculation (many (T,y) queries per solve), not a single
   handoff -- drawn as a double-headed loop, not a one-way arrow.
+
+Browsing capability (2026-09-10, per user, docs/plan-gui-calculationsession-wiring.md):
+- CalculationSession also exposes lightweight, calculation-free System
+  Layer QUERIES (available elements in a database; available phases for
+  a chosen element set) -- not just setModel's full model-build. Drawn
+  as a second CalculationSession<->System arrow, alongside setModel, so
+  the diagram doesn't imply System Layer access is calculation-only.
+  This is what keeps a UI's model-browsing screens (pick a database,
+  see what elements/phases exist) from ever reaching around
+  CalculationSession into the System Layer directly.
 """
 import matplotlib
 matplotlib.use("Agg")
@@ -20,7 +30,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 from matplotlib.lines import Line2D
 
-FIG_W, FIG_H = 13.5, 10.7
+FIG_W, FIG_H = 15.5, 10.7
 fig, ax = plt.subplots(figsize=(FIG_W, FIG_H))
 ax.set_xlim(0, FIG_W)
 ax.set_ylim(0, FIG_H)
@@ -67,7 +77,8 @@ b_session = box(cx, 5.7, 9.8, 2.0, "CalculationSession",
                 "holds the current system AND the latest result;\n"
                 "single point of contact for the UI, both ways", COL_SESSION)
 b_sys = box(cx - 3.3, 2.6, 5.2, 2.0, "Thermodynamic\nSystem Layer",
-            "builds GibbsEnergyModel[];\nevaluates G, dG/dy, d2G/dy2", COL_SYS, title_fs=15, sub_fs=10.5)
+            "builds GibbsEnergyModel[]; evaluates\nG, dG/dy, d2G/dy2; browsable\nelements/phases metadata",
+            COL_SYS, title_fs=15, sub_fs=9.7)
 b_calc = box(cx + 3.3, 2.6, 5.2, 2.0, "Calculation\nLayer",
              "runs the solver, querying\nthe models many times per solve", COL_CALC, title_fs=15, sub_fs=10.5)
 
@@ -82,8 +93,18 @@ ax.text(cx + 2.6, (b_ui['bot']+b_session['top'])/2, "results + status",
         bbox=dict(boxstyle="round,pad=0.12", fc="white", ec="none", alpha=0.88))
 
 # ── CalculationSession -> System: setModel (one-way trigger) ────────
-arrow((b_session['cx']-2.0, b_session['bot']), (b_sys['cx']+0.3, b_sys['top']), COL_SESSION,
+arrow((b_session['cx']-2.0, b_session['bot']), (b_sys['cx']+0.5, b_sys['top']), COL_SESSION,
       label="setModel(...)\nbuild once, reuse", label_xy=(b_session['cx']-3.6, (b_session['bot']+b_sys['top'])/2 + 0.15))
+
+# ── CalculationSession <-> System: browse (elements/phases queries, two-way) ──
+# Own vertical lane to the LEFT of the System box entirely, clear of
+# setModel and the System<->Calculation loop's labels.
+browse_x = b_sys['left'] - 0.55
+arrow((browse_x-0.1, b_session['bot']), (browse_x-0.1, b_sys['top']), COL_SESSION, lw=1.8, style="-|>")
+arrow((browse_x+0.1, b_sys['top']), (browse_x+0.1, b_session['bot']), COL_SYS, lw=1.8, style="-|>")
+ax.text(browse_x, (b_session['bot']+b_sys['top'])/2,
+        "browse(tdb) /\nelements+phases", fontsize=9, ha="center", va="center", color="#333",
+        rotation=90, bbox=dict(boxstyle="round,pad=0.1", fc="white", ec="none", alpha=0.92))
 
 # ── CalculationSession <-> Calculation: calculate(...) / result (two-way) ──
 arrow((b_session['cx']+0.9, b_session['bot']), (b_calc['cx']-1.0, b_calc['top']), COL_SESSION,
