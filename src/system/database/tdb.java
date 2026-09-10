@@ -1009,7 +1009,7 @@ public class tdb {
                 //this.expList.add(exp);//add expression
             }
             splitExpressLine = splitString(splitKeywordLine[numRange - 1].trim(), endmarkSpace);// get tempRange
-            this.tempRange.add(Double.parseDouble(splitExpressLine[0].trim()));//Add tempRange
+            this.tempRange.add(parseRangeLimit(splitExpressLine[0]));//Add tempRange (accepts ",," shorthand)
             //System.out.println("tempRange:" + tempRange);
             //System.out.println("expStringList:" + expStringList);
             for (int i = 0; i < numRange - 1; i++) {
@@ -1240,7 +1240,7 @@ public class tdb {
             for (int i = 1; i < numRange - 1; i++) {
                 //Print.f("expressLine:" + splitKeywordLine[i], 0);
                 splitExpressLine = splitString(tempList[i].trim(), endmarkSpace);// get tempRange
-                this.tempRange.add(Double.parseDouble(splitExpressLine[0].trim()));//Add tempRange
+                this.tempRange.add(parseRangeLimit(splitExpressLine[0]));//Add tempRange (accepts ",," shorthand)
                 tempList[i] = splitExpressLine[1].trim();//remaining ExpressLine
                 splitExpressLine = splitString(tempList[i].trim(), endmarkSpace);// split to get word "Y/N" and expression
                 //exp = new Exp(splitExpressLine[1].trim());
@@ -1249,7 +1249,7 @@ public class tdb {
             }
             //Print.f("expressLine:" + splitKeywordLine[numRange - 1], 0);
             splitExpressLine = splitString(tempList[numRange - 1].trim(), endmarkSpace);// get tempRange
-            this.tempRange.add(Double.parseDouble(splitExpressLine[0].trim()));//Add tempRange
+            this.tempRange.add(parseRangeLimit(splitExpressLine[0]));//Add tempRange (accepts ",," shorthand)
             for (int i = 0; i < numRange - 1; i++) {
                 exp = new Exp(expStringList.get(i), tempRange.get(i), tempRange.get(i + 1));// exp object is called with keyword line
                 this.expList.add(exp);
@@ -1366,6 +1366,34 @@ public class tdb {
         //Print.f("splitString called with inputString: " + inputLine, 0);
         String[] splitLine = inputLine.split(endmark, 2); //splitting keywordString using space " " into words
         return splitLine;
+    }
+
+    /**
+     * Default upper temperature (K) used when a FUNCTION or PARAMETER
+     * temperature range omits its upper limit with the standard {@code ,,}
+     * shorthand (e.g. {@code ... ; ,, N !}). Thermo-Calc / OpenCalphad /
+     * pycalphad treat an empty upper limit as "carry to the global upper
+     * bound"; 6000 K is the conventional SGTE ceiling and matches every
+     * explicit range in the databases shipped here.
+     */
+    private static final double DEFAULT_UPPER_TEMPERATURE = 6000.0;
+
+    /**
+     * Parses a FUNCTION/PARAMETER temperature-range limit token, accepting
+     * the {@code ,,} (or empty) shorthand for "use the default upper
+     * temperature" -- {@link #DEFAULT_UPPER_TEMPERATURE}. A trailing
+     * {@code ,} (as in {@code low ,}) is treated the same way.
+     */
+    private static double parseRangeLimit(String token) {
+        String t = token == null ? "" : token.trim();
+        // Strip a trailing comma-run: "6000," -> "6000", "," / ",," -> ""
+        while (t.endsWith(",")) {
+            t = t.substring(0, t.length() - 1).trim();
+        }
+        if (t.isEmpty()) {
+            return DEFAULT_UPPER_TEMPERATURE;
+        }
+        return Double.parseDouble(t);
     }
 
     public void printPhaseList() throws IOException {

@@ -9,7 +9,7 @@ import java.util.List;
  * Step calculation (G vs T) for the V2ZR phase, run point-by-point through
  * {@link CalculationSession#calculateEquilibrium}, compared against the
  * existing Fig. 9 literature baseline
- * ({@link V2ZrGibbsLiteratureBaselineTest}, digitized from Cui et al. 2016).
+ * ({@link CefLiteratureBaselineTest}, digitized from Cui et al. 2016).
  *
  * <p>{@link CalculationSession#calculateStep} is intentionally an
  * unimplemented stub (no plain property-sampling engine exists yet -- see
@@ -31,7 +31,7 @@ import java.util.List;
  * range instead of one point. This test reports the comparison and does
  * NOT assert pass/fail against Fig. 9 (that assertion already exists and
  * passes via direct CEF evaluation in
- * {@link V2ZrGibbsLiteratureBaselineTest}); it only confirms
+ * {@link CefLiteratureBaselineTest}); it only confirms
  * {@code CalculationSession} runs a full step-shaped sweep end-to-end
  * without error, and documents by how much the solver's answer disagrees
  * with literature at each point.
@@ -40,7 +40,7 @@ public class CalculationSessionStepCalGTest {
 
     private static final double[][] FIG9_SOLID_CURVE = {
         // { T [K], G [kJ/mol formula unit] } -- same digitized points as
-        // V2ZrGibbsLiteratureBaselineTest
+        // CefLiteratureBaselineTest
         {  300, -41.69 }, {  350, -46.61 }, {  400, -52.90 }, {  450, -58.80 },
         {  500, -65.68 }, {  550, -72.57 }, {  600, -79.84 }, {  650, -87.32 },
         {  700, -96.17 }, {  750, -104.03 }, {  800, -113.08 }, {  850, -121.73 },

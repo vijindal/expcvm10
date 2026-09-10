@@ -170,11 +170,7 @@ public final class ThermodynamicSystem {
 Implemented at `src/system/ThermodynamicSystem.java`, matching this sketch
 (private constructor; `build()` is the only way to create one). Verified:
 whole-project compile clean; existing baseline tests unaffected
-(`RkModelBaselineTest`, `V2ZrGibbsBaselineTest`,
-`V2ZrGibbsLiteratureBaselineTest`, `EMatNCTest`); a new smoke test
-(`src/test/ThermodynamicSystemSmokeTest.java`) confirms
-`EquilibriumUseCase.execute()` output is bit-for-bit identical to the
-pre-refactor path for the same inputs.
+(`CefLiteratureBaselineTest`, `EMatNCTest`).
 
 **Bug found and fixed along the way:** `PhaseDiagramUseCase.execute()` cast
 `List<PhaseModelFactory.PhaseModel>` straight to `List<GibbsEnergyModel>` —
@@ -304,16 +300,17 @@ reason.
   sealed wrapper. Simpler for two calculation kinds today; a third accessor
   is a small addition later if needed.
 
-**Relationship to existing use cases:** `EquilibriumUseCase`/
-`PhaseDiagramUseCase` (Steps 1-2) don't disappear — they remain the
-GUI-specific request/result DTO glue. Their internals would delegate
-build-system/run-calculation sequencing to `CalculationSession` instead of
-calling `ThermodynamicSystem.build()` directly — this is what actually
-gives system reuse *across* separate calculations, which Steps 1-2 alone
-don't provide. **Not yet done** — `EquilibriumUseCase`/`PhaseDiagramUseCase`
-still call `ThermodynamicSystem.build()` directly as of this commit;
-wiring them through `CalculationSession` instead is follow-on work, not
-required for `CalculationSession` itself to exist and be usable.
+**Relationship to existing use cases (superseded — see Step 7).** This
+step originally proposed keeping `EquilibriumUseCase`/`PhaseDiagramUseCase`
+as GUI/CLI DTO glue and having *their internals* delegate to
+`CalculationSession`. Step 7 took a different route: the GUI and CLI now
+call `CalculationSession` **directly** (via `MainController` /
+`CliApp`), and those use-case classes are simply no longer on the
+GUI/CLI path. `EquilibriumUseCase`/`PhaseDiagramUseCase` are now
+reachable only from `SinglePointUseCase`, `StepCalculationUseCase`,
+`MapCalculationUseCase` (mutual delegation) — effectively dead for
+production UIs.
+Removing them is a separate cleanup, not blocking anything.
 
 **Implementation note:** `src/session/CalculationSession.java` implemented
 exactly per the sketch above (per-kind result accessors, `session/` package).
@@ -330,18 +327,18 @@ result still available afterward; and (added with the four-calculation-type
 decision above) that `calculateStep`/`calculateMap` throw
 `UnsupportedOperationException` when called with a model set, but
 `IllegalStateException` when called with no model set. Existing baseline
-tests (`RkModelBaselineTest`, `V2ZrGibbsBaselineTest`, `EMatNCTest`,
-`ThermodynamicSystemSmokeTest`) re-run clean, confirming no regression.
+tests (`CefLiteratureBaselineTest`, `EMatNCTest`) re-run clean,
+confirming no regression.
 
-### Step 4 — Result-flow consistency (small, mechanical)
+### Step 4 — Result-flow consistency (small, mechanical)  ✅ RESOLVED (left as-is)
 
-Confirm whether `ui/result/CalculationResult.java` is dead code (no use
-case currently returns it — `EquilibriumUseCase` returns `EquilibriumResult`
-directly, unconverted). If dead, leave it unless asked to clean it up. If
-it's meant to be the single-point analogue of `PhaseDiagramResult`, wire
-`SinglePointUseCase`/`EquilibriumUseCase` to convert before returning,
-matching the diagram path's existing DTO-conversion pattern. Confirm actual
-call sites at implementation time; don't force it.
+`ui/result/CalculationResult.java` is dead code — no production path
+returns it. After Step 7 the GUL/CLI/API single-point paths return
+`system.ports.EquilibriumResult` directly (GUI/CLI) or an
+`EquilibriumResponse` DTO (API); none convert to `CalculationResult`.
+Per this step's own guidance ("if dead, leave it unless asked"), it is
+left in place. `MainController.runCalModel` still references it for the
+legacy CalModel path only.
 
 ### Step 5 — Step/mapping state machine and grid minimizer: confirmed status
 
@@ -404,7 +401,7 @@ an intentional stub per Step 3).
 V/Zr mixing on both sublattices) at this stoichiometric composition,
 giving G ≈ -137.35 kJ/mol at T=1000 K. The true, more stable minimum is
 the **ordered** V:ZR end member (`y=[1,0,0,1]`), independently confirmed
-via `V2ZrGibbsLiteratureBaselineTest`'s direct CEF evaluation to give
+via `CefLiteratureBaselineTest`'s direct CEF evaluation to give
 G ≈ -150.69 kJ/mol — about 13 kJ/mol lower (more stable). The step scan
 shows this gap across the full range digitized from Fig. 9: **23.8 kJ/mol
 at 300 K, shrinking monotonically to 1.9 kJ/mol at 1950 K** (all 34
@@ -438,61 +435,95 @@ pre-existing `EquilibriumSolver`/`GridMinimizer` gap for phases with
 internal ordering degrees of freedom at stoichiometric compositions —
 worth its own dedicated investigation later, separate from any UI wiring.
 
-### Step 7 — Wire CLI, API, GUI through `CalculationSession`
+### Step 7 — Wire CLI, API, GUI through `CalculationSession`  ✅ DONE (all three, all paths)
 
-Per the user's direction, three consumers of `CalculationSession` in
-sequence: REST API (largest, own dedicated plan — see
-`docs/plan-rest-api-calculation-session.md` — ✅ DONE), CLI (this step,
-✅ DONE for the `equilibrium` command), GUI (not yet started).
+Every production path in all three UIs now reaches the System and
+Calculation layers **only** through `CalculationSession` — for browsing
+(pre-calculation: list databases / elements / phases, no model build) as
+well as calculating. Paths that could not yet route through the session
+were reduced to explicit "not yet wired through `CalculationSession`"
+stubs rather than left bypassing it.
 
-**CLI — `equilibrium` command, ✅ DONE.** Added to `src/ui/cli/CliApp.java`
-alongside the existing `diagram`/`inspect`/etc. commands (which still use
-the older `PhaseDiagramUseCase` path, unchanged):
-```
-equilibrium [--tdb FILE] [--elements A,B] [--phases P1,P2]
-            [--T value] [--P value] [--composition x1,x2,...]
-```
-Defaults to the calG scenario (V-Zr, V2ZR, T=1000K, P=10000Pa,
-x_Zr=1/3) when run with no flags. Builds a `CalculationSession` per
-invocation, calls `setModel(...)` then `calculateEquilibrium(...)`,
-prints the result — `IllegalStateException`/`UnsupportedOperationException`
-from the session are caught and printed as a clean CLI error rather than
-a stack trace. Verified via `src/test/CliEquilibriumCommandTest.java`
-(drives `CliApp.run(String[])` exactly as a real invocation would,
-captures stdout, checks it against the same known-good calG values as
-`CalculationSessionCalGTest`/`CalculationApiServerTest`: G=-137349.4480,
-mu[0]=116674.3539155658 — all three consumers now independently verified
-to produce bit-identical results for the same scenario). Also confirmed
-custom `--T`/`--composition` flags are honored. All 6 checks pass;
-existing regression suite re-run clean.
+**REST API — ✅ DONE (own plan, since deleted; summary here).**
+`src/ui/api/` (`CalculationApiServer` + `SessionStore` + `ui.api.dto.*`)
+was compliant from the start: one `CalculationSession` per API session
+id, `PUT .../model` → `setModel`, `POST .../calculations/equilibrium` →
+`calculateEquilibrium` + `currentEquilibriumResult()`,
+`POST .../calculations/phase-diagram` → `calculatePhaseDiagram` +
+`currentPhaseDiagram()` (via a `PhaseDiagramRequest.AxisSpec ->
+AxisConfig` adapter), `step`/`map` → 501. `com.sun.net.httpserver` +
+Gson, no framework. Verified by `src/test/CalculationApiServerTest.java`
+against the known-good calG values.
 
-**GUI — ✅ DONE.** `MainController.runSinglePoint(...)` (the GUI's
-production single-point call site, invoked from `MainFrame`'s
-`onRunCalculation()`) now holds one `CalculationSession` for the
-controller's lifetime and routes through
-`setModel(...)`/`calculateEquilibrium(...)` instead of
-`SinglePointUseCase`/`EquilibriumUseCase`/`ThermodynamicSystem.build()`
-directly. **No change to `MainFrame.java`, any GUI panel, or
-`runSinglePoint`'s method signature** — the same call site now transparently
-benefits from `CalculationSession`'s reuse behavior (repeated single-point
-runs against the same TDB/elements/phases no longer re-parse the database).
-`SinglePointUseCase` is retained as a constructor parameter (unused
-internally now) since changing `MainController`'s public constructor
-signature was out of scope for this change; it is dead weight, not a bug —
-flagged for a future cleanup pass, not fixed here.
+**CLI (`src/ui/cli/CliApp.java`) — ✅ DONE.** Constructor reduced to
+`CliApp(OptimizationUseCase)`; holds one `CalculationSession` for the
+process.
+- `equilibrium` → `setModel` + `calculateEquilibrium` +
+  `currentEquilibriumResult()`.
+- `(no args)` default → delegates to the `equilibrium` path (was a
+  `SinglePointUseCase` → `ThermodynamicSystem.build()` demo).
+- `diagram` → `setModel` + `calculatePhaseDiagram(axes, startAxes,
+  fixedT, fixedP, comp)` + `currentPhaseDiagram()` (was
+  `PhaseDiagramUseCase.execute()` → `ThermodynamicSystem.build()`
+  directly). `--type MAP|STEP` flag dropped — `calculatePhaseDiagram`
+  always traces boundaries; step/map are the separate stubs.
+- `inspect` → `session.availableElements(tdbPath)` /
+  `availablePhasesFor(tdbPath, elements)` (was
+  `ModelInspectionService` → raw `TdbParser`).
+- `opt`/`cal` unchanged — legacy Levenberg-Marquardt assessment
+  pathway, out of scope for this design.
+Verified by `src/test/CliEquilibriumCommandTest.java` (known-good calG
+values); `inspect` / default / `diagram` also smoke-tested live.
 
-Verified via `src/test/GuiMainControllerEquilibriumTest.java` (calls
-`runSinglePoint(...)` directly — no Swing/GUI code needed to exercise it):
-reproduces the exact same calG values as the in-process test, REST API,
-and CLI (G=-137349.4480, mu[0]=116674.3539155658) — **all four consumers
-of `CalculationSession` now independently verified to produce identical
-results for the same scenario.** Also confirms a second call with
-unchanged model details still succeeds and gives the same G (session
-reuse working correctly through this call site). Existing regression
-suite re-run clean.
+**GUI (`src/ui/gui/MainController.java`, `GuiApp.java`) — ✅ DONE.**
+`MainController` constructor reduced to `MainController(OptimizationUseCase)`;
+`GuiApp` to `GuiApp(OptimizationUseCase)`. `Main` no longer constructs
+`SinglePointUseCase` / `PhaseDiagramUseCase` / `EquilibriumUseCase` /
+`ModelInspectionService` for either entry point.
+- `runSinglePoint` → `setModel` + `calculateEquilibrium` +
+  `currentEquilibriumResult()` (signature and call site in `MainFrame`
+  unchanged).
+- `availableDatabases` / `inspectModel` / `getPhasesForElements` →
+  `CalculationSession` browse methods (already the case before this
+  step, via the GUI browsing pass).
+- `runPhaseDiagram` → **stub**: returns an incomplete
+  `PhaseDiagramResult` with a message + TODO documenting the compliant
+  shape (`setModel` + `calculatePhaseDiagram`, pending a
+  `PhaseDiagramRequest -> AxisConfig[]` adapter like the API's).
+- `getPhaseParameters` → **stub** (returns empty list): the
+  detailed per-phase parameter dump has no browse-style
+  `CalculationSession` query yet.
+- `runPropertyScan` → **stub**: `calculateStep`/`calculateMap` are
+  themselves unimplemented (no property-sampling engine).
+Verified by `src/test/GuiMainControllerEquilibriumTest.java` (known-good
+calG values; session reuse across two calls).
 
-**Step 7 complete: REST API, CLI, and GUI are all wired to
-`CalculationSession`.**
+**All four consumers (in-process test, REST API, CLI, GUI) produce
+bit-identical results for the calG scenario: G = -137349.4480 J/mol.f.u.,
+mu[0] = 116674.3539155658.** Full regression suite
+(`CalculationSessionTest`, `CalculationApiServerTest`,
+`CliEquilibriumCommandTest`, `GuiMainControllerEquilibriumTest`,
+`EMatNCTest`) re-run clean.
+
+**Still stubbed, not wired (each needs prior work, not just wiring):**
+- GUI `runPhaseDiagram` — needs a `PhaseDiagramRequest -> AxisConfig[]`
+  adapter (the API already has one; lift it to a shared spot).
+- GUI `getPhaseParameters` — needs a browse-style parameter-dump method
+  on `CalculationSession`.
+- CLI/GUI property scan — needs a real step/map property-sampling
+  engine (see Step 3's "four calculation types" note) behind
+  `CalculationSession.calculateStep`/`calculateMap`.
+- The Step 6 disordered-constitution solver bug — independent of any
+  wiring.
+
+## Status
+
+**Steps 1-7 complete.** All three UIs (GUI, CLI, REST API) route through
+`CalculationSession` for both browsing and calculating; the target data
+flow in `README.md` "Structure" / `docs/dataflow_target.png` matches the
+code. Remaining work (all deferred by this plan, none blocking):
+step/map property-sampling engine, the GUI phase-diagram / parameter-dump
+wiring behind their stubs, the Step 6 solver bug, and `EquilibriumSolverV2`.
 
 ## Explicitly out of scope for this pass
 
@@ -505,8 +536,10 @@ suite re-run clean.
   functional benefit.
 - **Any change to `PhaseModelFactory`, `TdbParser`, `RkGibbs`, `CefGibbs`,**
   or any model/database-layer class.
-- **Any CLI or API implementation** — `CalculationSession` is designed to
-  be usable by a future CLI/API, but building either is not part of this plan.
+- **Removing the now-dead `EquilibriumUseCase`/`PhaseDiagramUseCase`/
+  `SinglePointUseCase`/`ModelInspectionService`** — no longer on any
+  production UI path after Step 7, but deleting them (and their
+  `Step`/`Map`/`ValidateModel` delegators) is a separate cleanup.
 
 ## Verification
 

@@ -9,8 +9,6 @@ import system.model.cef.CefInteractionParam;
 import system.model.cef.CefPhaseModelAdapter;
 import system.model.cef.MagneticContribution;
 import system.model.cef.SgtePolynomial;
-import system.model.rk.RkGibbs;
-import system.model.rk.RkPhaseModelFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,18 +17,23 @@ import java.util.Map;
 /**
  * Factory for constructing phase Gibbs-energy models from a TDB database.
  *
- * <p>For phases with more than one sublattice, the model is represented using
- * the Compound Energy Formalism (CEF). The TDB constituent array is preserved
- * when constructing CEF interaction parameters.</p>
+ * <p>Every phase is represented with the Compound Energy Formalism
+ * ({@code CefGibbs}), regardless of sublattice count. A one-sublattice
+ * substitutional (Redlich-Kister) solution is the CEF 1-sublattice
+ * special case -- end members are the pure elements and interactions are
+ * {@code L(A,B;n)} on the single sublattice -- so no separate RK model is
+ * needed. The TDB constituent array is preserved when constructing CEF
+ * interaction parameters.
  *
- * <p>For one-sublattice substitutional phases, the existing RK model is used.
- * This preserves the established treatment of liquid/substitutional solution
- * phases.</p>
+ * <p>{@link PhaseModelKind#CVM} is reserved for a future Cluster
+ * Variation Method model and currently throws
+ * {@link UnsupportedOperationException}.
  */
 public class PhaseModelFactory {
 
     /**
-     * Result object returned by build().
+     * Result object returned by build(). Always carries a
+     * {@link CefGibbs}.
      */
     public static class PhaseModel {
 
@@ -45,11 +48,6 @@ public class PhaseModelFactory {
          */
         public final ArrayList<ArrayList<String>> constituentNames;
 
-        /**
-         * Alternate model, used for one-sublattice phases.
-         */
-        public final GibbsEnergyModel alternateModel;
-
 
         public PhaseModel(String phaseName,
                           CefGibbs gibbs,
@@ -58,45 +56,12 @@ public class PhaseModelFactory {
                           double p,
                           ArrayList<ArrayList<String>> constituentNames) {
 
-            this(phaseName,
-                 gibbs,
-                 magnetic,
-                 aff,
-                 p,
-                 constituentNames,
-                 null);
-        }
-
-
-        private PhaseModel(String phaseName,
-                           CefGibbs gibbs,
-                           MagneticContribution magnetic,
-                           double aff,
-                           double p,
-                           ArrayList<ArrayList<String>> constituentNames,
-                           GibbsEnergyModel alternateModel) {
-
             this.phaseName = phaseName;
             this.gibbs = gibbs;
             this.magnetic = magnetic;
             this.aff = aff;
             this.p = p;
             this.constituentNames = constituentNames;
-            this.alternateModel = alternateModel;
-        }
-
-
-        public static PhaseModel forAlternateModel(String phaseName,
-                                                   GibbsEnergyModel model) {
-
-            return new PhaseModel(
-                    phaseName,
-                    null,
-                    null,
-                    0.0,
-                    0.0,
-                    new ArrayList<>(),
-                    model);
         }
 
 
@@ -113,18 +78,39 @@ public class PhaseModelFactory {
     /**
      * Builds a phase model from the supplied TDB.
      *
-     * @param phaseName phase name
-     * @param database loaded and element-filtered TDB
-     * @param elements ordered system elements
-     * @param affMap magnetic A-function map
-     * @param pMap magnetic p-function map
-     * @return constructed phase model
+     * <p>Equivalent to {@link #build(String, tdb, List, Map, Map, PhaseModelKind)}
+     * with {@link PhaseModelKind#AUTO}.
      */
     public static PhaseModel build(String phaseName,
                                    tdb database,
                                    List<String> elements,
                                    Map<String, Double> affMap,
                                    Map<String, Double> pMap) {
+        return build(phaseName, database, elements, affMap, pMap, PhaseModelKind.AUTO);
+    }
+
+    /**
+     * Builds a phase model from the supplied TDB.
+     *
+     * @param phaseName phase name
+     * @param database loaded and element-filtered TDB
+     * @param elements ordered system elements
+     * @param affMap magnetic A-function map
+     * @param pMap magnetic p-function map
+     * @param kind which model to use. {@link PhaseModelKind#AUTO} and
+     *        {@link PhaseModelKind#CEF} both build a {@code CefGibbs} for
+     *        every phase, regardless of sublattice count (a one-sublattice
+     *        substitutional phase is the CEF 1-sublattice special case).
+     *        {@link PhaseModelKind#CVM} is not implemented and throws
+     *        {@link UnsupportedOperationException}.
+     * @return constructed phase model
+     */
+    public static PhaseModel build(String phaseName,
+                                   tdb database,
+                                   List<String> elements,
+                                   Map<String, Double> affMap,
+                                   Map<String, Double> pMap,
+                                   PhaseModelKind kind) {
 
         if (database == null)
             throw new IllegalArgumentException("Database must not be null.");
@@ -134,6 +120,10 @@ public class PhaseModelFactory {
 
         if (elements == null)
             throw new IllegalArgumentException("Element list must not be null.");
+
+        if (kind == PhaseModelKind.CVM)
+            throw new UnsupportedOperationException(
+                    "CVM model not yet implemented (phase " + phaseName + ")");
 
 
         /*
@@ -151,29 +141,12 @@ public class PhaseModelFactory {
 
         /*
          * ---------------------------------------------------------------
-         * 2. One-sublattice phases
+         * 2. Read CEF structure
          * ---------------------------------------------------------------
          *
-         * These remain on the existing RK implementation.
-         */
-        if (phase.getNumSubLat() == 1) {
-
-            RkGibbs rk =
-                    RkPhaseModelFactory.build(
-                            phaseName,
-                            elements,
-                            database);
-
-            return PhaseModel.forAlternateModel(
-                    phaseName,
-                    rk);
-        }
-
-
-        /*
-         * ---------------------------------------------------------------
-         * 3. Read CEF structure
-         * ---------------------------------------------------------------
+         * The CEF path below is fully sublattice-count-generic. A
+         * one-sublattice phase is the substitutional case: end members =
+         * pure elements, interactions = L(A,B;n) on the single sublattice.
          */
 
         int ns = phase.getNumSubLat();
@@ -660,9 +633,6 @@ public class PhaseModelFactory {
         if (pm == null)
             throw new IllegalArgumentException(
                     "PhaseModel must not be null.");
-
-        if (pm.alternateModel != null)
-            return pm.alternateModel;
 
         return new CefPhaseModelAdapter(
                 pm.gibbs,

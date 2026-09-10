@@ -3,7 +3,7 @@ package system.database;
 
 import system.database.tdb;
 import system.model.GibbsEnergyModel;
-import system.model.rk.RkPhaseModelFactory;
+import system.model.PhaseModelKind;
 import system.ports.DatabasePort;
 
 import java.io.IOException;
@@ -78,6 +78,13 @@ public class TdbParser implements DatabasePort {
     @Override
     public List<?> buildPhaseModels(List<String> elements,
                                     List<String> phaseNames) throws IOException {
+        return buildPhaseModels(elements, phaseNames, PhaseModelKind.AUTO);
+    }
+
+    @Override
+    public List<?> buildPhaseModels(List<String> elements,
+                                    List<String> phaseNames,
+                                    PhaseModelKind kind) throws IOException {
 
         List<system.model.PhaseModelFactory.PhaseModel> models = new ArrayList<>();
 
@@ -113,7 +120,8 @@ public class TdbParser implements DatabasePort {
                         filteredTdb,
                         elements,
                         affMap,
-                        pMap
+                        pMap,
+                        kind
                     );
                 models.add(model);
                 LOG.fine("Built CEF model: " + phaseName

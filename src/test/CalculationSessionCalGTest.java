@@ -28,7 +28,7 @@ import java.util.List;
  * DISORDERED constitution (partial V/Zr mixing on both sublattices) at
  * this composition, giving G &asymp; -137.35 kJ/mol -- but the true ordered
  * V:ZR end member (y=[1,0,0,1], confirmed via
- * {@link V2ZrGibbsLiteratureBaselineTest}'s direct CEF evaluation) gives
+ * {@link CefLiteratureBaselineTest}'s direct CEF evaluation) gives
  * G &asymp; -150.69 kJ/mol, a deeper (more stable) minimum the solver misses.
  * At exactly one composition constraint with 2 internal degrees of freedom
  * on this phase, there is a one-parameter family of constitutions giving

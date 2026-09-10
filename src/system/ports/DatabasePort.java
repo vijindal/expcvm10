@@ -38,4 +38,18 @@ public interface DatabasePort {
      * @throws IOException if database load fails
      */
     List<?> buildPhaseModels(List<String> phases, List<String> phaseNames) throws IOException;
+
+    /**
+     * As {@link #buildPhaseModels(List, List)}, but selecting which
+     * Gibbs-energy model implementation to use per phase. The
+     * two-argument form is equivalent to passing
+     * {@link system.model.PhaseModelKind#AUTO}.
+     *
+     * <p>The default implementation ignores {@code kind} (delegates to
+     * the two-argument form); {@code TdbParser} overrides it.
+     */
+    default List<?> buildPhaseModels(List<String> phases, List<String> phaseNames,
+                                     system.model.PhaseModelKind kind) throws IOException {
+        return buildPhaseModels(phases, phaseNames);
+    }
 }

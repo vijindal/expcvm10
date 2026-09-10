@@ -6,6 +6,7 @@ import calc.diagram.PhaseDiagram;
 import calc.equil.EquilibriumSolver;
 import system.ThermodynamicSystem;
 import system.database.TdbParser;
+import system.model.PhaseModelKind;
 import system.ports.DatabasePort;
 import system.ports.EquilibriumResult;
 
@@ -54,7 +55,8 @@ import java.util.List;
 public final class CalculationSession {
 
     /** Identifies "what system is currently loaded." */
-    public record ModelKey(String tdbFilePath, List<String> elements, List<String> phases) {}
+    public record ModelKey(String tdbFilePath, List<String> elements, List<String> phases,
+                           PhaseModelKind modelKind) {}
 
     private ModelKey currentKey;
     private ThermodynamicSystem currentSystem;
@@ -103,7 +105,18 @@ public final class CalculationSession {
      */
     public void setModel(String tdbFilePath, List<String> elements, List<String> phases)
             throws IOException {
-        ModelKey requested = new ModelKey(tdbFilePath, elements, phases);
+        setModel(tdbFilePath, elements, phases, PhaseModelKind.AUTO);
+    }
+
+    /**
+     * As {@link #setModel(String, List, List)}, but selecting which
+     * Gibbs-energy model to build per phase (see {@link PhaseModelKind}).
+     * The model kind is part of the model identity, so changing it forces
+     * a rebuild.
+     */
+    public void setModel(String tdbFilePath, List<String> elements, List<String> phases,
+                         PhaseModelKind modelKind) throws IOException {
+        ModelKey requested = new ModelKey(tdbFilePath, elements, phases, modelKind);
         if (requested.equals(currentKey)) {
             return;
         }
@@ -141,7 +154,8 @@ public final class CalculationSession {
                     + "phases from: " + validPhases);
         }
 
-        this.currentSystem = ThermodynamicSystem.build(tdbFilePath, elements, phases);
+        this.currentSystem =
+                ThermodynamicSystem.build(tdbFilePath, elements, phases, modelKind);
         this.currentKey = requested;
         this.currentEquilibriumResult = null;
         this.currentPhaseDiagram = null;

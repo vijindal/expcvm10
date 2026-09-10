@@ -2,6 +2,7 @@ package system;
 
 import system.model.GibbsEnergyModel;
 import system.model.PhaseModelFactory;
+import system.model.PhaseModelKind;
 import system.ports.DatabasePort;
 
 import java.io.IOException;
@@ -34,23 +35,40 @@ public final class ThermodynamicSystem {
      * Builds a thermodynamic system by parsing {@code tdbFilePath} and
      * constructing a {@link GibbsEnergyModel} for each of {@code phases}.
      *
+     * <p>Equivalent to {@link #build(String, List, List, PhaseModelKind)}
+     * with {@link PhaseModelKind#AUTO}.
+     */
+    public static ThermodynamicSystem build(String tdbFilePath,
+                                             List<String> elements,
+                                             List<String> phases) throws IOException {
+        return build(tdbFilePath, elements, phases, PhaseModelKind.AUTO);
+    }
+
+    /**
+     * Builds a thermodynamic system by parsing {@code tdbFilePath} and
+     * constructing a {@link GibbsEnergyModel} for each of {@code phases}.
+     *
      * @param tdbFilePath path to the TDB file
      * @param elements    ordered element symbols (defines component indices)
      * @param phases      phase names to build models for
+     * @param kind        which Gibbs-energy model to use per phase; see
+     *                    {@link PhaseModelKind}. {@code AUTO}/{@code CEF}
+     *                    build {@code CefGibbs} for every phase.
      * @return an immutable, ready-to-use thermodynamic system
      * @throws IOException if the TDB file cannot be loaded
      * @throws IllegalStateException if no phase models could be built
      */
     public static ThermodynamicSystem build(String tdbFilePath,
                                              List<String> elements,
-                                             List<String> phases) throws IOException {
+                                             List<String> phases,
+                                             PhaseModelKind kind) throws IOException {
         DatabasePort parser = new system.database.TdbParser();
         parser.load(tdbFilePath);
 
         String[] elemArray = elements.toArray(new String[0]);
         DatabasePort system = parser.extractSystem(elemArray);
 
-        List<?> modelList = system.buildPhaseModels(elements, phases);
+        List<?> modelList = system.buildPhaseModels(elements, phases, kind);
 
         @SuppressWarnings("unchecked")
         List<PhaseModelFactory.PhaseModel> rawModels =
