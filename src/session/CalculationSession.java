@@ -77,6 +77,28 @@ public final class CalculationSession {
      * details. Rebuilds only if the details differ from the currently held
      * system; otherwise this is a no-op and the existing system is reused.
      *
+     * <p>Validates each input against the corresponding browse method
+     * before attempting any real build, so every caller (GUI, CLI, API)
+     * gets the same clear, actionable error regardless of how it calls
+     * this method -- not a deep parser exception or a silent
+     * empty-model failure:
+     * <ul>
+     *   <li>{@code tdbFilePath} must be one of {@link #availableDatabases()}
+     *       (or otherwise exist on disk) -- naming the available databases
+     *       if not.</li>
+     *   <li>Every entry in {@code elements} must be in
+     *       {@link #availableElements(String)} for {@code tdbFilePath} --
+     *       naming the invalid elements and the database's actual elements
+     *       if not (i.e. "choose a valid database first").</li>
+     *   <li>Every entry in {@code phases} must be in
+     *       {@link #availablePhasesFor(String, List)} for those elements
+     *       -- naming the invalid phases and the actual phases available
+     *       for that element set if not (i.e. "choose valid elements
+     *       first").</li>
+     * </ul>
+     *
+     * @throws IllegalArgumentException if the database, elements, or
+     *         phases fail validation, per the checks above
      * @throws IOException if the TDB file cannot be loaded
      */
     public void setModel(String tdbFilePath, List<String> elements, List<String> phases)
@@ -85,6 +107,40 @@ public final class CalculationSession {
         if (requested.equals(currentKey)) {
             return;
         }
+
+        if (!new java.io.File(tdbFilePath).exists()) {
+            throw new IllegalArgumentException(
+                    "Database not found: " + tdbFilePath
+                    + ". Available databases: " + availableDatabases());
+        }
+
+        List<String> validElements = availableElements(tdbFilePath);
+        List<String> badElements = new ArrayList<>();
+        for (String el : elements) {
+            if (!validElements.contains(el)) {
+                badElements.add(el);
+            }
+        }
+        if (!badElements.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Element(s) not found in " + tdbFilePath + ": " + badElements
+                    + ". Choose a database first, then elements from: " + validElements);
+        }
+
+        List<String> validPhases = availablePhasesFor(tdbFilePath, elements);
+        List<String> badPhases = new ArrayList<>();
+        for (String ph : phases) {
+            if (!validPhases.contains(ph)) {
+                badPhases.add(ph);
+            }
+        }
+        if (!badPhases.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Phase(s) not valid for elements " + elements + " in " + tdbFilePath
+                    + ": " + badPhases + ". Choose a database and elements first, then "
+                    + "phases from: " + validPhases);
+        }
+
         this.currentSystem = ThermodynamicSystem.build(tdbFilePath, elements, phases);
         this.currentKey = requested;
         this.currentEquilibriumResult = null;
@@ -106,6 +162,43 @@ public final class CalculationSession {
             throw new IllegalStateException("No model set -- call setModel() first");
         }
         return currentSystem;
+    }
+
+    /** Directory scanned by {@link #availableDatabases()} for {@code .tdb} files. */
+    private static final String DATABASE_DIRECTORY = "data";
+
+    /**
+     * Lists the {@code .tdb} database files available to choose from, in
+     * {@value #DATABASE_DIRECTORY} relative to the working directory --
+     * the same fixed location every hardcoded default path in this
+     * codebase already assumes (no new configuration surface).
+     *
+     * <p>This is the browsing counterpart to {@link #setModel} one step
+     * earlier than {@link #availableElements}: "which files exist to pick
+     * from" rather than "what's inside one already-chosen file." A UI's
+     * database dropdown/list calls this (not a filesystem/{@code File}
+     * API directly) so that GUI, CLI, and API all discover the same set
+     * of databases through one shared, testable path.
+     *
+     * <p>Returns paths relative to {@value #DATABASE_DIRECTORY} (e.g.
+     * {@code "data/VZR-re2.TDB"}), matching the relative-path convention
+     * every other {@code CalculationSession} method already accepts.
+     * Returns an empty list if the directory doesn't exist; never throws
+     * for a missing directory, since "no databases found" is a normal,
+     * displayable UI state, not an error.
+     */
+    public List<String> availableDatabases() {
+        java.io.File dir = new java.io.File(DATABASE_DIRECTORY);
+        java.io.File[] files = dir.listFiles(
+                (d, name) -> name.toLowerCase().endsWith(".tdb"));
+        if (files == null) {
+            return List.of();
+        }
+        List<String> paths = new ArrayList<>();
+        for (java.io.File f : files) {
+            paths.add(DATABASE_DIRECTORY + "/" + f.getName());
+        }
+        return paths;
     }
 
     /**

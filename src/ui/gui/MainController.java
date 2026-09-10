@@ -2,20 +2,14 @@ package ui.gui;
 
 import ui.result.CalculationResult;
 import ui.result.ModelInfo;
-import ui.layer.SinglePointUseCase;
+import ui.layer.OptimizationUseCase;
 import ui.request.PropertyScanRequest;
 import ui.result.PropertyScanResult;
-import ui.layer.OptimizationUseCase;
 import ui.request.PhaseDiagramRequest;
 import ui.result.PhaseDiagramResult;
-import ui.layer.PhaseDiagramUseCase;
-import ui.layer.ModelInspectionService;
-import calc.diagram.AxisConfig;
 import session.CalculationSession;
 import util.AppLevel;
 import util.Trace;
-import system.ports.LoggingPort;
-import system.ports.OptimizationOutputPort;
 
 import java.io.IOException;
 import java.util.List;
@@ -25,39 +19,37 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Main controller bridging GUI views to application use-cases.
+ * Bridges GUI views to {@link CalculationSession}.
+ *
+ * <p>Per the target data flow (README "Structure" / {@code
+ * docs/dataflow_target.png}), the GUI's only point of contact with the
+ * System and Calculation layers is {@link CalculationSession}: browsing
+ * (pre-calculation) and calculating both go through the one session this
+ * controller holds. Paths that still reached around it -- phase diagram
+ * via {@code PhaseDiagramUseCase}, property scan, the parameter-dump
+ * inspector via {@code ModelInspectionService} -- have been reduced to
+ * explicit "not yet wired through CalculationSession" stubs rather than
+ * left bypassing the coordinator. See the TODO markers below.
  */
 public class MainController {
 
     private static final Logger LOG = Logger.getLogger(MainController.class.getName());
-    private final SinglePointUseCase singlePointUseCase;
     private final OptimizationUseCase optimizationUseCase;
-    private final PhaseDiagramUseCase phaseDiagramUseCase;
-    private final ModelInspectionService modelInspectionService;
     private final CalculationSession calculationSession = new CalculationSession();
 
-    public MainController(SinglePointUseCase singlePointUseCase,
-                          OptimizationUseCase optimizationUseCase,
-                          PhaseDiagramUseCase phaseDiagramUseCase,
-                          ModelInspectionService modelInspectionService) {
-        this.singlePointUseCase = singlePointUseCase;
+    public MainController(OptimizationUseCase optimizationUseCase) {
         this.optimizationUseCase = optimizationUseCase;
-        this.phaseDiagramUseCase = phaseDiagramUseCase;
-        this.modelInspectionService = modelInspectionService;
     }
 
     /**
      * Run a single-point calculation with the given parameters.
      *
-     * <p>Routed through {@link CalculationSession} (per
-     * {@code docs/plan-3layer-core-dataflow.md}, Step 7) rather than
-     * {@link SinglePointUseCase}/{@code EquilibriumUseCase} directly --
-     * the same coordinator the REST API and the CLI's {@code equilibrium}
-     * command use. One {@code CalculationSession} is held for the
-     * lifetime of this controller, so repeated single-point runs against
-     * the same TDB/elements/phases reuse the built
-     * {@code ThermodynamicSystem} instead of re-parsing the database
-     * every time.
+     * <p>Routed through {@link CalculationSession} -- the same coordinator
+     * the REST API and the CLI's {@code equilibrium} command use. One
+     * {@code CalculationSession} is held for the lifetime of this
+     * controller, so repeated single-point runs against the same
+     * TDB/elements/phases reuse the built {@code ThermodynamicSystem}
+     * instead of re-parsing the database every time.
      */
     public system.ports.EquilibriumResult runSinglePoint(String tdbPath, String[] elements,
                                             String method, String[] phases,
@@ -103,23 +95,28 @@ public class MainController {
 
     /**
      * Run a phase diagram calculation with the given request.
+     *
+     * <p>TODO: not yet wired through {@link CalculationSession}. The old
+     * path called {@code PhaseDiagramUseCase.execute(...)}, which does
+     * {@code ThermodynamicSystem.build(...)} on its own -- bypassing the
+     * session, so the system built for browsing / single-point is not
+     * reused and the result does not land on the session. The compliant
+     * shape is {@code calculationSession.setModel(...)} then
+     * {@code calculationSession.calculatePhaseDiagram(axes, startAxes,
+     * fixedT, fixedP, comp)}, read back via
+     * {@code calculationSession.currentPhaseDiagram()} -- pending a
+     * {@code PhaseDiagramRequest -> AxisConfig[]} adapter in this class.
      */
     public PhaseDiagramResult runPhaseDiagram(PhaseDiagramRequest request) {
-        Trace.enter(LOG, AppLevel.FLOW, "MainController", "runPhaseDiagram");
-        try {
-            PhaseDiagramResult r = phaseDiagramUseCase.execute(request);
-            Trace.exit(LOG, AppLevel.FLOW, "MainController", "runPhaseDiagram");
-            return r;
-        } catch (Exception e) {
-            LOG.log(Level.WARNING, "Phase diagram calculation failed", e);
-            PhaseDiagramResult error = new PhaseDiagramResult(
-                    request.getAxes().size() == 0 ? new String[]{"Axis"} : new String[]{request.getAxes().get(0).name},
-                    new double[]{0}, new double[]{1});
-            error.setComplete(false);
-            error.setMessage("Error: " + e.getMessage());
-            Trace.exit(LOG, AppLevel.FLOW, "MainController", "runPhaseDiagram");
-            return error;
-        }
+        LOG.warning("runPhaseDiagram: not yet wired through CalculationSession");
+        PhaseDiagramResult stub = new PhaseDiagramResult(
+                request.getAxes().isEmpty() ? new String[]{"Axis"}
+                        : new String[]{request.getAxes().get(0).name},
+                new double[]{0}, new double[]{1});
+        stub.setComplete(false);
+        stub.setMessage("Phase diagram is not yet wired through CalculationSession "
+                + "(see MainController.runPhaseDiagram TODO)");
+        return stub;
     }
 
     /**
@@ -151,6 +148,17 @@ public class MainController {
         error.setMessage("CalModel support requires ModelInspectionService injection");
         Trace.exit(LOG, AppLevel.FLOW, "MainController", "runCalModel");
         return error;
+    }
+
+    /**
+     * Lists the {@code .tdb} database files available to choose from.
+     * Routed through {@link CalculationSession#availableDatabases}, per
+     * {@code docs/plan-gui-calculationsession-wiring.md} Fix 3 -- the GUI
+     * must not scan the filesystem itself, so this capability is shared
+     * with the CLI and API via the same session method.
+     */
+    public List<String> availableDatabases() {
+        return calculationSession.availableDatabases();
     }
 
     /**
@@ -213,24 +221,39 @@ public class MainController {
         }
     }
 
+    /**
+     * Detailed per-phase parameter dump for the model inspector panel.
+     *
+     * <p>TODO: not yet wired through {@link CalculationSession}. The old
+     * path called {@code ModelInspectionService.getPhaseParameters(...)}
+     * directly (raw {@code TdbParser}), reaching around the session. The
+     * compliant shape is a browse-style query method on
+     * {@code CalculationSession} (e.g. {@code phaseParameters(tdbPath,
+     * elements, phaseName)}) backed by the session's own browse
+     * {@code DatabasePort}. Returns an empty list until then.
+     */
     public List<?> getPhaseParameters(String tdbPath, List<String> elements, String phaseName) {
-        Trace.enter(LOG, AppLevel.FLOW, "MainController", "getPhaseParameters");
-        try {
-            List<?> parameters = modelInspectionService.getPhaseParameters(tdbPath, elements, phaseName);
-            Trace.exit(LOG, AppLevel.FLOW, "MainController", "getPhaseParameters");
-            return parameters;
-        } catch (Exception e) {
-            LOG.log(Level.WARNING, "Parameter retrieval failed", e);
-            Trace.exit(LOG, AppLevel.FLOW, "MainController", "getPhaseParameters");
-            return new ArrayList<>();
-        }
+        LOG.warning("getPhaseParameters: not yet wired through CalculationSession");
+        return new ArrayList<>();
     }
 
+    /**
+     * Property scan (STEP / MAP).
+     *
+     * <p>TODO: not yet wired through {@link CalculationSession}. The
+     * compliant shape is {@code calculationSession.setModel(...)} then
+     * {@code calculationSession.calculateStep(...)} /
+     * {@code calculateMap(...)} -- both of which are themselves
+     * unimplemented stubs today (no plain property-sampling engine
+     * exists; see {@code CalculationSession}). Returns a "not
+     * implemented" result until an engine and the wiring both exist.
+     */
     public PropertyScanResult runPropertyScan(PropertyScanRequest request) {
-        // TODO: Wire to PropertyScanUseCase in constructor
+        LOG.warning("runPropertyScan: not yet wired through CalculationSession");
         PropertyScanResult err = new PropertyScanResult();
         err.setSuccess(false);
-        err.setMessage("Property scan requires PropertyScanUseCase injection");
+        err.setMessage("Property scan is not yet wired through CalculationSession "
+                + "(see MainController.runPropertyScan TODO)");
         return err;
     }
 }

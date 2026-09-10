@@ -1,4 +1,4 @@
-package api.dto;
+package ui.api.dto;
 
 /** Request body for {@code POST /sessions/{id}/calculations/equilibrium}. */
 public final class EquilibriumRequest {

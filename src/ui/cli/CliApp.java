@@ -1,22 +1,16 @@
 package ui.cli;
 
-import ui.request.CalculationRequest;
 import ui.layer.FitParametersUseCase;
-import ui.result.ModelInfo;
 import ui.layer.ValidateModelUseCase;
-import ui.layer.SinglePointUseCase;
-import ui.layer.StepCalculationUseCase;
 import ui.layer.OptimizationUseCase;
-import ui.layer.PhaseDiagramUseCase;
 import ui.layer.ModelInspectionService;
-import ui.request.PhaseDiagramRequest;
-import ui.result.PhaseDiagramResult;
-import system.ports.DatabasePort;
+import system.database.TdbParser;
 import system.ports.EquilibriumResult;
 import session.CalculationSession;
 import calc.diagram.AxisConfig;
 import calc.diagram.AxisConfig.Type;
-import system.database.TdbParser;
+import calc.diagram.PhaseDiagram;
+import calc.diagram.DiagramLine;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -27,28 +21,33 @@ import java.util.logging.Logger;
 /**
  * CLI entry point for the application.
  *
+ * <p>Per the target data flow (README "Structure" / {@code
+ * docs/dataflow_target.png}), the CLI's contact with the System and
+ * Calculation layers is {@link CalculationSession}: browsing
+ * (pre-calculation) and calculating both go through the one session this
+ * app holds. {@code equilibrium}, {@code diagram}, and {@code inspect}
+ * all route through it. {@code opt}/{@code cal} use the separate legacy
+ * assessment pathway and are out of scope for this design.
+ *
  * Supported commands:
- *   (no args)           Default single-point calculation demo
- *   opt                 Run parameter optimization
- *   cal                 Run CalModel calculation
- *   diagram [options]   Calculate a phase diagram (text summary)
- *   inspect [options]   Inspect a TDB database file
- *   equilibrium [opts]  Single-point equilibrium via CalculationSession
+ *   (no args)           Default single-point equilibrium demo (via CalculationSession)
+ *   opt                 Run parameter optimization (legacy pathway)
+ *   cal                 Run CalModel calculation (legacy pathway)
+ *   diagram [options]   Calculate a phase diagram (via CalculationSession)
+ *   inspect [options]   Browse a TDB database file (via CalculationSession)
+ *   equilibrium [opts]  Single-point equilibrium (via CalculationSession)
  */
 public class CliApp {
 
     private static final Logger LOG = Logger.getLogger(CliApp.class.getName());
 
-    private final SinglePointUseCase singlePointUseCase;
     private final OptimizationUseCase optimizationUseCase;
-    private final PhaseDiagramUseCase phaseDiagramUseCase;
     private final ModelInspectionService modelInspectionService;
+    private final CalculationSession session = new CalculationSession();
 
-    public CliApp(SinglePointUseCase singlePointUseCase, OptimizationUseCase optimizationUseCase,
-                  PhaseDiagramUseCase phaseDiagramUseCase) {
-        this.singlePointUseCase = singlePointUseCase;
+    public CliApp(OptimizationUseCase optimizationUseCase) {
         this.optimizationUseCase = optimizationUseCase;
-        this.phaseDiagramUseCase = phaseDiagramUseCase;
+        // Retained only for the legacy `cal` command (ValidateModelUseCase).
         this.modelInspectionService = new ModelInspectionService(new TdbParser());
     }
 
@@ -65,7 +64,7 @@ public class CliApp {
 
         if (args.length == 0) {
             System.out.println("No arguments given. Running default single-point demo.");
-            runDefaultCalculation(cwd);
+            runEquilibriumViaSession(new String[]{"equilibrium"}, cwd);
         } else {
             switch (args[0]) {
                 case "opt":
@@ -95,52 +94,24 @@ public class CliApp {
     }
 
     // ──────────────────────────────────────────────────────────────────
-    // Single-point (default demo)
-    // ──────────────────────────────────────────────────────────────────
-
-    private void runDefaultCalculation(String cwd) throws IOException {
-        String tdbPath = cwd + "/data/cost507.tdb";
-        String[] elements = {"NB", "TI"};
-
-        CalculationRequest request = new CalculationRequest();
-        request.setTdbFilePath(tdbPath);
-        request.setElements(new ArrayList<>(Arrays.asList(elements)));
-        request.setMethod("HM");
-        ArrayList<String> phases = new ArrayList<>();
-        phases.add("BCC_A2");
-        request.setPhases(phases);
-        request.setT(1000.0);
-        request.setP(10000.0);
-
-        ArrayList<Double> x = new ArrayList<>();
-        double temp = 1.0 / 2;
-        x.add(temp); x.add(temp); x.add(temp);
-        ArrayList<ArrayList<Double>> condX = new ArrayList<>();
-        condX.add(x);
-        request.setCompositions(condX);
-
-        system.ports.EquilibriumResult result = singlePointUseCase.execute(request);
-        System.out.println("Result: converged=" + result.isConverged());
-    }
-
-    // ──────────────────────────────────────────────────────────────────
-    // Phase diagram
+    // Phase diagram (via CalculationSession)
     // ──────────────────────────────────────────────────────────────────
 
     /**
-     * Calculate a phase diagram from CLI flags.
+     * Calculate a phase diagram from CLI flags, routed through
+     * {@link CalculationSession} ({@code setModel(...)} then
+     * {@code calculatePhaseDiagram(...)}, result read via
+     * {@code currentPhaseDiagram()}).
      *
      * Usage:
      *   diagram [--tdb FILE] [--elements A,B] [--phases P1,P2,P3]
-     *           [--type MAP|STEP]
      *           [--axis0 TYPE,min,max,step]  e.g. COMPOSITION,0,1,0.05
      *           [--axis1 TYPE,min,max,step]  e.g. TEMPERATURE,500,2000,50
      */
-    private void runPhaseDiagram(String[] args, String cwd) {
+    private void runPhaseDiagram(String[] args, String cwd) throws IOException {
         String  tdbPath  = cwd + "/data/tizr_kum.tdb";
         String  elements = "Ti,Zr";
         String  phases   = "HCP_A3,BCC_A2,LIQUID";
-        String  type     = "MAP";
         String  axis0Str = "COMPOSITION,0,1,0.05";
         String  axis1Str = "TEMPERATURE,500,2000,50";
 
@@ -150,52 +121,54 @@ public class CliApp {
                 case "--tdb":      tdbPath  = resolvePath(args[++i], cwd); break;
                 case "--elements": elements = args[++i]; break;
                 case "--phases":   phases   = args[++i]; break;
-                case "--type":     type     = args[++i].toUpperCase(); break;
                 case "--axis0":    axis0Str = args[++i]; break;
                 case "--axis1":    axis1Str = args[++i]; break;
                 default: i++; break;  // skip unknown flag + its value
             }
         }
 
-        System.out.println("─── Phase Diagram Calculation ───────────────────────");
+        List<String> elementList = splitCsv(elements);
+        List<String> phaseList   = splitCsv(phases);
+
+        System.out.println("─── Phase Diagram Calculation (via CalculationSession) ──");
         System.out.println("TDB:      " + tdbPath);
-        System.out.println("Elements: " + elements);
-        System.out.println("Phases:   " + phases);
-        System.out.println("Type:     " + type);
+        System.out.println("Elements: " + elementList);
+        System.out.println("Phases:   " + phaseList);
         System.out.println("Axis 0:   " + axis0Str);
         System.out.println("Axis 1:   " + axis1Str);
         System.out.println("─────────────────────────────────────────────────────");
 
-        PhaseDiagramRequest request = new PhaseDiagramRequest();
-        request.setTdbFilePath(tdbPath);
-        request.setElements(splitCsv(elements));
-        request.setPhases(splitCsv(phases));
-        request.setDiagramType("MAP".equalsIgnoreCase(type)
-                ? PhaseDiagramRequest.DiagramType.MAP
-                : PhaseDiagramRequest.DiagramType.STEP);
-        request.setFixedP(101325.0);
-
-        ArrayList<AxisConfig> axes = new ArrayList<>();
         AxisConfig a0 = parseAxisConfig(axis0Str, "Axis0");
         AxisConfig a1 = parseAxisConfig(axis1Str, "Axis1");
+        List<AxisConfig> axes = new ArrayList<>();
         if (a0 != null) axes.add(a0);
         if (a1 != null) axes.add(a1);
-        request.setAxes(axes);
+        if (axes.isEmpty()) {
+            System.out.println("✗ Error: no valid axes parsed");
+            return;
+        }
+
+        double[] startAxes = new double[axes.size()];
+        for (int i = 0; i < axes.size(); i++) startAxes[i] = axes.get(i).min;
+        int nc = elementList.size();
+        double[] comp = new double[nc];
+        Arrays.fill(comp, 1.0 / nc);
 
         try {
-            PhaseDiagramResult result = phaseDiagramUseCase.execute(request);
-            if (result.isComplete()) {
-                System.out.println("✓ Calculation complete");
-                System.out.printf("  Lines:  %d%n", result.getLines().size());
-                System.out.printf("  Nodes:  %d%n", result.getNodes().size());
-                printPhaseRegions(result);
-            } else {
-                System.out.println("✗ Failed: " + result.getMessage());
-            }
-        } catch (Exception e) {
+            session.setModel(tdbPath, elementList, phaseList);
+            session.calculatePhaseDiagram(
+                    axes.toArray(new AxisConfig[0]), startAxes,
+                    /* fixedT */ 1000.0, /* fixedP */ 101325.0, comp);
+        } catch (IllegalStateException | UnsupportedOperationException | IllegalArgumentException e) {
             System.out.println("✗ Error: " + e.getMessage());
-            e.printStackTrace();
+            return;
         }
+
+        PhaseDiagram diagram = session.currentPhaseDiagram();
+        System.out.println("✓ Calculation complete");
+        System.out.printf("  Lines:  %d%n", diagram.getLines().size());
+        System.out.printf("  Nodes:  %d%n", diagram.getNodes().size());
+        printPhaseRegions(diagram);
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -204,12 +177,8 @@ public class CliApp {
 
     /**
      * Single-point equilibrium calculation routed through
-     * {@link CalculationSession}, the UI-agnostic coordinator introduced
-     * in {@code docs/plan-3layer-core-dataflow.md}. Unlike {@code diagram}
-     * (which still goes through the older {@link PhaseDiagramUseCase}
-     * path), this command exercises the same session/model/calculation
-     * lifecycle the REST API (see {@code docs/plan-rest-api-calculation-session.md})
-     * and, eventually, the GUI use.
+     * {@link CalculationSession} -- the same session/model/calculation
+     * lifecycle the REST API and the GUI use.
      *
      * <p>Usage:
      * <pre>
@@ -250,11 +219,10 @@ public class CliApp {
         System.out.println("Composition: " + Arrays.toString(composition));
         System.out.println("──────────────────────────────────────────────────────");
 
-        CalculationSession session = new CalculationSession();
         try {
             session.setModel(tdbPath, elements, phases);
             session.calculateEquilibrium(T, P, composition);
-        } catch (IllegalStateException | UnsupportedOperationException e) {
+        } catch (IllegalStateException | UnsupportedOperationException | IllegalArgumentException e) {
             System.out.println("✗ Error: " + e.getMessage());
             return;
         }
@@ -296,10 +264,10 @@ public class CliApp {
         } catch (NumberFormatException e) { return null; }
     }
 
-    private void printPhaseRegions(PhaseDiagramResult result) {
+    private void printPhaseRegions(PhaseDiagram diagram) {
         java.util.Set<String> regions = new java.util.TreeSet<>();
-        for (PhaseDiagramResult.LineSegment seg : result.getLines()) {
-            regions.add(String.join(" + ", seg.stablePhases));
+        for (DiagramLine line : diagram.getLines()) {
+            regions.add(String.join(" + ", line.stablePhaseSet));
         }
         if (!regions.isEmpty()) {
             System.out.println("  Phase regions found:");
@@ -312,33 +280,42 @@ public class CliApp {
     // ──────────────────────────────────────────────────────────────────
 
     /**
-     * Inspect a TDB database file.
+     * Browse a TDB database file: list its elements, and (given
+     * elements) the phases available for them. Routed through
+     * {@link CalculationSession}'s browse methods -- the pre-calculation
+     * path in the target data flow, no model build.
      *
      * Usage:
-     *   inspect [--tdb FILE]
+     *   inspect [--tdb FILE] [--elements A,B]
      */
-    private void runModelInspect(String[] args, String cwd) {
-        String tdbPath = cwd + "/data/tizr_kum_cvm.tdb";
+    private void runModelInspect(String[] args, String cwd) throws IOException {
+        String tdbPath  = cwd + "/data/tizr_kum_cvm.tdb";
+        String elements = "";
 
         for (int i = 1; i < args.length - 1; i++) {
-            if ("--tdb".equals(args[i])) { tdbPath = resolvePath(args[++i], cwd); }
+            switch (args[i]) {
+                case "--tdb":      tdbPath  = resolvePath(args[++i], cwd); break;
+                case "--elements": elements = args[++i]; break;
+                default: i++; break;
+            }
         }
 
-        System.out.println("─── TDB Inspection ──────────────────────────────────");
+        System.out.println("─── TDB Inspection (browse via CalculationSession) ──");
         System.out.println("File: " + tdbPath);
 
-        ModelInfo info = modelInspectionService.inspectModel(tdbPath, new String[]{});
+        try {
+            List<String> allElements = session.availableElements(tdbPath);
+            System.out.println("Elements: " + String.join(", ", allElements));
 
-        System.out.println("Exists:   " + info.isFileExists());
-        if (info.getAvailableElements() != null) {
-            System.out.println("Elements: " + String.join(", ", info.getAvailableElements()));
-        }
-        if (info.getAvailablePhases() != null) {
-            System.out.println("Phases (" + info.getAvailablePhases().size() + "):");
-            for (String p : info.getAvailablePhases()) System.out.println("  " + p);
-        }
-        if (info.getError() != null && !info.getError().isEmpty()) {
-            System.out.println("Error: " + info.getError());
+            List<String> elementFilter = splitCsv(elements);
+            if (!elementFilter.isEmpty()) {
+                List<String> phases = session.availablePhasesFor(tdbPath, elementFilter);
+                System.out.println("Phases for " + elementFilter
+                        + " (" + phases.size() + "):");
+                for (String p : phases) System.out.println("  " + p);
+            }
+        } catch (Exception e) {
+            System.out.println("Error: " + e.getMessage());
         }
         System.out.println("─────────────────────────────────────────────────────");
     }
@@ -387,22 +364,25 @@ public class CliApp {
     private void printUsage() {
         System.out.println("Usage: java -cp build/classes ui.Main [command] [options]");
         System.out.println();
-        System.out.println("Commands:");
-        System.out.println("  (no args)             Default single-point calculation demo");
-        System.out.println("  opt                   Run parameter optimization");
-        System.out.println("  cal                   Run CalModel calculation");
+        System.out.println("Commands (all calculation/browse commands go via CalculationSession):");
+        System.out.println("  (no args)             Default single-point equilibrium demo");
+        System.out.println("  opt                   Run parameter optimization (legacy pathway)");
+        System.out.println("  cal                   Run CalModel calculation (legacy pathway)");
         System.out.println("  diagram [options]     Calculate a phase diagram");
-        System.out.println("  inspect [--tdb FILE]  Inspect a TDB database");
-        System.out.println("  equilibrium [options] Single-point equilibrium via CalculationSession");
+        System.out.println("  inspect [options]     Browse a TDB database (elements / phases)");
+        System.out.println("  equilibrium [options] Single-point equilibrium");
         System.out.println("  --gui                 Launch the graphical interface");
         System.out.println();
         System.out.println("Diagram options:");
         System.out.println("  --tdb FILE                  TDB database path");
         System.out.println("  --elements Ti,Zr            Comma-separated elements");
         System.out.println("  --phases HCP_A3,BCC_A2,LIQ  Comma-separated phases");
-        System.out.println("  --type MAP|STEP              Diagram type");
         System.out.println("  --axis0 COMPOSITION,0,1,0.05");
         System.out.println("  --axis1 TEMPERATURE,500,2000,50");
+        System.out.println();
+        System.out.println("Inspect options:");
+        System.out.println("  --tdb FILE                  TDB database path");
+        System.out.println("  --elements Ti,Zr            List phases for these elements");
         System.out.println();
         System.out.println("Equilibrium options:");
         System.out.println("  --tdb FILE                  TDB database path");

@@ -1,11 +1,11 @@
-package api;
+package ui.api;
 
-import api.dto.EquilibriumRequest;
-import api.dto.EquilibriumResponse;
-import api.dto.ErrorResponse;
-import api.dto.PhaseDiagramRequest;
-import api.dto.PhaseDiagramResponse;
-import api.dto.SetModelRequest;
+import ui.api.dto.EquilibriumRequest;
+import ui.api.dto.EquilibriumResponse;
+import ui.api.dto.ErrorResponse;
+import ui.api.dto.PhaseDiagramRequest;
+import ui.api.dto.PhaseDiagramResponse;
+import ui.api.dto.SetModelRequest;
 import calc.diagram.AxisConfig;
 import calc.diagram.PhaseDiagram;
 import com.google.gson.Gson;

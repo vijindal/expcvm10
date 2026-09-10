@@ -2,13 +2,14 @@
 
 ## Context
 
-`3layer_architecture.md` describes a target flow: the UI turns user input
-into a **problem object**; a **Thermodynamic System Layer** is "activated
-once" to parse the database and build phase models, forming a
-**thermodynamic system** that "remains fixed throughout the calculation";
-this system plus the problem object go to a **Calculation Layer** that runs
-a solver in a two-way loop against the system, and finally produces a
-**result object** that flows back to the UI.
+The target flow (documented in `README.md` under "Structure"): the UI
+turns user input into a **problem object**; a **Thermodynamic System
+Layer** is activated once to parse the database and build phase models,
+forming a **thermodynamic system** that remains fixed throughout the
+calculation; this system plus the problem object go to a **Calculation
+Layer** that runs a solver in a two-way loop against the system, and
+finally produces a **result object** that flows back to the UI (landing
+on `CalculationSession`, which the UI reads from).
 
 Investigation of the existing code found it's closer to this target than a
 from-scratch design would suggest:

@@ -2,8 +2,6 @@ package test;
 
 import ui.cli.CliApp;
 import ui.layer.OptimizationUseCase;
-import ui.layer.PhaseDiagramUseCase;
-import ui.layer.SinglePointUseCase;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -59,8 +57,7 @@ public class CliEquilibriumCommandTest {
         PrintStream original = System.out;
         System.setOut(new PrintStream(captured, true, StandardCharsets.UTF_8));
         try {
-            CliApp cli = new CliApp(new SinglePointUseCase(),
-                    new OptimizationUseCase(null, null), new PhaseDiagramUseCase());
+            CliApp cli = new CliApp(new OptimizationUseCase(null, null));
             cli.run(args);
         } finally {
             System.setOut(original);

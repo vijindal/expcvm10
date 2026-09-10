@@ -1,30 +1,24 @@
 package ui.gui;
 
-import ui.layer.SinglePointUseCase;
 import ui.layer.OptimizationUseCase;
-import ui.layer.PhaseDiagramUseCase;
-import ui.layer.ModelInspectionService;
 
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 
 /**
  * GUI entry point for the application.
- * Receives configured use-case objects from the composition root (Main).
+ *
+ * <p>Only {@link OptimizationUseCase} is still injected -- the GUI's
+ * calculation and browsing paths go through {@code CalculationSession}
+ * (held inside {@link MainController}), per the target data flow. See
+ * {@code MainController} for the paths still pending that wiring.
  */
 public class GuiApp {
 
-    private final SinglePointUseCase singlePointUseCase;
     private final OptimizationUseCase optimizationUseCase;
-    private final PhaseDiagramUseCase phaseDiagramUseCase;
-    private final ModelInspectionService modelInspectionService;
 
-    public GuiApp(SinglePointUseCase singlePointUseCase, OptimizationUseCase optimizationUseCase,
-                  PhaseDiagramUseCase phaseDiagramUseCase, ModelInspectionService modelInspectionService) {
-        this.singlePointUseCase = singlePointUseCase;
+    public GuiApp(OptimizationUseCase optimizationUseCase) {
         this.optimizationUseCase = optimizationUseCase;
-        this.phaseDiagramUseCase = phaseDiagramUseCase;
-        this.modelInspectionService = modelInspectionService;
     }
 
     /**
@@ -33,15 +27,12 @@ public class GuiApp {
     public void launch(String[] args) {
         SwingUtilities.invokeLater(() -> {
             try {
-                // Use cross-platform Metal L&F (respects UIManager overrides)
                 UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
-                // Apply VS Code dark theme
                 DarkTheme.apply();
             } catch (Exception e) {
                 // fall back to default look and feel
             }
-            MainController controller = new MainController(singlePointUseCase, optimizationUseCase,
-                                                          phaseDiagramUseCase, modelInspectionService);
+            MainController controller = new MainController(optimizationUseCase);
             MainFrame frame = new MainFrame(controller);
             frame.setVisible(true);
         });

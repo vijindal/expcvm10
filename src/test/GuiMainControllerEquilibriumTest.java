@@ -1,12 +1,8 @@
 package test;
 
-import system.database.TdbParser;
 import system.ports.EquilibriumResult;
 import ui.gui.MainController;
-import ui.layer.ModelInspectionService;
 import ui.layer.OptimizationUseCase;
-import ui.layer.PhaseDiagramUseCase;
-import ui.layer.SinglePointUseCase;
 
 import java.util.ArrayList;
 
@@ -27,11 +23,7 @@ import java.util.ArrayList;
 public class GuiMainControllerEquilibriumTest {
 
     public static void main(String[] args) throws Exception {
-        MainController controller = new MainController(
-                new SinglePointUseCase(),
-                new OptimizationUseCase(null, null),
-                new PhaseDiagramUseCase(),
-                new ModelInspectionService(new TdbParser()));
+        MainController controller = new MainController(new OptimizationUseCase(null, null));
 
         ArrayList<ArrayList<Double>> compositions = new ArrayList<>();
         ArrayList<Double> comp0 = new ArrayList<>();

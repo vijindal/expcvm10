@@ -10,10 +10,10 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * The Thermodynamic System Layer, per {@code 3layer_architecture.md}: parses
- * a TDB database and constructs the {@link GibbsEnergyModel} for each
- * requested phase, once. The result is immutable and is meant to be built
- * once per calculation and passed by reference to the Calculation Layer.
+ * The Thermodynamic System Layer (see README "Structure"): parses a TDB
+ * database and constructs the {@link GibbsEnergyModel} for each requested
+ * phase, once. The result is immutable and is meant to be built once per
+ * calculation and passed by reference to the Calculation Layer.
  *
  * <p>This is the single place that performs
  * {@code TdbParser.load() -> extractSystem() -> buildPhaseModels()} —

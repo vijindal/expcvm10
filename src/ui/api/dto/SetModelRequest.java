@@ -1,4 +1,4 @@
-package api.dto;
+package ui.api.dto;
 
 import java.util.List;
 

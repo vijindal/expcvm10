@@ -22,6 +22,8 @@ public class CalculationSessionTest {
         testEndToEndReuseAcrossCalculationKinds();
         testStepAndMapAreUnimplementedStubs();
         testBrowsingDoesNotRequireSetModel();
+        testAvailableDatabasesListsKnownFixtures();
+        testSetModelValidatesDatabaseElementsPhases();
 
         if (failures == 0) {
             System.out.println("ALL CalculationSession CHECKS PASSED");
@@ -155,5 +157,67 @@ public class CalculationSessionTest {
         // browsed, confirming the two paths (browse, then calculate) compose.
         session.setModel("data/VZR-re2.TDB", java.util.List.of("V", "ZR"), java.util.List.of("V2ZR"));
         check(session.hasModel(), "setModel() after browsing builds the system as normal");
+    }
+
+    private static void testAvailableDatabasesListsKnownFixtures() {
+        System.out.println("=== availableDatabases lists known fixture files ===");
+        CalculationSession session = new CalculationSession();
+        java.util.List<String> databases = session.availableDatabases();
+        check(databases.contains("data/VZR-re2.TDB"),
+                "availableDatabases() lists data/VZR-re2.TDB");
+    }
+
+    private static void testSetModelValidatesDatabaseElementsPhases() {
+        System.out.println("=== setModel validates database/elements/phases with helpful errors ===");
+
+        // 1. Unknown database -- error names available databases.
+        CalculationSession session1 = new CalculationSession();
+        try {
+            session1.setModel("data/does-not-exist.tdb", java.util.List.of("V"), java.util.List.of("V2ZR"));
+            check(false, "setModel() with an unknown database throws IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            check(e.getMessage().contains("data/does-not-exist.tdb")
+                    && e.getMessage().toLowerCase().contains("available"),
+                    "setModel() with an unknown database throws IllegalArgumentException naming available databases");
+        } catch (Exception e) {
+            check(false, "setModel() with an unknown database throws IllegalArgumentException, not " + e.getClass());
+        }
+
+        // 2. Valid database, invalid element -- error tells the user to
+        // choose a valid database first and names the actual elements.
+        CalculationSession session2 = new CalculationSession();
+        try {
+            session2.setModel("data/VZR-re2.TDB", java.util.List.of("XX"), java.util.List.of("V2ZR"));
+            check(false, "setModel() with an invalid element throws IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            check(e.getMessage().contains("XX") && e.getMessage().contains("V")
+                    && e.getMessage().contains("ZR"),
+                    "setModel() with an invalid element names the bad element and the database's real elements");
+        } catch (Exception e) {
+            check(false, "setModel() with an invalid element throws IllegalArgumentException, not " + e.getClass());
+        }
+
+        // 3. Valid database+elements, invalid phase -- error tells the user
+        // to choose valid elements first and names the actual phases.
+        CalculationSession session3 = new CalculationSession();
+        try {
+            session3.setModel("data/VZR-re2.TDB", java.util.List.of("V", "ZR"),
+                    java.util.List.of("NOT_A_REAL_PHASE"));
+            check(false, "setModel() with an invalid phase throws IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            check(e.getMessage().contains("NOT_A_REAL_PHASE") && e.getMessage().contains("V2ZR"),
+                    "setModel() with an invalid phase names the bad phase and the valid phases for those elements");
+        } catch (Exception e) {
+            check(false, "setModel() with an invalid phase throws IllegalArgumentException, not " + e.getClass());
+        }
+
+        // 4. Fully valid input still succeeds (validation doesn't false-positive).
+        CalculationSession session4 = new CalculationSession();
+        try {
+            session4.setModel("data/VZR-re2.TDB", java.util.List.of("V", "ZR"), java.util.List.of("V2ZR"));
+            check(session4.hasModel(), "setModel() with fully valid input still succeeds");
+        } catch (Exception e) {
+            check(false, "setModel() with fully valid input should not throw, but got: " + e);
+        }
     }
 }

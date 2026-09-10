@@ -1,4 +1,4 @@
-package api.dto;
+package ui.api.dto;
 
 import calc.diagram.DiagramLine;
 import calc.diagram.DiagramNode;

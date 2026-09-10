@@ -1,4 +1,4 @@
-package api;
+package ui.api;
 
 import java.io.IOException;
 

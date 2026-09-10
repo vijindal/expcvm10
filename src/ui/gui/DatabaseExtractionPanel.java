@@ -373,16 +373,18 @@ public class DatabaseExtractionPanel extends JPanel {
         return result;
     }
 
+    /**
+     * Populates the database dropdown via
+     * {@link MainController#availableDatabases()} (backed by
+     * {@code CalculationSession.availableDatabases()}) rather than
+     * scanning the filesystem directly -- see
+     * {@code docs/plan-gui-calculationsession-wiring.md} Fix 3, which
+     * found this panel was the only place in the whole codebase doing
+     * database discovery, and it was bypassing the session to do it.
+     */
     private void populateTdbCombo() {
-        File dataDir = new File(System.getProperty("user.dir"), "data");
-        if (dataDir.exists()) {
-            File[] tdbFiles = dataDir.listFiles(
-                    (d, name) -> name.toLowerCase().endsWith(".tdb"));
-            if (tdbFiles != null) {
-                for (File f : tdbFiles) {
-                    tdbCombo.addItem("data/" + f.getName());
-                }
-            }
+        for (String path : controller.availableDatabases()) {
+            tdbCombo.addItem(path);
         }
         if (tdbCombo.getItemCount() > 0) {
             tdbCombo.setSelectedIndex(0);

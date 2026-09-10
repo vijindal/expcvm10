@@ -3,14 +3,12 @@
  */
 package ui;
 
-import ui.layer.*;
+import ui.layer.OptimizationUseCase;
 import util.ConsoleLogger;
 import util.LoggingConfig;
 import util.OptimizationOutputAdapter;
-import system.database.TdbParser;
 import ui.cli.CliApp;
 import ui.gui.GuiApp;
-import system.ports.DatabasePort;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -30,25 +28,20 @@ public class Main {
         });
 
         // --- Wire infrastructure adapters ---
-        DatabasePort databasePort = new TdbParser();
         ConsoleLogger logger = new ConsoleLogger();
         OptimizationOutputAdapter outputAdapter = new OptimizationOutputAdapter();
 
         // --- Wire application use-cases ---
-        EquilibriumUseCase equilibriumUseCase = new EquilibriumUseCase();
-        PhaseDiagramUseCase phaseDiagramUseCase = new PhaseDiagramUseCase();
-        SinglePointUseCase singlePointUseCase = new SinglePointUseCase();
         OptimizationUseCase optimizationUseCase = new OptimizationUseCase(logger, outputAdapter);
-        ui.layer.ModelInspectionService modelInspectionService = new ui.layer.ModelInspectionService(databasePort);
 
         // --- Select entry point ---
         if (args.length > 0 && "--gui".equals(args[0])) {
             // Strip --gui from args before passing to GUI
             String[] guiArgs = Arrays.copyOfRange(args, 1, args.length);
-            GuiApp gui = new GuiApp(singlePointUseCase, optimizationUseCase, phaseDiagramUseCase, modelInspectionService);
+            GuiApp gui = new GuiApp(optimizationUseCase);
             gui.launch(guiArgs);
         } else {
-            CliApp cli = new CliApp(singlePointUseCase, optimizationUseCase, phaseDiagramUseCase);
+            CliApp cli = new CliApp(optimizationUseCase);
             cli.run(args);
         }
     }
