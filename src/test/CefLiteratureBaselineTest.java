@@ -390,7 +390,7 @@ public class CefLiteratureBaselineTest {
         for (double[] point : FIG9_SOLID_CURVE) {
             double T = point[0];
             double gFig9 = point[1];
-            double gCefKJ = phase.siteEnergy(T, y) / 1000.0;
+            double gCefKJ = phase.G(T, y) / 1000.0;
             double error = Math.abs(gCefKJ - gFig9);
             maxAbsError = Math.max(maxAbsError, error);
             boolean pass = error <= A_TOLERANCE_KJ;
@@ -502,7 +502,7 @@ public class CefLiteratureBaselineTest {
                 cache.put(key, phase);
             }
 
-            double gProj = phase.siteEnergy(T, y);
+            double gProj = phase.G(T, y);
             double absDiff = gProj - gRef;
             double relDiff = Math.abs(gRef) > 0 ? absDiff / Math.abs(gRef) : absDiff;
 

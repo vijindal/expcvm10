@@ -70,7 +70,7 @@ public final class SundmanPhase {
         this.model = model;
         this.name = model.phaseName();
         this.ns = model instanceof CefPhaseModelAdapter
-                ? ((CefPhaseModelAdapter) model).getGibbs().ns() : 1;
+                ? ((CefPhaseModelAdapter) model).getGibbs().numSublattices() : 1;
         this.nip = model.numInternalParams();
         this.nc = model.numComponents();
         this.y = yInit.clone();
@@ -90,8 +90,8 @@ public final class SundmanPhase {
         this.G = model.evaluateG(y, T);
         if (model instanceof CefPhaseModelAdapter) {
             CefPhaseModelAdapter cef = (CefPhaseModelAdapter) model;
-            this.Gx = cef.getGibbs().gradient(T, y);
-            this.Gxx = cef.getGibbs().hessian(T, y);
+            this.Gx = cef.getGibbs().dG_dy(T, y);
+            this.Gxx = cef.getGibbs().d2G_dy2(T, y);
         } else {
             this.Gx = model.gradient(y, T);
             this.Gxx = model.hessian(y, T);
@@ -147,9 +147,9 @@ public final class SundmanPhase {
                 : new int[]{nc};
     }
 
-    public double[] stoichiometry() {
+    public double[] siteRatios() {
         return model instanceof CefPhaseModelAdapter
-                ? ((CefPhaseModelAdapter) model).getGibbs().stoichiometry() : new double[]{1.0};
+                ? ((CefPhaseModelAdapter) model).getGibbs().siteRatios() : new double[]{1.0};
     }
 
     public int[][] elementMap() {

@@ -113,7 +113,7 @@ public class CefBasisVerification {
         int[] nc = g.constituentsPerSublattice();
         int[] offsets = g.offsets();
 
-        double[] y = new double[g.nip()];
+        double[] y = new double[g.numSiteVars()];
 
         for (int s = 0; s < nc.length; s++) {
             double value = 1.0 / nc[s];

@@ -533,28 +533,28 @@ public abstract class GibbsEnergyModel {
      *
      * @param T temperature in Kelvin
      * @param y site-fraction / internal-variable vector, length
-     *          {@link #numSiteVariables()}
+     *          {@link #numSiteVars()}
      * @return G in J/mol
      */
-    public abstract double siteEnergy(double T, double[] y);
+    public abstract double G(double T, double[] y);
 
     /**
-     * Gradient dG/dY at fixed T, in site-fraction space.
+     * Gradient dG/dy at fixed T, in site-fraction space.
      *
      * @param T temperature in Kelvin
      * @param y site-fraction vector
-     * @return dG/dY, length {@link #numSiteVariables()}
+     * @return dG/dy, length {@link #numSiteVars()}
      */
-    public abstract double[] siteGradient(double T, double[] y);
+    public abstract double[] dG_dy(double T, double[] y);
 
     /**
-     * Hessian d2G/dYdY at fixed T, in site-fraction space.
+     * Hessian d2G/dy2 at fixed T, in site-fraction space.
      *
      * @param T temperature in Kelvin
      * @param y site-fraction vector
-     * @return d2G/dYdY, {@link #numSiteVariables()} x {@link #numSiteVariables()}
+     * @return d2G/dy2, {@link #numSiteVars()} x {@link #numSiteVars()}
      */
-    public abstract double[][] siteHessian(double T, double[] y);
+    public abstract double[][] d2G_dy2(double T, double[] y);
 
     /**
      * Element content M_A(Y): moles of each system component per formula
@@ -564,15 +564,15 @@ public abstract class GibbsEnergyModel {
      * @return M_A per component, length equal to the number of system
      *         components
      */
-    public abstract double[] elementAmounts(double[] y);
+    public abstract double[] moles(double[] y);
 
     /**
      * Jacobian dM_A/dY_i. M_A is linear in Y, so this is constant for a
      * given phase model.
      *
-     * @return dM_A/dY, sized [numComponents][{@link #numSiteVariables()}]
+     * @return dM_A/dY, sized [numComponents][{@link #numSiteVars()}]
      */
-    public abstract double[][] elementAmountsJacobian();
+    public abstract double[][] dMoles_dy();
 
     /**
      * Site ratios a[s] for each sublattice (moles of sites per formula
@@ -584,11 +584,11 @@ public abstract class GibbsEnergyModel {
     public abstract int numSublattices();
 
     /** Number of site-fraction variables (length of y). */
-    public abstract int numSiteVariables();
+    public abstract int numSiteVars();
 
     /** Offset of each sublattice's constituent block within the flattened
      *  site-fraction vector y. */
-    public abstract int[] sublatticeOffsets();
+    public abstract int[] offsets();
 
     /** Number of constituents on each sublattice. */
     public abstract int[] constituentsPerSublattice();

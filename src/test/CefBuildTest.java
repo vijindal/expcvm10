@@ -132,9 +132,9 @@ public class CefBuildTest {
 
         for (PhaseModel m : models) {
             System.out.println("Phase  : " + m.phaseName);
-            System.out.println("  ns   : " + m.gibbs.ns());
-            System.out.println("  nip  : " + m.gibbs.nip());
-            System.out.println("  a[]  : " + Arrays.toString(m.gibbs.stoichiometry()));
+            System.out.println("  ns   : " + m.gibbs.numSublattices());
+            System.out.println("  nip  : " + m.gibbs.numSiteVars());
+            System.out.println("  a[]  : " + Arrays.toString(m.gibbs.siteRatios()));
             System.out.println("  nc[] : " + Arrays.toString(m.gibbs.constituentsPerSublattice()));
             System.out.println("  magnetic : " + m.hasMagnetic()
                 + (m.hasMagnetic()
@@ -146,17 +146,17 @@ public class CefBuildTest {
         // ── Spot-check: evaluate G for each phase at T=1000K ─────────
         System.out.println("=== G evaluation at T=1000K ===");
         for (PhaseModel m : models) {
-            int nip = m.gibbs.nip();
+            int nip = m.gibbs.numSiteVars();
             double[] y = new double[nip];
             // Equal distribution as starting point
             int offset = 0;
             int[] nc = m.gibbs.constituentsPerSublattice();
-            for (int s = 0; s < m.gibbs.ns(); s++) {
+            for (int s = 0; s < m.gibbs.numSublattices(); s++) {
                 for (int i = 0; i < nc[s]; i++)
                     y[offset + i] = 1.0 / nc[s];
                 offset += nc[s];
             }
-            double G = m.gibbs.evaluate(1000.0, y);
+            double G = m.gibbs.G(1000.0, y);
             System.out.printf("  %-10s G = %14.2f J/mol%n", m.phaseName, G);
         }
 

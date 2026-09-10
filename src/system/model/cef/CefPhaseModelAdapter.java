@@ -56,7 +56,7 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
         this.elementIndexOnSublattice = buildElementIndexMap(gibbs, elements, constituentNames);
 
         // Initialize state arrays from CefGibbs
-        int nip = gibbs.nip();
+        int nip = gibbs.numSiteVars();
         int nc = elements.size();
         this.x = new double[nc];
         this.g0List = new double[nc];
@@ -85,7 +85,7 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
     private static int[][] buildElementIndexMap(CefGibbs gibbs,
                                                  ArrayList<String> elements,
                                                  ArrayList<ArrayList<String>> constituentNames) {
-        int ns = gibbs.ns();
+        int ns = gibbs.numSublattices();
         int[] ncSL = gibbs.constituentsPerSublattice();
         int[][] map = new int[ns][];
         for (int s = 0; s < ns; s++) {
@@ -145,70 +145,64 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
     }
 
     /**
-     * M_A(y) — Sundman Eq. (2): moles of component A per formula unit,
-     * Σ_s a[s]*y[s,A], summed only over element-mapped constituents
-     * (vacancies excluded). Public passthrough to {@link #unnormalizedM}.
-     */
-    public double[] computeM(double[] y) { return unnormalizedM(y); }
-
-    /**
-     * Direct stateless CEF Gibbs-energy evaluation at site fractions y.
+     * Direct stateless CEF Gibbs-energy evaluation at site fractions y,
+     * in J per mole of formula unit.
      *
      * This is intentionally separate from the legacy GibbsEnergyModel
-     * composition-facing evaluateG()/gradient()/hessian() methods.
+     * composition-facing evaluateG(x,T)/gradient(x,T)/hessian(x,T) methods.
      */
     @Override
-    public double siteEnergy(double T, double[] y) {
-        return gibbs.evaluate(T, y);
+    public double G(double T, double[] y) {
+        return gibbs.G(T, y);
     }
 
     /**
-     * Direct site-fraction gradient dG/dY.
+     * Direct site-fraction gradient dG/dy.
      */
     @Override
-    public double[] siteGradient(double T, double[] y) {
-        return gibbs.gradient(T, y);
+    public double[] dG_dy(double T, double[] y) {
+        return gibbs.dG_dy(T, y);
     }
 
     /**
-     * Direct site-fraction Hessian d2G/dYdY.
+     * Direct site-fraction Hessian d2G/dy2.
      */
     @Override
-    public double[][] siteHessian(double T, double[] y) {
-        return gibbs.hessian(T, y);
+    public double[][] d2G_dy2(double T, double[] y) {
+        return gibbs.d2G_dy2(T, y);
     }
 
     /**
-     * Element content M_A:
+     * Element content:
      *
      *   M_A = sum_s a_s sum_i b_Ai y_si
      *
      * Returned values are unnormalized moles of element A per formula unit.
      */
     @Override
-    public double[] elementAmounts(double[] y) {
+    public double[] moles(double[] y) {
         return unnormalizedM(y);
     }
 
     /**
-     * Jacobian dM_A/dY_m.
+     * Jacobian dMoles/dy_m.
      *
-     * M_A is linear in Y, so this Jacobian is constant for a given
+     * M_A is linear in y, so this Jacobian is constant for a given
      * phase model.
      */
     @Override
-    public double[][] elementAmountsJacobian() {
+    public double[][] dMoles_dy() {
 
         int nc = elementNames_value.size();
-        int nip = gibbs.nip();
+        int nip = gibbs.numSiteVars();
 
         double[][] dM = new double[nc][nip];
 
-        double[] a = gibbs.stoichiometry();
+        double[] a = gibbs.siteRatios();
         int[] offsets = gibbs.offsets();
         int[] ncSL = gibbs.constituentsPerSublattice();
 
-        for (int s = 0; s < gibbs.ns(); s++) {
+        for (int s = 0; s < gibbs.numSublattices(); s++) {
 
             for (int i = 0; i < ncSL[s]; i++) {
 
@@ -231,7 +225,7 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
      */
     @Override
     public double[] siteRatios() {
-        return gibbs.stoichiometry();
+        return gibbs.siteRatios();
     }
 
     /**
@@ -239,22 +233,22 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
      */
     @Override
     public int numSublattices() {
-        return gibbs.ns();
+        return gibbs.numSublattices();
     }
 
     /**
      * Number of site-fraction variables.
      */
     @Override
-    public int numSiteVariables() {
-        return gibbs.nip();
+    public int numSiteVars() {
+        return gibbs.numSiteVars();
     }
 
     /**
-     * Offsets of the sublattices in the flattened Y vector.
+     * Offsets of the sublattices in the flattened y vector.
      */
     @Override
-    public int[] sublatticeOffsets() {
+    public int[] offsets() {
         return gibbs.offsets();
     }
 
@@ -286,13 +280,13 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
     @Override public ArrayList<String> elementNames() { return new ArrayList<>(elementNames_value); }
     @Override public String[] componentList()  { return elementNames_value.toArray(new String[0]); }
     @Override public int numComponents()       { return elementNames_value.size(); }
-    @Override public int numInternalParams()   { return gibbs.nip(); }
-    @Override public int numTotalParams()      { return gibbs.nip(); }
+    @Override public int numInternalParams()   { return gibbs.numSiteVars(); }
+    @Override public int numTotalParams()      { return gibbs.numSiteVars(); }
 
     @Override
     public double nfu() {
         double sum = 0.0;
-        for (double a : gibbs.stoichiometry()) sum += a;
+        for (double a : gibbs.siteRatios()) sum += a;
         return sum;
     }
 
@@ -302,7 +296,7 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
 
     @Override
     public double evaluateG() {
-        double G = gibbs.evaluate(T, y);
+        double G = gibbs.G(T, y);
         if (magnetic != null) {
             double Tc = computeTc();
             double beta = computeBeta();
@@ -313,9 +307,9 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
 
     @Override
     public double evaluateG(double[] x, double T) {
-        double[] yLocal = (yInitialized && y != null && y.length == gibbs.nip())
+        double[] yLocal = (yInitialized && y != null && y.length == gibbs.numSiteVars())
                         ? y : getInitialInternalVars(x);
-        double G = gibbs.evaluate(T, yLocal);
+        double G = gibbs.G(T, yLocal);
         if (magnetic != null) {
             double Tc = computeTc();
             double beta = computeBeta();
@@ -326,24 +320,24 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
 
     @Override
     public double[] gradient(double[] x, double T) {
-        double[] yLocal = (yInitialized && y != null && y.length == gibbs.nip())
+        double[] yLocal = (yInitialized && y != null && y.length == gibbs.numSiteVars())
                         ? y : getInitialInternalVars(x);
-        double[] gxSite = gibbs.gradient(T, yLocal);
+        double[] gxSite = gibbs.dG_dy(T, yLocal);
         return projectToMoleFractions(gxSite);
     }
 
     @Override
     public double[][] hessian(double[] x, double T) {
-        double[] yLocal = (yInitialized && y != null && y.length == gibbs.nip())
+        double[] yLocal = (yInitialized && y != null && y.length == gibbs.numSiteVars())
                         ? y : getInitialInternalVars(x);
-        return gibbs.hessian(T, yLocal);
+        return gibbs.d2G_dy2(T, yLocal);
     }
 
     @Override
     public double evaluateGT() {
         double[] yLocal = yInitialized && y != null ? y : getInitialInternalVars(
             x != null ? x : new double[elementNames_value.size()]);
-        return gibbs.temperatureDerivative(T, yLocal);
+        return gibbs.dG_dT(T, yLocal);
     }
 
     @Override
@@ -355,7 +349,7 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
     public double[] evaluateGx() {
         double[] yLocal = yInitialized && y != null ? y : getInitialInternalVars(
             x != null ? x : new double[elementNames_value.size()]);
-        double[] gxSite = gibbs.gradient(T, yLocal);
+        double[] gxSite = gibbs.dG_dy(T, yLocal);
         return projectToMoleFractions(gxSite);
     }
 
@@ -363,20 +357,20 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
     public double[] evaluateGTx() {
         double[] yLocal = yInitialized && y != null ? y : getInitialInternalVars(
             x != null ? x : new double[elementNames_value.size()]);
-        double[] gxtSite = gibbs.gradientDT(T, yLocal);
+        double[] gxtSite = gibbs.d2G_dydT(T, yLocal);
         return projectToMoleFractions(gxtSite);
     }
 
     @Override
     public double[] evaluateGPx() {
-        return new double[gibbs.nip()];
+        return new double[gibbs.numSiteVars()];
     }
 
     @Override
     public double[][] evaluateGxx() {
         double[] yLocal = yInitialized && y != null ? y : getInitialInternalVars(
             x != null ? x : new double[elementNames_value.size()]);
-        return gibbs.hessian(T, yLocal);
+        return gibbs.d2G_dy2(T, yLocal);
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -406,13 +400,13 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
          *
          * Here we determine y by minimizing the composition residual subject
          * to the sublattice normalization constraints.  The initial point is
-         * strictly positive, so CefGibbs.gradient() is always evaluated away
+         * strictly positive, so CefGibbs.dG_dy() is always evaluated away
          * from the logarithmic singularity.
          */
 
         final double EPS = 1.0e-10;
-        final int ns  = gibbs.ns();
-        final int nip = gibbs.nip();
+        final int ns  = gibbs.numSublattices();
+        final int nip = gibbs.numSiteVars();
 
         if (x == null || x.length != elementNames_value.size()) {
             throw new IllegalArgumentException(
@@ -722,10 +716,10 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
     private double[] unnormalizedM(double[] y) {
         int nc = elementNames_value.size();
         double[] m = new double[nc];
-        double[] a = gibbs.stoichiometry();
+        double[] a = gibbs.siteRatios();
         int[] offs = gibbs.offsets();
         int[] ncSL = gibbs.constituentsPerSublattice();
-        for (int s = 0; s < gibbs.ns(); s++) {
+        for (int s = 0; s < gibbs.numSublattices(); s++) {
             for (int i = 0; i < ncSL[s]; i++) {
                 int el = elementIndexOnSublattice[s][i];
                 if (el < 0) continue;
@@ -737,10 +731,10 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
 
     @Override
     public boolean isValid(double[] y) {
-        if (y == null || y.length != gibbs.nip()) return false;
+        if (y == null || y.length != gibbs.numSiteVars()) return false;
         int[] nc = gibbs.constituentsPerSublattice();
         int[] offset = gibbs.offsets();
-        for (int s = 0; s < gibbs.ns(); s++) {
+        for (int s = 0; s < gibbs.numSublattices(); s++) {
             double sum = 0.0;
             for (int i = 0; i < nc[s]; i++) {
                 if (y[offset[s] + i] < -1e-12) return false;
@@ -759,14 +753,14 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
     public PhaseEquilData compute(double T, double P, double[] y,
                                   double deltaT, double deltaP,
                                   double[] mu) {
-        int nip = gibbs.nip();
+        int nip = gibbs.numSiteVars();
         int nc = elementNames_value.size();
 
         // Step 1: evaluate G and all derivatives
-        double G = gibbs.evaluate(T, y);
-        double[] Gx = gibbs.gradient(T, y);
-        double[][] Gxx = gibbs.hessian(T, y);
-        double[] GxT = gibbs.gradientDT(T, y);
+        double G = gibbs.G(T, y);
+        double[] Gx = gibbs.dG_dy(T, y);
+        double[][] Gxx = gibbs.d2G_dy2(T, y);
+        double[] GxT = gibbs.d2G_dydT(T, y);
         double[] GxP = new double[nip];  // no P-dependence
 
         // Step 2: assemble phase matrix M (nip+ns)×(nip+ns), with one
@@ -775,7 +769,7 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
         // global border enforcing only Sigma_m y[m] = const, as before,
         // under-constrains any phase with more than one sublattice that
         // has more than one constituent -- see M2 Step 4 diagnostic).
-        int ns = gibbs.ns();
+        int ns = gibbs.numSublattices();
         int[] offs = gibbs.offsets();
         int[] ncSL = gibbs.constituentsPerSublattice();
         int matDim = nip + ns;
@@ -838,9 +832,9 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
          * ΔM_A = Σ_s a[s] Δy[s,A].
          */
         double[] delnN = new double[nc];
-        double[] a = gibbs.stoichiometry();
+        double[] a = gibbs.siteRatios();
 
-        for (int s = 0; s < gibbs.ns(); s++) {
+        for (int s = 0; s < gibbs.numSublattices(); s++) {
             for (int i = 0; i < ncSL[s]; i++) {
 
                 int el = elementIndexOnSublattice[s][i];
@@ -883,7 +877,7 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
     @Override
     public void printPhaseInfo() {
         LOG.fine("Phase: " + phaseName_value + " (CEF model)");
-        LOG.fine("  ns=" + gibbs.ns() + " nip=" + gibbs.nip());
+        LOG.fine("  ns=" + gibbs.numSublattices() + " nip=" + gibbs.numSiteVars());
         LOG.fine("  elements=" + elementNames_value);
         LOG.fine("  T=" + T + " K, P=" + P + " Pa");
         LOG.fine("  y=" + java.util.Arrays.toString(y));
@@ -932,13 +926,13 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
      * Non-element constituents such as VA have zero multiplier.
      */
     private double[] mapMuToSiteFractions(double[] mu, double[] y) {
-        int nip  = gibbs.nip();
+        int nip  = gibbs.numSiteVars();
         int[]    offs = gibbs.offsets();
         int[]    ncSL = gibbs.constituentsPerSublattice();
-        double[] a    = gibbs.stoichiometry();
+        double[] a    = gibbs.siteRatios();
         double[] muY  = new double[nip];
 
-        for (int s = 0; s < gibbs.ns(); s++) {
+        for (int s = 0; s < gibbs.numSublattices(); s++) {
             for (int i = 0; i < ncSL[s]; i++) {
                 int flatIdx = offs[s] + i;
                 int el = elementIndexOnSublattice[s][i];
@@ -984,13 +978,13 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
      */
     private double[][] compositionSensitivity() {
         int nc  = elementNames_value.size();
-        int nip = gibbs.nip();
-        double[] a    = gibbs.stoichiometry();
+        int nip = gibbs.numSiteVars();
+        double[] a    = gibbs.siteRatios();
         int[]    offs = gibbs.offsets();
         int[]    ncSL = gibbs.constituentsPerSublattice();
 
         double[][] ny = new double[nc][nip];
-        for (int s = 0; s < gibbs.ns(); s++) {
+        for (int s = 0; s < gibbs.numSublattices(); s++) {
             for (int i = 0; i < ncSL[s]; i++) {
                 int el = elementIndexOnSublattice[s][i];
                 if (el < 0) continue; // vacancy/non-element constituent: derivative is 0 for every A
@@ -1055,10 +1049,10 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
      */
     private double[][] computeEMatNC(double[][] eMat) {
         int nc  = elementNames_value.size();
-        int nip = gibbs.nip();
+        int nip = gibbs.numSiteVars();
 
         double[][] ny  = compositionSensitivity();
-        double[] a = gibbs.stoichiometry();
+        double[] a = gibbs.siteRatios();
 
         /*
          * dyDmu[m][B] = sum over j on sublattice s mapped to element B
@@ -1068,7 +1062,7 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
         double[][] dyDmu = new double[nip][nc];
         int[] ncSL = gibbs.constituentsPerSublattice();
         int[] offs = gibbs.offsets();
-        for (int s = 0; s < gibbs.ns(); s++) {
+        for (int s = 0; s < gibbs.numSublattices(); s++) {
             for (int j = 0; j < ncSL[s]; j++) {
                 int elJ = elementIndexOnSublattice[s][j];
                 if (elJ < 0) continue;
@@ -1106,12 +1100,12 @@ public class CefPhaseModelAdapter extends GibbsEnergyModel {
     private double[] projectToMoleFractions(double[] gxSite) {
         int nc   = elementNames_value.size();
         double[] gxMole = new double[nc];
-        double[] a    = gibbs.stoichiometry();
+        double[] a    = gibbs.siteRatios();
         int[]    offs = gibbs.offsets();
         int[]    ncSL = gibbs.constituentsPerSublattice();
         double   nfu  = nfu();
 
-        for (int s = 0; s < gibbs.ns(); s++) {
+        for (int s = 0; s < gibbs.numSublattices(); s++) {
             for (int i = 0; i < ncSL[s]; i++) {
                 int elementIdx = elementIndexOnSublattice[s][i];
                 if (elementIdx >= 0) {

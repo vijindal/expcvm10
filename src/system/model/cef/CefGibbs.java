@@ -328,25 +328,30 @@ public class CefGibbs {
      * Basic model information
      * ------------------------------------------------------------------ */
 
-    public int numberOfSublattices() {
+    /** Number of sublattices. */
+    public int numSublattices() {
         return ns;
     }
 
-    public int numberOfConstituents(int s) {
+    /** Number of constituents on sublattice {@code s}. */
+    public int numConstituents(int s) {
         checkSublattice(s);
         return nc[s];
     }
 
-    public int totalConstituents() {
+    /** Total site-fraction variables (length of the flat {@code y} vector). */
+    public int numSiteVars() {
         int n = 0;
         for (int x : nc) n += x;
         return n;
     }
 
-    public int numberOfEndMembers() {
+    /** Number of end members. */
+    public int numEndMembers() {
         return totalEM;
     }
 
+    /** Site ratio a[s] for sublattice {@code s} (sites per formula unit). */
     public double siteRatio(int s) {
         checkSublattice(s);
         return a[s];
@@ -409,22 +414,17 @@ public class CefGibbs {
     }
 
 
-    public int ns() {
-        return ns;
-    }
-
-    public int nip() {
-        return totalConstituents();
-    }
-
-    public double[] stoichiometry() {
+    /** Site ratios a[s] for every sublattice (sites per formula unit). */
+    public double[] siteRatios() {
         return a.clone();
     }
 
+    /** Number of constituents on each sublattice. */
     public int[] constituentsPerSublattice() {
         return nc.clone();
     }
 
+    /** Flattened-vector offset of each sublattice's constituent block. */
     public int[] offsets() {
         return offset.clone();
     }
@@ -442,10 +442,10 @@ public class CefGibbs {
      */
     private void checkY(double[] y) {
 
-        if (y == null || y.length != totalConstituents())
+        if (y == null || y.length != numSiteVars())
             throw new IllegalArgumentException(
                     "Expected composition vector of length "
-                    + totalConstituents());
+                    + numSiteVars());
 
         for (double v : y) {
             if (!Double.isFinite(v) || v < 0.0)
@@ -492,13 +492,10 @@ public class CefGibbs {
      * ------------------------------------------------------------------ */
 
     /**
-     * Evaluates the molar Gibbs energy.
-     *
-     * @param T temperature in K
-     * @param y flattened site-fraction vector
-     * @return Gibbs energy in J/mol
+     * Molar Gibbs energy G(T, y), in J per mole of formula unit
+     * ({@code G = Gref + Gid + Gex}).
      */
-    public double evaluate(double T, double[] y) {
+    public double G(double T, double[] y) {
 
         if (!Double.isFinite(T) || T <= 0.0)
             throw new IllegalArgumentException(
@@ -506,11 +503,35 @@ public class CefGibbs {
 
         checkY(y);
 
-        double gRef = referenceEnergy(T, y);
-        double gId  = idealEnergy(T, y);
-        double gEx  = excessEnergy(T, y);
+        return referenceEnergy(T, y) + idealEnergy(T, y) + excessEnergy(T, y);
+    }
 
-        return gRef + gId + gEx;
+    /**
+     * The reference (zeroth-order end-member) contribution alone,
+     * {@code Gref = sum_I P_I G_I}, in J per mole of formula unit.
+     */
+    public double Gref(double T, double[] y) {
+        checkY(y);
+        return referenceEnergy(T, y);
+    }
+
+    /**
+     * The ideal configurational contribution alone,
+     * {@code Gid = R T sum_s a_s sum_i y_si ln y_si}, in J per mole of
+     * formula unit.
+     */
+    public double Gid(double T, double[] y) {
+        checkY(y);
+        return idealEnergy(T, y);
+    }
+
+    /**
+     * The excess (Redlich-Kister interaction) contribution alone, in J
+     * per mole of formula unit.
+     */
+    public double Gex(double T, double[] y) {
+        checkY(y);
+        return excessEnergy(T, y);
     }
 
 
@@ -752,7 +773,7 @@ public class CefGibbs {
     /**
      * Analytical gradient of G with respect to the flattened site fractions.
      */
-    public double[] gradient(double T, double[] y) {
+    public double[] dG_dy(double T, double[] y) {
 
         if (!Double.isFinite(T) || T <= 0.0)
             throw new IllegalArgumentException(
@@ -949,7 +970,7 @@ public class CefGibbs {
      * <p>As for the gradient, this method requires strictly positive site
      * fractions because the ideal entropy Hessian contains 1/y.</p>
      */
-    public double[][] hessian(double T, double[] y) {
+    public double[][] d2G_dy2(double T, double[] y) {
 
         if (!Double.isFinite(T) || T <= 0.0)
             throw new IllegalArgumentException(
@@ -1111,7 +1132,7 @@ public class CefGibbs {
     /**
      * Temperature derivative of G at fixed site fractions.
      */
-    public double temperatureDerivative(double T, double[] y) {
+    public double dG_dT(double T, double[] y) {
 
         if (!Double.isFinite(T) || T <= 0.0)
             throw new IllegalArgumentException(
@@ -1174,7 +1195,7 @@ public class CefGibbs {
     /**
      * Temperature derivative of the composition gradient.
      */
-    public double[] gradientDT(double T, double[] y) {
+    public double[] d2G_dydT(double T, double[] y) {
 
         if (!Double.isFinite(T) || T <= 0.0)
             throw new IllegalArgumentException(

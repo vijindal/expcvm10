@@ -186,7 +186,7 @@ public final class SundmanPhaseStep {
         }
 
         // dMdMu[A][B] = sum_m c[A][m] * dyDmu[m][B], c[A][m] = a[s(m)] if m maps to A else 0
-        double[] a = phase.stoichiometry();
+        double[] a = phase.siteRatios();
         double[][] dMdMu = new double[nc][nc];
         for (int s = 0; s < ns; s++) {
             for (int i = 0; i < ncSL[s]; i++) {

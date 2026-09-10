@@ -234,7 +234,7 @@ public class CefReferenceTermTest {
             // index of `el` (VA -- mapped element index -1 -- fills any
             // sublattice that has no `el`).
             system.model.cef.CefGibbs g = phase.getGibbs();
-            int nip = g.nip();
+            int nip = g.numSiteVars();
             int[] ncSL = g.constituentsPerSublattice();
             int[] offs = g.offsets();
             int[][] elIdxMap = phase.getElementIndexOnSublattice();
@@ -262,7 +262,7 @@ public class CefReferenceTermTest {
                 y[offs[s] + chosen] = 1.0;
             }
 
-            double se = phase.siteEnergy(T, y);
+            double se = phase.G(T, y);
             double emG = g.endMember(emIdx).G(T);
             double identityDiff = Math.abs(se - emG);
             if (identityDiff > 1e-6) {

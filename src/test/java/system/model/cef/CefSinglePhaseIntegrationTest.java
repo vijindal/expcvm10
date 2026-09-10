@@ -95,18 +95,18 @@ public class CefSinglePhaseIntegrationTest {
             throw new AssertionError("Phase name mismatch");
         }
 
-        if (phase.gibbs.ns() < 2) {
+        if (phase.gibbs.numSublattices() < 2) {
             throw new AssertionError("Expected at least 2 sublattices");
         }
 
-        if (phase.gibbs.nip() <= 0) {
+        if (phase.gibbs.numSiteVars() <= 0) {
             throw new AssertionError("Expected positive nip");
         }
 
         System.out.println();
         System.out.println("Phase       : " + phase.phaseName);
-        System.out.println("Sublattices : " + phase.gibbs.ns());
-        System.out.println("Internal vars: " + phase.gibbs.nip());
+        System.out.println("Sublattices : " + phase.gibbs.numSublattices());
+        System.out.println("Internal vars: " + phase.gibbs.numSiteVars());
         System.out.println("Constituents : "
                 + Arrays.toString(phase.gibbs.constituentsPerSublattice()));
     }
@@ -120,7 +120,7 @@ public class CefSinglePhaseIntegrationTest {
 
         double[] y = makeInteriorComposition(g);
 
-        double value = g.evaluate(T, y);
+        double value = g.G(T, y);
 
         if (!Double.isFinite(value)) {
             throw new AssertionError("CEF Gibbs energy must be finite");
@@ -141,9 +141,9 @@ public class CefSinglePhaseIntegrationTest {
 
         double[] y = makeInteriorComposition(g);
 
-        double[] gradient = g.gradient(T, y);
+        double[] gradient = g.dG_dy(T, y);
 
-        if (g.nip() != gradient.length) {
+        if (g.numSiteVars() != gradient.length) {
             throw new AssertionError("Gradient length mismatch");
         }
 
@@ -167,14 +167,14 @@ public class CefSinglePhaseIntegrationTest {
 
         double[] y = makeInteriorComposition(g);
 
-        double[][] hessian = g.hessian(T, y);
+        double[][] hessian = g.d2G_dy2(T, y);
 
-        if (g.nip() != hessian.length) {
+        if (g.numSiteVars() != hessian.length) {
             throw new AssertionError("Hessian length mismatch");
         }
 
         for (int i = 0; i < hessian.length; i++) {
-            if (g.nip() != hessian[i].length) {
+            if (g.numSiteVars() != hessian[i].length) {
                 throw new AssertionError("Hessian[" + i + "] length mismatch");
             }
 
@@ -195,7 +195,7 @@ public class CefSinglePhaseIntegrationTest {
 
         double[] y = makeInteriorComposition(g);
 
-        double[][] hessian = g.hessian(T, y);
+        double[][] hessian = g.d2G_dy2(T, y);
 
         for (int i = 0; i < hessian.length; i++) {
             for (int j = i + 1; j < hessian.length; j++) {
@@ -217,7 +217,7 @@ public class CefSinglePhaseIntegrationTest {
 
         double[] y = makeInteriorComposition(g);
 
-        double dGdT = g.temperatureDerivative(T, y);
+        double dGdT = g.dG_dT(T, y);
 
         if (!Double.isFinite(dGdT)) {
             throw new AssertionError("dG/dT must be finite");
@@ -261,7 +261,7 @@ public class CefSinglePhaseIntegrationTest {
             throw new AssertionError("Adapter numComponents mismatch");
         }
 
-        if (phase.gibbs.nip() != adapter.numInternalParams()) {
+        if (phase.gibbs.numSiteVars() != adapter.numInternalParams()) {
             throw new AssertionError("Adapter numInternalParams mismatch");
         }
     }
@@ -278,10 +278,10 @@ public class CefSinglePhaseIntegrationTest {
         System.out.println("CEF INTERACTION IMPLEMENTATION CHECK");
         System.out.println("=================================================");
 
-        System.out.println("Number of sublattices = " + g.ns());
-        System.out.println("Number of interactions = " + g.nip());
+        System.out.println("Number of sublattices = " + g.numSublattices());
+        System.out.println("Number of interactions = " + g.numSiteVars());
 
-        if (g.nip() > 0) {
+        if (g.numSiteVars() > 0) {
             System.out.println("(Interactions are being used in this phase model)");
         }
     }
@@ -294,7 +294,7 @@ public class CefSinglePhaseIntegrationTest {
         CefGibbs g = phase.gibbs;
         double[] y = makeInteriorComposition(g);
 
-        double[] analytical = g.gradient(T, y);
+        double[] analytical = g.dG_dy(T, y);
 
         int[] nc = g.constituentsPerSublattice();
         int[] offsets = g.offsets();
@@ -362,8 +362,8 @@ public class CefSinglePhaseIntegrationTest {
                         ym[mi] -= h;
                         ym[mj] += h;
 
-                        double gp = g.evaluate(T, yp);
-                        double gm = g.evaluate(T, ym);
+                        double gp = g.G(T, yp);
+                        double gm = g.G(T, ym);
 
                         double numerical =
                                 (gp - gm) / (2.0 * h);
@@ -409,7 +409,7 @@ public class CefSinglePhaseIntegrationTest {
         CefGibbs g = phase.gibbs;
         double[] y = makeInteriorComposition(g);
 
-        double[][] analytical = g.hessian(T, y);
+        double[][] analytical = g.d2G_dy2(T, y);
 
         int[] nc = g.constituentsPerSublattice();
         int[] offsets = g.offsets();
@@ -450,7 +450,7 @@ public class CefSinglePhaseIntegrationTest {
                             + "  global=(" + mi + "," + mj + ")"
                     );
 
-                    for (int k = 0; k < g.nip(); k++) {
+                    for (int k = 0; k < g.numSiteVars(); k++) {
 
                         double analyticalDirectional =
                                 analytical[k][mi]
@@ -486,10 +486,10 @@ public class CefSinglePhaseIntegrationTest {
                             ym[mj] += h;
 
                             double[] gradP =
-                                    g.gradient(T, yp);
+                                    g.dG_dy(T, yp);
 
                             double[] gradM =
-                                    g.gradient(T, ym);
+                                    g.dG_dy(T, ym);
 
                             double numerical =
                                     (gradP[k] - gradM[k])
@@ -538,12 +538,12 @@ public class CefSinglePhaseIntegrationTest {
 
         double[] y = makeInteriorComposition(g);
 
-        double g0 = g.evaluate(T, y);
+        double g0 = g.G(T, y);
 
         int[] nc = g.constituentsPerSublattice();
         int[] offsets = g.offsets();
 
-        double[][] H = g.hessian(T, y);
+        double[][] H = g.d2G_dy2(T, y);
 
         double[] steps = {
                 1.0e-4,
@@ -597,7 +597,7 @@ public class CefSinglePhaseIntegrationTest {
                     int mi = offsets[s] + i;
                     int mj = offsets[s] + j;
 
-                    double[] d = new double[g.nip()];
+                    double[] d = new double[g.numSiteVars()];
 
                     d[mi] = 1.0;
                     d[mj] = -1.0;
@@ -673,10 +673,10 @@ public class CefSinglePhaseIntegrationTest {
                          *       [G(y+hd) - 2G(y) + G(y-hd)] / h²
                          */
                         double gp =
-                                g.evaluate(T, yp);
+                                g.G(T, yp);
 
                         double gm =
-                                g.evaluate(T, ym);
+                                g.G(T, ym);
 
                         double numerical =
                                 (gp - 2.0 * g0 + gm)
@@ -810,7 +810,7 @@ public class CefSinglePhaseIntegrationTest {
             throw new AssertionError("Initial CEF constitution is null");
         }
 
-        if (y0.length != gibbs.nip()) {
+        if (y0.length != gibbs.numSiteVars()) {
             throw new AssertionError("Initial y length mismatch");
         }
 
@@ -821,7 +821,7 @@ public class CefSinglePhaseIntegrationTest {
         int[] nc = gibbs.constituentsPerSublattice();
         int[] offsets = gibbs.offsets();
 
-        for (int s = 0; s < gibbs.ns(); s++) {
+        for (int s = 0; s < gibbs.numSublattices(); s++) {
 
             double sum = 0.0;
 
@@ -1009,11 +1009,11 @@ public class CefSinglePhaseIntegrationTest {
             throw new AssertionError("Algorithm A did not return CEF site fractions");
         }
 
-        if (stable.y.length != gibbs.nip()) {
+        if (stable.y.length != gibbs.numSiteVars()) {
             throw new AssertionError("CEF site fractions length mismatch");
         }
 
-        for (int s = 0; s < gibbs.ns(); s++) {
+        for (int s = 0; s < gibbs.numSublattices(); s++) {
 
             double sum = 0.0;
 
@@ -1329,7 +1329,7 @@ public class CefSinglePhaseIntegrationTest {
         int[] nc = g.constituentsPerSublattice();
         int[] offsets = g.offsets();
 
-        double[] y = new double[g.nip()];
+        double[] y = new double[g.numSiteVars()];
 
         for (int s = 0; s < nc.length; s++) {
 

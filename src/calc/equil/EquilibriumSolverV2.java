@@ -1241,13 +1241,13 @@ public class EquilibriumSolverV2 {
                 phase.numSublattices();
 
         int nip =
-                phase.numSiteVariables();
+                phase.numSiteVars();
 
         double[][] C =
                 new double[ns][nip];
 
         int[] offsets =
-                phase.sublatticeOffsets();
+                phase.offsets();
 
         int[] nc =
                 phase.constituentsPerSublattice();
@@ -1280,7 +1280,7 @@ public class EquilibriumSolverV2 {
             CefPhaseModelAdapter phase) {
 
         int nip =
-                phase.numSiteVariables();
+                phase.numSiteVars();
 
         int nc =
                 targetAmounts.length;
@@ -1370,7 +1370,7 @@ public class EquilibriumSolverV2 {
             double[] targetM) {
 
         int nip =
-                phase.numSiteVariables();
+                phase.numSiteVars();
 
         int nc =
                 targetAmounts.length;
@@ -1409,7 +1409,7 @@ public class EquilibriumSolverV2 {
             int s =
                     sublatticeOf(
                             i,
-                            phase.sublatticeOffsets(),
+                            phase.offsets(),
                             phase.constituentsPerSublattice());
 
             value -=
@@ -1438,7 +1438,7 @@ public class EquilibriumSolverV2 {
         // ------------------------------------------------------------
 
         int[] offsets =
-                phase.sublatticeOffsets();
+                phase.offsets();
 
         int[] ncSL =
                 phase.constituentsPerSublattice();
@@ -1482,7 +1482,7 @@ public class EquilibriumSolverV2 {
                 phaseWork.model;
 
         int nip =
-                model.numSiteVariables();
+                model.numSiteVars();
 
         int ns =
                 model.numSublattices();
@@ -1514,7 +1514,7 @@ public class EquilibriumSolverV2 {
         // consistently for the multipliers.
         // ------------------------------------------------------------
         int[] offsets =
-                model.sublatticeOffsets();
+                model.offsets();
 
         int[] nc =
                 model.constituentsPerSublattice();
@@ -1552,7 +1552,7 @@ public class EquilibriumSolverV2 {
             CefPhaseModelAdapter phase) {
 
         int nip =
-                phase.numSiteVariables();
+                phase.numSiteVars();
 
         int ns =
                 phase.numSublattices();
@@ -1568,7 +1568,7 @@ public class EquilibriumSolverV2 {
         }
 
         int[] offsets =
-                phase.sublatticeOffsets();
+                phase.offsets();
 
         int[] nconst =
                 phase.constituentsPerSublattice();
@@ -1636,7 +1636,7 @@ public class EquilibriumSolverV2 {
                 invertMatrix(phaseMatrix);
 
         int nip =
-                phase.numSiteVariables();
+                phase.numSiteVars();
 
         int ns =
                 phase.numSublattices();
@@ -1724,7 +1724,7 @@ public class EquilibriumSolverV2 {
         }
 
         int nip =
-                phaseWork.model.numSiteVariables();
+                phaseWork.model.numSiteVars();
 
         int ns =
                 phaseWork.model.numSublattices();
@@ -1760,7 +1760,7 @@ public class EquilibriumSolverV2 {
         // C^T * gamma
         // ------------------------------------------------------------
         int[] offsets =
-                phaseWork.model.sublatticeOffsets();
+                phaseWork.model.offsets();
 
         int[] nconst =
                 phaseWork.model
@@ -1812,7 +1812,7 @@ public class EquilibriumSolverV2 {
         }
 
         int nip =
-                phaseWork.model.numSiteVariables();
+                phaseWork.model.numSiteVars();
 
         int ns =
                 phaseWork.model.numSublattices();
@@ -1861,7 +1861,7 @@ public class EquilibriumSolverV2 {
         // ============================================================
 
         int[] offsets =
-                phaseWork.model.sublatticeOffsets();
+                phaseWork.model.offsets();
 
         int[] nconst =
                 phaseWork.model
@@ -2028,7 +2028,7 @@ public class EquilibriumSolverV2 {
         // Sublattice constraints
         // ------------------------------------------------------------
         int[] offsets =
-                phaseWork.model.sublatticeOffsets();
+                phaseWork.model.offsets();
 
         int[] nconst =
                 phaseWork.model
@@ -2102,7 +2102,7 @@ public class EquilibriumSolverV2 {
 
         int nip =
                 phaseWork.model
-                        .numSiteVariables();
+                        .numSiteVars();
 
         int nc =
                 targetAmounts.length;
@@ -2113,7 +2113,7 @@ public class EquilibriumSolverV2 {
 
         int[] offsets =
                 phaseWork.model
-                        .sublatticeOffsets();
+                        .offsets();
 
         int[] nconst =
                 phaseWork.model
@@ -2166,19 +2166,19 @@ public class EquilibriumSolverV2 {
             double[] y) {
 
         phaseWork.G =
-                phase.siteEnergy(T, y);
+                phase.G(T, y);
 
         phaseWork.gy =
-                phase.siteGradient(T, y);
+                phase.dG_dy(T, y);
 
         phaseWork.gyy =
-                phase.siteHessian(T, y);
+                phase.d2G_dy2(T, y);
 
         phaseWork.mA =
-                phase.elementAmounts(y);
+                phase.moles(y);
 
         phaseWork.dMdY =
-                phase.elementAmountsJacobian();
+                phase.dMoles_dy();
     }
 
     /**
@@ -2201,26 +2201,26 @@ public class EquilibriumSolverV2 {
         }
 
         work.G =
-                work.model.siteEnergy(
+                work.model.G(
                         T,
                         work.y);
 
         work.gy =
-                work.model.siteGradient(
+                work.model.dG_dy(
                         T,
                         work.y);
 
         work.gyy =
-                work.model.siteHessian(
+                work.model.d2G_dy2(
                         T,
                         work.y);
 
         work.mA =
-                work.model.elementAmounts(
+                work.model.moles(
                         work.y);
 
         work.dMdY =
-                work.model.elementAmountsJacobian();
+                work.model.dMoles_dy();
     }
 
     /**
@@ -2374,7 +2374,7 @@ public class EquilibriumSolverV2 {
             double[] targetM) {
 
         int nip =
-                phase.numSiteVariables();
+                phase.numSiteVars();
 
         int nc =
                 targetAmounts.length;
@@ -2739,7 +2739,7 @@ public class EquilibriumSolverV2 {
 
             int nip =
                     work.model
-                            .numSiteVariables();
+                            .numSiteVars();
 
             work.massResponse =
                     new double[nc][nc];
@@ -2869,7 +2869,7 @@ public class EquilibriumSolverV2 {
 
         int nip =
                 phaseWork.model
-                        .numSiteVariables();
+                        .numSiteVars();
 
         double[][] R =
                 new double[nc][nc];
@@ -2906,7 +2906,7 @@ public class EquilibriumSolverV2 {
 
         int nip =
                 phaseWork.model
-                        .numSiteVariables();
+                        .numSiteVars();
 
         double[] r =
                 new double[nc];
@@ -3799,7 +3799,7 @@ public class EquilibriumSolverV2 {
 
             final int nip =
                     work.model
-                            .numSiteVariables();
+                            .numSiteVars();
 
             if (work.response.cG == null
                     || work.response.cG.length != nip) {
@@ -4005,7 +4005,7 @@ public class EquilibriumSolverV2 {
 
         int nip =
                 phaseWork.model
-                        .numSiteVariables();
+                        .numSiteVars();
 
         int nc =
                 targetAmounts.length;
@@ -4016,7 +4016,7 @@ public class EquilibriumSolverV2 {
 
         int[] offsets =
                 phaseWork.model
-                        .sublatticeOffsets();
+                        .offsets();
 
         int[] nconst =
                 phaseWork.model
@@ -4098,7 +4098,7 @@ public class EquilibriumSolverV2 {
 
         int nip =
                 work.model
-                        .numSiteVariables();
+                        .numSiteVars();
 
         int nc =
                 targetAmounts.length;
@@ -4109,7 +4109,7 @@ public class EquilibriumSolverV2 {
 
         int[] offsets =
                 work.model
-                        .sublatticeOffsets();
+                        .offsets();
 
         int[] nconst =
                 work.model
@@ -4812,7 +4812,7 @@ public class EquilibriumSolverV2 {
             // ----------------------------------------------------------
 
             int[] offsets =
-                    work.model.sublatticeOffsets();
+                    work.model.offsets();
 
             int[] nconst =
                     work.model
@@ -5052,13 +5052,13 @@ public class EquilibriumSolverV2 {
 
         int nip =
                 work.model
-                        .numSiteVariables();
+                        .numSiteVars();
 
         int nc =
                 targetAmounts.length;
 
         int[] offsets =
-                work.model.sublatticeOffsets();
+                work.model.offsets();
 
         int[] nconst =
                 work.model
@@ -5233,7 +5233,7 @@ public class EquilibriumSolverV2 {
         // ------------------------------------------------------------
 
         int[] offsets =
-                phaseWork.model.sublatticeOffsets();
+                phaseWork.model.offsets();
 
         int[] nconst =
                 phaseWork.model
@@ -5516,7 +5516,7 @@ public class EquilibriumSolverV2 {
             // ----------------------------------------------------------
 
             int[] offsets =
-                    work.model.sublatticeOffsets();
+                    work.model.offsets();
 
             int[] nconst =
                     work.model
