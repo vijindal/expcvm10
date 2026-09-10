@@ -175,13 +175,60 @@ instead of 5 panels each independently tracking their own
   constitution bug (Step 6 of `docs/plan-3layer-core-dataflow.md`) — a
   separate, already-flagged issue.
 
-## Verification plan
+## Implementation  ✅ DONE (2026-09-10)
 
-- Add a small counter/log-count check (or reuse the existing "tdb method
-  is called with" print) to confirm exactly ONE parse of the default TDB
-  happens across the entire GUI startup sequence, not up to 9.
-- Confirm the GUI window appears (visually, or via a startup-timing log)
-  before any TDB parsing completes, not after.
+Both fixes landed as designed, plus the figure/plan correction that
+routes browsing through `CalculationSession` (see the note at the top of
+Fix 2 above):
+
+- **Fix 1**: `TdbParser` gained a `loadedFilePath` field; `load(...)` is
+  now a no-op if the requested path matches what's already loaded.
+- **Fix 2a (browsing)**: `CalculationSession.availableElements(tdbPath)`
+  and `availablePhasesFor(tdbPath, elements)` added, backed by a
+  `DatabasePort` the session owns for browsing (separate from
+  `currentSystem`, since listing names doesn't need a full
+  `GibbsEnergyModel[]` build). `MainController.inspectModel(...)`/
+  `getPhasesForElements(...)` now delegate to these instead of
+  `ModelInspectionService` directly — `DatabaseExtractionPanel` (the
+  only GUI class that calls these two `MainController` methods) was
+  changed nowhere else, since it already went through `MainController`.
+- **Fix 2b (defer + no double-work)**: `DatabaseExtractionPanel.setDefaults(...)`
+  wraps its body in `SwingUtilities.invokeLater(...)` — deferring the
+  five panels' default-population from "during `MainFrame.buildRoot()`,
+  before `setVisible(true)`" to "the next EDT cycle, after the window is
+  already shown." Combined with Fix 1's caching, this means the window
+  paints immediately and the (now singular) TDB parse happens
+  transparently afterward.
+
+**Verified:**
+- Startup TDB-parse count confirmed via the existing "tdb method is
+  called with" print: **1** (down from up to 9 before this fix) —
+  checked directly against `./gradlew run`/direct-`java` GUI launch output.
+- New `CalculationSessionTest` case
+  (`testBrowsingDoesNotRequireSetModel`) confirms `availableElements`/
+  `availablePhasesFor` work with no `setModel()` call, don't themselves
+  build a `ThermodynamicSystem` (`hasModel()` stays false), and compose
+  correctly with a subsequent `setModel()` call using the same
+  TDB/elements/phases just browsed.
+- `ModelInfo.isFileExists()`/`getLastModifiedEpochMillis()` (relied on by
+  `ModelInspectorSidebarPanel.showStatus`) preserved correctly in the
+  rewritten `MainController.inspectModel` despite no longer routing
+  through `ModelInspectionService.inspectModel` for that check.
+- Whole-project compile clean via both the direct `javac` sweep and
+  `./gradlew compileJava compileTestJava`.
+- Full existing regression suite (`CalculationSessionTest`,
+  `CalculationApiServerTest`, `CliEquilibriumCommandTest`,
+  `GuiMainControllerEquilibriumTest`, `RkModelBaselineTest`,
+  `V2ZrGibbsBaselineTest`, `V2ZrGibbsLiteratureBaselineTest`,
+  `EMatNCTest`, `ThermodynamicSystemSmokeTest`) re-run clean — no
+  numeric result changed for any consumer.
+
+**Not changed, confirmed still correct:** `ModelInspectionService`/raw
+`TdbParser` remain reachable from `MainController.getPhaseParameters(...)`
+(used by `ModelInspectorSidebarPanel`'s detailed parameter dump) — a
+genuinely different, deeper inspection feature than
+`DatabaseExtractionPanel`'s browsing, explicitly out of this plan's scope
+per "does not touch `ModelInspectionService`'s public contracts."
 - Confirm existing GUI single-point flow
   (`GuiMainControllerEquilibriumTest`) still passes unchanged — Fix 2
   must not alter `runSinglePoint`'s existing behavior/output.

@@ -331,16 +331,31 @@ public class DatabaseExtractionPanel extends JPanel {
 
     /**
      * Pre-populate panel with defaults (called once at construction by host sidebar).
+     *
+     * <p>Deferred via {@link SwingUtilities#invokeLater} rather than run
+     * synchronously: this is called from the host sidebar panel's own
+     * constructor, which runs during {@code MainFrame.buildRoot()}, before
+     * {@code setVisible(true)}. Five sidebar panels each construct their
+     * own {@link DatabaseExtractionPanel} and call this with the same
+     * default TDB path, so running the underlying {@code onTdbSelected()}/
+     * {@code onAddElements()} work synchronously here would parse the same
+     * file up to five times, on the EDT, before the window is ever shown
+     * (see {@code docs/plan-gui-calculationsession-wiring.md}). Queuing
+     * the work instead lets the window paint first; the parses then run
+     * on the next EDT cycle(s) and are cheap regardless (thanks to
+     * {@code TdbParser}'s file-path caching -- see the same plan doc).
      */
     public void setDefaults(String tdbRelPath, List<String> elements) {
-        if (tdbRelPath != null && !tdbRelPath.isEmpty()) {
-            tdbCombo.getEditor().setItem(tdbRelPath);
-            onTdbSelected();
-        }
-        if (elements != null && !elements.isEmpty()) {
-            elemInputField.setText(String.join(",", elements));
-            onAddElements();
-        }
+        SwingUtilities.invokeLater(() -> {
+            if (tdbRelPath != null && !tdbRelPath.isEmpty()) {
+                tdbCombo.getEditor().setItem(tdbRelPath);
+                onTdbSelected();
+            }
+            if (elements != null && !elements.isEmpty()) {
+                elemInputField.setText(String.join(",", elements));
+                onAddElements();
+            }
+        });
     }
 
     // ================================================================

@@ -155,26 +155,55 @@ public class MainController {
 
     /**
      * Inspect TDB and return model metadata.
+     *
+     * <p>Routed through {@link CalculationSession#availableElements}
+     * (browsing, not calculating -- see
+     * {@code docs/plan-gui-calculationsession-wiring.md}) rather than
+     * {@link ModelInspectionService} directly, so the GUI's
+     * database-selection step shares the same cached
+     * {@code TdbParser} state as everything else that goes through
+     * {@code calculationSession}, instead of re-parsing the file on its
+     * own separate path.
      */
     public ModelInfo inspectModel(String tdbPath, String[] elements) {
         Trace.enter(LOG, AppLevel.FLOW, "MainController", "inspectModel");
+        ModelInfo info = new ModelInfo();
+        info.setFilePath(tdbPath);
+        info.setDetectedElements(Arrays.asList(elements));
+
+        java.io.File file = new java.io.File(tdbPath);
+        info.setFileExists(file.exists());
+        info.setLastModifiedEpochMillis(info.isFileExists() ? file.lastModified() : 0L);
+        if (!info.isFileExists()) {
+            info.setError("TDB file not found.");
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "inspectModel");
+            return info;
+        }
+
         try {
-            ModelInfo info = modelInspectionService.inspectModel(tdbPath, elements);
+            info.setAvailableElements(calculationSession.availableElements(tdbPath));
+            if (elements != null && elements.length > 0) {
+                info.setAvailablePhases(
+                        calculationSession.availablePhasesFor(tdbPath, Arrays.asList(elements)));
+            }
             Trace.exit(LOG, AppLevel.FLOW, "MainController", "inspectModel");
             return info;
         } catch (Exception e) {
             LOG.log(Level.WARNING, "Model inspection failed", e);
-            ModelInfo error = new ModelInfo();
-            error.setError("Model inspection failed: " + e.getMessage());
+            info.setError("Model inspection failed: " + e.getMessage());
             Trace.exit(LOG, AppLevel.FLOW, "MainController", "inspectModel");
-            return error;
+            return info;
         }
     }
 
+    /**
+     * Routed through {@link CalculationSession#availablePhasesFor} -- see
+     * {@link #inspectModel} for why.
+     */
     public List<String> getPhasesForElements(String tdbPath, List<String> elements) {
         Trace.enter(LOG, AppLevel.FLOW, "MainController", "getPhasesForElements");
         try {
-            List<String> phases = modelInspectionService.getPhasesForElements(tdbPath, elements);
+            List<String> phases = calculationSession.availablePhasesFor(tdbPath, elements);
             Trace.exit(LOG, AppLevel.FLOW, "MainController", "getPhasesForElements");
             return phases;
         } catch (Exception e) {

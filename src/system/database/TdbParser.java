@@ -29,11 +29,25 @@ public class TdbParser implements DatabasePort {
 
     private static final Logger LOG = Logger.getLogger(TdbParser.class.getName());
     private tdb database;
+    private String loadedFilePath;
 
+    /**
+     * Loads {@code filePath}, unless it is already the currently loaded
+     * file -- in which case this is a no-op. Callers that construct a
+     * fresh {@code TdbParser} per load are unaffected (each instance
+     * loads at most once); callers that reuse one instance across
+     * repeated {@code load()} calls with the same path (e.g. GUI panels
+     * re-inspecting the same default database) no longer re-parse it
+     * from disk every time.
+     */
     @Override
     public void load(String filePath) throws IOException {
+        if (filePath.equals(loadedFilePath)) {
+            return;
+        }
         LOG.fine("Loading TDB file: " + filePath);
         this.database = new tdb(filePath);
+        this.loadedFilePath = filePath;
         LOG.fine("TDB file loaded successfully.");
     }
 

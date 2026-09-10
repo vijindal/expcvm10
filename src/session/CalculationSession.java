@@ -5,9 +5,12 @@ import calc.diagram.DiagramTracer;
 import calc.diagram.PhaseDiagram;
 import calc.equil.EquilibriumSolver;
 import system.ThermodynamicSystem;
+import system.database.TdbParser;
+import system.ports.DatabasePort;
 import system.ports.EquilibriumResult;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -35,6 +38,17 @@ import java.util.List;
  * so multiple calculations against the same system -- e.g. a single-point
  * calculation followed by a phase diagram -- do not re-parse the database.
  *
+ * <p>This class is also the single point of contact for browsing a
+ * database, not just calculating against one: {@link #availableElements}
+ * and {@link #availablePhasesFor} answer "what elements/phases exist in
+ * this file" without requiring a full model build, for a UI's
+ * pick-a-database / pick-elements steps that happen before a phase
+ * selection (and therefore a {@link #setModel} call) is possible. A UI
+ * must never reach a database/parser class directly for this -- doing so
+ * defeats the caching this class and {@code TdbParser} provide and
+ * reintroduces the redundant-parsing problem this design fixes (see
+ * {@code docs/plan-gui-calculationsession-wiring.md}).
+ *
  * <p>Not thread-safe; one session is intended for one sequential caller.
  */
 public final class CalculationSession {
@@ -46,6 +60,17 @@ public final class CalculationSession {
     private ThermodynamicSystem currentSystem;
     private EquilibriumResult currentEquilibriumResult;
     private PhaseDiagram currentPhaseDiagram;
+
+    /**
+     * Owned separately from {@link #currentSystem}: browsing a database's
+     * elements/phases does not require building a {@link ThermodynamicSystem}
+     * (no {@code GibbsEnergyModel[]} construction), so this is a lighter,
+     * independent path. Reused across browse calls the same way
+     * {@link TdbParser#load} itself caches by file path -- calling
+     * {@link #availableElements}/{@link #availablePhasesFor} repeatedly
+     * with the same {@code tdbFilePath} does not re-parse the file.
+     */
+    private final DatabasePort browseDatabase = new TdbParser();
 
     /**
      * Ensures a {@link ThermodynamicSystem} exists for the given model
@@ -81,6 +106,42 @@ public final class CalculationSession {
             throw new IllegalStateException("No model set -- call setModel() first");
         }
         return currentSystem;
+    }
+
+    /**
+     * Lists every element symbol available in {@code tdbFilePath}, without
+     * requiring any elements or phases to be chosen yet and without
+     * building a {@link ThermodynamicSystem}.
+     *
+     * <p>This is the browsing counterpart to {@link #setModel}: a UI's
+     * "pick a database" step calls this (not {@link #setModel}, and not
+     * any database/parser class directly) to populate a database's
+     * element list before the user has chosen which ones to use.
+     *
+     * @throws IOException if the TDB file cannot be loaded
+     */
+    public List<String> availableElements(String tdbFilePath) throws IOException {
+        browseDatabase.load(tdbFilePath);
+        return new ArrayList<>(((TdbParser) browseDatabase).getElementNames());
+    }
+
+    /**
+     * Lists the phase names available in {@code tdbFilePath} whose
+     * constituents are a subset of {@code elements} -- the browsing
+     * counterpart to {@link #setModel} for a UI's "pick phases" step,
+     * called once elements are chosen but before a phase selection is
+     * confirmed (i.e. before there is a full model to build).
+     *
+     * @throws IOException if the TDB file cannot be loaded
+     */
+    public List<String> availablePhasesFor(String tdbFilePath, List<String> elements)
+            throws IOException {
+        if (elements == null || elements.isEmpty()) {
+            return List.of();
+        }
+        browseDatabase.load(tdbFilePath);
+        DatabasePort scoped = browseDatabase.extractSystem(elements.toArray(new String[0]));
+        return new ArrayList<>(scoped.getPhaseNames());
     }
 
     /**

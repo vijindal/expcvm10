@@ -21,6 +21,7 @@ public class CalculationSessionTest {
         testCalculateBeforeSetModelThrows();
         testEndToEndReuseAcrossCalculationKinds();
         testStepAndMapAreUnimplementedStubs();
+        testBrowsingDoesNotRequireSetModel();
 
         if (failures == 0) {
             System.out.println("ALL CalculationSession CHECKS PASSED");
@@ -131,5 +132,28 @@ public class CalculationSessionTest {
             stepStateThrew = true;
         }
         check(stepStateThrew, "calculateStep() before setModel() throws IllegalStateException, not UnsupportedOperationException");
+    }
+
+    private static void testBrowsingDoesNotRequireSetModel() throws Exception {
+        System.out.println("=== browsing (availableElements/availablePhasesFor) works before setModel ===");
+        CalculationSession session = new CalculationSession();
+
+        // No setModel() call yet -- browsing must still work.
+        java.util.List<String> elements = session.availableElements("data/VZR-re2.TDB");
+        check(elements.contains("V") && elements.contains("ZR"),
+                "availableElements() lists V and ZR from VZR-re2.TDB with no setModel() call");
+
+        java.util.List<String> phases =
+                session.availablePhasesFor("data/VZR-re2.TDB", java.util.List.of("V", "ZR"));
+        check(phases.contains("V2ZR"),
+                "availablePhasesFor() lists V2ZR for elements [V, ZR] with no setModel() call");
+
+        check(!session.hasModel(),
+                "browsing does not itself build a ThermodynamicSystem (hasModel() still false)");
+
+        // Now actually set the model using the same TDB/elements/phases just
+        // browsed, confirming the two paths (browse, then calculate) compose.
+        session.setModel("data/VZR-re2.TDB", java.util.List.of("V", "ZR"), java.util.List.of("V2ZR"));
+        check(session.hasModel(), "setModel() after browsing builds the system as normal");
     }
 }
