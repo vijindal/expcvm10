@@ -12,6 +12,8 @@ import ui.layer.ModelInspectionService;
 import ui.request.PhaseDiagramRequest;
 import ui.result.PhaseDiagramResult;
 import system.ports.DatabasePort;
+import system.ports.EquilibriumResult;
+import session.CalculationSession;
 import calc.diagram.AxisConfig;
 import calc.diagram.AxisConfig.Type;
 import system.database.TdbParser;
@@ -19,6 +21,7 @@ import system.database.TdbParser;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.logging.Logger;
 
 /**
@@ -30,6 +33,7 @@ import java.util.logging.Logger;
  *   cal                 Run CalModel calculation
  *   diagram [options]   Calculate a phase diagram (text summary)
  *   inspect [options]   Inspect a TDB database file
+ *   equilibrium [opts]  Single-point equilibrium via CalculationSession
  */
 public class CliApp {
 
@@ -75,6 +79,9 @@ public class CliApp {
                     break;
                 case "inspect":
                     runModelInspect(args, cwd);
+                    break;
+                case "equilibrium":
+                    runEquilibriumViaSession(args, cwd);
                     break;
                 default:
                     System.out.println("Unknown command: " + args[0]);
@@ -191,6 +198,87 @@ public class CliApp {
         }
     }
 
+    // ──────────────────────────────────────────────────────────────────
+    // Single-point equilibrium via CalculationSession
+    // ──────────────────────────────────────────────────────────────────
+
+    /**
+     * Single-point equilibrium calculation routed through
+     * {@link CalculationSession}, the UI-agnostic coordinator introduced
+     * in {@code docs/plan-3layer-core-dataflow.md}. Unlike {@code diagram}
+     * (which still goes through the older {@link PhaseDiagramUseCase}
+     * path), this command exercises the same session/model/calculation
+     * lifecycle the REST API (see {@code docs/plan-rest-api-calculation-session.md})
+     * and, eventually, the GUI use.
+     *
+     * <p>Usage:
+     * <pre>
+     *   equilibrium [--tdb FILE] [--elements A,B] [--phases P1,P2]
+     *               [--T value] [--P value] [--composition x1,x2,...]
+     * </pre>
+     */
+    private void runEquilibriumViaSession(String[] args, String cwd) throws IOException {
+        String tdbPath     = cwd + "/data/VZR-re2.TDB";
+        String elementsStr = "V,ZR";
+        String phasesStr   = "V2ZR";
+        double T           = 1000.0;
+        double P           = 10000.0;
+        String compositionStr = "0.6666666666666666,0.3333333333333333";
+
+        for (int i = 1; i < args.length - 1; i++) {
+            switch (args[i]) {
+                case "--tdb":         tdbPath        = resolvePath(args[++i], cwd); break;
+                case "--elements":    elementsStr    = args[++i]; break;
+                case "--phases":      phasesStr      = args[++i]; break;
+                case "--T":           T              = Double.parseDouble(args[++i]); break;
+                case "--P":           P              = Double.parseDouble(args[++i]); break;
+                case "--composition": compositionStr = args[++i]; break;
+                default: i++; break;
+            }
+        }
+
+        List<String> elements = splitCsv(elementsStr);
+        List<String> phases   = splitCsv(phasesStr);
+        double[] composition  = parseDoubleCsv(compositionStr);
+
+        System.out.println("─── Single-Point Equilibrium (via CalculationSession) ──");
+        System.out.println("TDB:         " + tdbPath);
+        System.out.println("Elements:    " + elements);
+        System.out.println("Phases:      " + phases);
+        System.out.println("T:           " + T + " K");
+        System.out.println("P:           " + P + " Pa");
+        System.out.println("Composition: " + Arrays.toString(composition));
+        System.out.println("──────────────────────────────────────────────────────");
+
+        CalculationSession session = new CalculationSession();
+        try {
+            session.setModel(tdbPath, elements, phases);
+            session.calculateEquilibrium(T, P, composition);
+        } catch (IllegalStateException | UnsupportedOperationException e) {
+            System.out.println("✗ Error: " + e.getMessage());
+            return;
+        }
+
+        EquilibriumResult result = session.currentEquilibriumResult();
+        System.out.println("Converged:   " + result.isConverged()
+                + "  (iterations=" + result.getIterations() + ")");
+        System.out.println("mu:          " + Arrays.toString(result.getMu()));
+        System.out.println("Stable phases:");
+        for (EquilibriumResult.PhaseResult pr : result.getStablePhases()) {
+            System.out.printf("  %-10s amount=%-12.6f G=%.4f J/mol.f.u.%n",
+                    pr.phaseName, pr.amount, pr.G);
+        }
+    }
+
+    private double[] parseDoubleCsv(String in) {
+        String[] parts = in.split(",");
+        double[] values = new double[parts.length];
+        for (int i = 0; i < parts.length; i++) {
+            values[i] = Double.parseDouble(parts[i].trim());
+        }
+        return values;
+    }
+
     private AxisConfig parseAxisConfig(String spec, String name) {
         String[] parts = spec.split(",");
         if (parts.length < 4) return null;
@@ -305,6 +393,7 @@ public class CliApp {
         System.out.println("  cal                   Run CalModel calculation");
         System.out.println("  diagram [options]     Calculate a phase diagram");
         System.out.println("  inspect [--tdb FILE]  Inspect a TDB database");
+        System.out.println("  equilibrium [options] Single-point equilibrium via CalculationSession");
         System.out.println("  --gui                 Launch the graphical interface");
         System.out.println();
         System.out.println("Diagram options:");
@@ -314,5 +403,13 @@ public class CliApp {
         System.out.println("  --type MAP|STEP              Diagram type");
         System.out.println("  --axis0 COMPOSITION,0,1,0.05");
         System.out.println("  --axis1 TEMPERATURE,500,2000,50");
+        System.out.println();
+        System.out.println("Equilibrium options:");
+        System.out.println("  --tdb FILE                  TDB database path");
+        System.out.println("  --elements V,ZR              Comma-separated elements");
+        System.out.println("  --phases V2ZR                Comma-separated phases (candidates)");
+        System.out.println("  --T value                    Temperature (K)");
+        System.out.println("  --P value                    Pressure (Pa)");
+        System.out.println("  --composition x1,x2,...      Overall mole fractions");
     }
 }

@@ -437,6 +437,40 @@ pre-existing `EquilibriumSolver`/`GridMinimizer` gap for phases with
 internal ordering degrees of freedom at stoichiometric compositions —
 worth its own dedicated investigation later, separate from any UI wiring.
 
+### Step 7 — Wire CLI, API, GUI through `CalculationSession`
+
+Per the user's direction, three consumers of `CalculationSession` in
+sequence: REST API (largest, own dedicated plan — see
+`docs/plan-rest-api-calculation-session.md` — ✅ DONE), CLI (this step,
+✅ DONE for the `equilibrium` command), GUI (not yet started).
+
+**CLI — `equilibrium` command, ✅ DONE.** Added to `src/ui/cli/CliApp.java`
+alongside the existing `diagram`/`inspect`/etc. commands (which still use
+the older `PhaseDiagramUseCase` path, unchanged):
+```
+equilibrium [--tdb FILE] [--elements A,B] [--phases P1,P2]
+            [--T value] [--P value] [--composition x1,x2,...]
+```
+Defaults to the calG scenario (V-Zr, V2ZR, T=1000K, P=10000Pa,
+x_Zr=1/3) when run with no flags. Builds a `CalculationSession` per
+invocation, calls `setModel(...)` then `calculateEquilibrium(...)`,
+prints the result — `IllegalStateException`/`UnsupportedOperationException`
+from the session are caught and printed as a clean CLI error rather than
+a stack trace. Verified via `src/test/CliEquilibriumCommandTest.java`
+(drives `CliApp.run(String[])` exactly as a real invocation would,
+captures stdout, checks it against the same known-good calG values as
+`CalculationSessionCalGTest`/`CalculationApiServerTest`: G=-137349.4480,
+mu[0]=116674.3539155658 — all three consumers now independently verified
+to produce bit-identical results for the same scenario). Also confirmed
+custom `--T`/`--composition` flags are honored. All 6 checks pass;
+existing regression suite re-run clean.
+
+**GUI — not yet started.** `MainController`'s `runSinglePoint(...)` still
+goes through `SinglePointUseCase`/`EquilibriumUseCase`
+(`ThermodynamicSystem.build()` directly, not `CalculationSession`) — see
+the "Not yet done" note earlier in this Step 3 write-up. Wiring the GUI is
+the remaining piece of this step.
+
 ## Explicitly out of scope for this pass
 
 - **`EquilibriumSolverV2` wiring** (retyping `PhaseWork.model` to
