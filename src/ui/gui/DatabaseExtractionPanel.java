@@ -330,32 +330,27 @@ public class DatabaseExtractionPanel extends JPanel {
     public DatabaseSelection getSelection() { return selection; }
 
     /**
-     * Pre-populate panel with defaults (called once at construction by host sidebar).
+     * Pre-fills the database path and element text fields with a sensible
+     * starting point (called once at construction by host sidebar), but
+     * does NOT load or parse anything -- no TDB access happens until the
+     * user actually interacts with the panel (selects/confirms the
+     * database via the combo box, presses Enter, or clicks Browse; then
+     * adds elements). This is a fully lazy default: the GUI does zero TDB
+     * parsing at startup (see {@code docs/plan-gui-calculationsession-wiring.md}).
      *
-     * <p>Deferred via {@link SwingUtilities#invokeLater} rather than run
-     * synchronously: this is called from the host sidebar panel's own
-     * constructor, which runs during {@code MainFrame.buildRoot()}, before
-     * {@code setVisible(true)}. Five sidebar panels each construct their
-     * own {@link DatabaseExtractionPanel} and call this with the same
-     * default TDB path, so running the underlying {@code onTdbSelected()}/
-     * {@code onAddElements()} work synchronously here would parse the same
-     * file up to five times, on the EDT, before the window is ever shown
-     * (see {@code docs/plan-gui-calculationsession-wiring.md}). Queuing
-     * the work instead lets the window paint first; the parses then run
-     * on the next EDT cycle(s) and are cheap regardless (thanks to
-     * {@code TdbParser}'s file-path caching -- see the same plan doc).
+     * <p>{@code tdbCombo.getEditor().setItem(...)} only changes the
+     * editor's displayed text -- it does not fire the combo's
+     * {@code comboBoxChanged} action (that only fires from real user
+     * selection), so this is safe to call directly, with no deferral
+     * needed.
      */
     public void setDefaults(String tdbRelPath, List<String> elements) {
-        SwingUtilities.invokeLater(() -> {
-            if (tdbRelPath != null && !tdbRelPath.isEmpty()) {
-                tdbCombo.getEditor().setItem(tdbRelPath);
-                onTdbSelected();
-            }
-            if (elements != null && !elements.isEmpty()) {
-                elemInputField.setText(String.join(",", elements));
-                onAddElements();
-            }
-        });
+        if (tdbRelPath != null && !tdbRelPath.isEmpty()) {
+            tdbCombo.getEditor().setItem(tdbRelPath);
+        }
+        if (elements != null && !elements.isEmpty()) {
+            elemInputField.setText(String.join(",", elements));
+        }
     }
 
     // ================================================================

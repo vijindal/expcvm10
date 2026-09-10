@@ -192,18 +192,31 @@ Fix 2 above):
   `ModelInspectionService` directly — `DatabaseExtractionPanel` (the
   only GUI class that calls these two `MainController` methods) was
   changed nowhere else, since it already went through `MainController`.
-- **Fix 2b (defer + no double-work)**: `DatabaseExtractionPanel.setDefaults(...)`
-  wraps its body in `SwingUtilities.invokeLater(...)` — deferring the
-  five panels' default-population from "during `MainFrame.buildRoot()`,
-  before `setVisible(true)`" to "the next EDT cycle, after the window is
-  already shown." Combined with Fix 1's caching, this means the window
-  paints immediately and the (now singular) TDB parse happens
-  transparently afterward.
+- **Fix 2b, revised same day — fully lazy, zero parses at startup.**
+  The first cut of this fix (deferring `setDefaults(...)`'s body via
+  `SwingUtilities.invokeLater(...)`) reduced startup parsing from up to 9
+  down to 1 — the single "pre-populate the default database" load still
+  ran, just after first paint instead of blocking it. Per explicit
+  follow-up direction, this was tightened further to **zero** parses at
+  startup: `setDefaults(...)` now only pre-fills the combo box's editor
+  text and the element input field (`tdbCombo.getEditor().setItem(...)`,
+  `elemInputField.setText(...)`) — plain text-field updates, no TDB
+  access — and no longer calls `onTdbSelected()`/`onAddElements()` at
+  all. The actual load/parse now happens only on genuine user action:
+  selecting an item from the combo box, pressing Enter in its editor, or
+  clicking Browse — all three already wired to `onTdbSelected()`
+  independently of `setDefaults`. Confirmed
+  `tdbCombo.getEditor().setItem(...)` does not itself fire the combo's
+  `comboBoxChanged` action (that only fires from real selection/
+  `setSelectedItem`), so this is safe with no `invokeLater` needed for
+  `setDefaults` itself anymore.
 
 **Verified:**
 - Startup TDB-parse count confirmed via the existing "tdb method is
-  called with" print: **1** (down from up to 9 before this fix) —
-  checked directly against `./gradlew run`/direct-`java` GUI launch output.
+  called with" print: **0** (first fixed to 1, then to 0 per follow-up
+  direction; both down from up to 9 originally) — checked directly
+  against `./gradlew run --args="--gui"` and direct-`java` GUI launch
+  output.
 - New `CalculationSessionTest` case
   (`testBrowsingDoesNotRequireSetModel`) confirms `availableElements`/
   `availablePhasesFor` work with no `setModel()` call, don't themselves
