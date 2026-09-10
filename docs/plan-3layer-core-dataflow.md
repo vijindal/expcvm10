@@ -246,6 +246,19 @@ public final class CalculationSession {
                 currentSystem().phaseModels(), axes, startAxes, fixedT, fixedP, comp);
     }
 
+    /** NOT YET IMPLEMENTED -- see "Four calculation types" note below. */
+    public void calculateStep(AxisConfig axis, double fixedT, double fixedP, double[] comp) {
+        currentSystem();
+        throw new UnsupportedOperationException("Step calculation not yet implemented");
+    }
+
+    /** NOT YET IMPLEMENTED -- see "Four calculation types" note below. */
+    public void calculateMap(AxisConfig axis0, AxisConfig axis1,
+                              double fixedT, double fixedP, double[] comp) {
+        currentSystem();
+        throw new UnsupportedOperationException("Map calculation not yet implemented");
+    }
+
     /** Latest equilibrium result, or null if none has completed / it was
      *  superseded by a new setModel() call. */
     public EquilibriumResult currentEquilibriumResult() { return currentEquilibriumResult; }
@@ -254,6 +267,32 @@ public final class CalculationSession {
     public PhaseDiagram currentPhaseDiagram() { return currentPhaseDiagram; }
 }
 ```
+
+**Four calculation types, not two (decided 2026-09-10):** single point,
+step, map, and phase diagram are four distinct calculation types — step and
+map are property scans (sample the equilibrium over 1 or 2 axes, no
+phase-boundary tracking), while phase diagram is a materially more complex
+calculation (Sundman's Algorithms B/C1/C2 — node/exit graph, ZPF
+line-following, phase-change detection; see Step 5). Investigation found
+step/map have **no working plain-sampling engine in this codebase today** —
+the only existing step/map code is inside `DiagramTracer`
+(`calculateStep`/`calculateMap` methods), and it always does full
+phase-boundary tracing, never simple point sampling. `PropertyScanRequest`
+(the DTO shape for a lightweight step/map) exists but is entirely unwired —
+`MainController.runPropertyScan` is a stub `TODO`.
+
+Decision: add `calculateStep`/`calculateMap` to `CalculationSession` now,
+with their correct parameter shapes (one/two `AxisConfig` plus fixed
+T/P/composition), but have them throw `UnsupportedOperationException` until
+a real property-sampling engine exists — rather than building that engine
+speculatively now, or routing them through `DiagramTracer` just to have
+*something* behind them (which would bake in "step/map = phase diagram
+internally" as one implementation, later needing to be un-baked). Both
+stubs still enforce the `setModel()` precondition
+(`IllegalStateException` if no model is set) before failing with
+`UnsupportedOperationException` — calling with no model configured should
+fail for the reason a caller would expect, not the unimplemented-feature
+reason.
 
 **Decided (2026-09-10):**
 - **Package placement:** new top-level `session/` package
@@ -286,8 +325,11 @@ DOES rebuild (different reference); `calculateEquilibrium(...)` before any
 (`setModel` once, then `calculateEquilibrium` followed by
 `calculatePhaseDiagram` on the same session) confirms both calculation
 kinds succeed against the one held system, with the earlier equilibrium
-result still available afterward. Existing baseline tests
-(`RkModelBaselineTest`, `V2ZrGibbsBaselineTest`, `EMatNCTest`,
+result still available afterward; and (added with the four-calculation-type
+decision above) that `calculateStep`/`calculateMap` throw
+`UnsupportedOperationException` when called with a model set, but
+`IllegalStateException` when called with no model set. Existing baseline
+tests (`RkModelBaselineTest`, `V2ZrGibbsBaselineTest`, `EMatNCTest`,
 `ThermodynamicSystemSmokeTest`) re-run clean, confirming no regression.
 
 ### Step 4 — Result-flow consistency (small, mechanical)

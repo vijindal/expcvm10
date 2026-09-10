@@ -20,6 +20,7 @@ public class CalculationSessionTest {
         testRebuildOnlyWhenKeyChanges();
         testCalculateBeforeSetModelThrows();
         testEndToEndReuseAcrossCalculationKinds();
+        testStepAndMapAreUnimplementedStubs();
 
         if (failures == 0) {
             System.out.println("ALL CalculationSession CHECKS PASSED");
@@ -92,5 +93,43 @@ public class CalculationSessionTest {
                 "system still unchanged after calculatePhaseDiagram() -- no re-parse of the TDB");
         check(session.currentEquilibriumResult() != null,
                 "earlier equilibrium result is still available after running a different calculation kind");
+    }
+
+    private static void testStepAndMapAreUnimplementedStubs() throws Exception {
+        System.out.println("=== calculateStep/calculateMap: unimplemented stubs ===");
+        CalculationSession session = new CalculationSession();
+        session.setModel("data/VZR-re2.TDB", List.of("V", "ZR"), List.of("LIQUID", "BCC_A2"));
+
+        calc.diagram.AxisConfig axis0 =
+                new calc.diagram.AxisConfig("T / K", calc.diagram.AxisConfig.Type.TEMPERATURE,
+                        1800, 2200, 50);
+        calc.diagram.AxisConfig axis1 =
+                new calc.diagram.AxisConfig("x(ZR)", 1, 0.0, 1.0, 0.05);
+
+        boolean stepThrew = false;
+        try {
+            session.calculateStep(axis0, 2000.0, 101325.0, new double[]{0.5, 0.5});
+        } catch (UnsupportedOperationException expected) {
+            stepThrew = true;
+        }
+        check(stepThrew, "calculateStep() throws UnsupportedOperationException (not yet implemented)");
+
+        boolean mapThrew = false;
+        try {
+            session.calculateMap(axis0, axis1, 2000.0, 101325.0, new double[]{0.5, 0.5});
+        } catch (UnsupportedOperationException expected) {
+            mapThrew = true;
+        }
+        check(mapThrew, "calculateMap() throws UnsupportedOperationException (not yet implemented)");
+
+        // Both must still enforce the setModel() precondition even though unimplemented.
+        CalculationSession freshSession = new CalculationSession();
+        boolean stepStateThrew = false;
+        try {
+            freshSession.calculateStep(axis0, 2000.0, 101325.0, new double[]{0.5, 0.5});
+        } catch (IllegalStateException expected) {
+            stepStateThrew = true;
+        }
+        check(stepStateThrew, "calculateStep() before setModel() throws IllegalStateException, not UnsupportedOperationException");
     }
 }
