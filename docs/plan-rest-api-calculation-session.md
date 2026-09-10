@@ -126,10 +126,18 @@ down during implementation:
   (assume trusted network / localhost), but flagged explicitly as
   deliberately deferred, not forgotten, since "production-level" was
   mentioned as a future direction.
-- **Source tree placement.** A new top-level package, `src/api/` (sibling
-  to `ui/`, `system/`, `calc/`, `session/`), mirroring the reasoning that
-  put `CalculationSession` in its own `session/` package rather than
-  under `ui/`.
+- **Source tree placement, revised 2026-09-10.** Originally placed as a
+  new top-level `src/api/` package (sibling to `ui/`, `system/`, `calc/`,
+  `session/`), mirroring the reasoning that put `CalculationSession` in
+  its own `session/` package rather than under `ui/`. **Moved to
+  `src/ui/api/`** per explicit direction, once it was pointed out that
+  `cli/` and `gui/` (the codebase's other two UI entry-point flavors) are
+  themselves `ui/cli/`/`ui/gui/`, not top-level siblings — the existing
+  convention already treats "which protocol drives the UI" (Swing, CLI,
+  now REST) as subpackages of `ui/`, not a peer of it. `CalculationSession`
+  itself stays in the top-level `session/` package (that reasoning still
+  holds — it's UI-agnostic *machinery*, not a UI entry point); only the
+  REST *server* that exposes it moved.
 
 ## Explicitly out of scope for this pass
 
@@ -146,14 +154,15 @@ down during implementation:
 
 ## Implementation  ✅ DONE (2026-09-10)
 
-Implemented in a new `src/api/` package:
+Implemented in `src/ui/api/` (originally `src/api/`, moved same day — see
+the revised placement note above):
 - `CalculationApiServer` — the HTTP server (`com.sun.net.httpserver`,
   no new dependency), routing the six endpoints above.
 - `SessionStore` — in-memory `Map<String, Entry>`, one `CalculationSession`
   + one lock per API session id (`ConcurrentHashMap` for the map itself;
   `synchronized (entry.lock)` around every operation on one session, per
   the concurrency decision above).
-- `api.dto.*` — wire-format DTOs (`SetModelRequest`, `EquilibriumRequest`,
+- `ui.api.dto.*` — wire-format DTOs (`SetModelRequest`, `EquilibriumRequest`,
   `EquilibriumResponse`, `PhaseDiagramRequest`, `PhaseDiagramResponse`,
   `ErrorResponse`). **`PhaseDiagram`/`EquilibriumResult` are NOT serialized
   directly** — found during implementation that `DiagramNode` holds
@@ -161,7 +170,7 @@ Implemented in a new `src/api/` package:
   would make Gson's reflection-based serializer recurse forever.
   `PhaseDiagramResponse` flattens nodes/lines into plain, cycle-free data
   (nodes referenced by integer id, not embedded).
-- `ApiMain` — standalone launcher (`java -cp ... api.ApiMain [port]`,
+- `ApiMain` — standalone launcher (`java -cp ... ui.api.ApiMain [port]`,
   default 8080).
 - `lib/gson-2.11.0.jar` — added, SHA-1 verified against Maven Central
   (`527175ca6d81050b53bdd4c457a6d6e017626b0e`).

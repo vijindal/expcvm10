@@ -1,6 +1,6 @@
 package test;
 
-import api.CalculationApiServer;
+import ui.api.CalculationApiServer;
 
 import java.io.IOException;
 import java.io.InputStream;
