@@ -189,7 +189,7 @@ the existing solver/tracer calls unchanged. Purely mechanical,
 behavior-preserving. `StepCalculationUseCase` needs no change — it inherits
 the fix by delegating to `PhaseDiagramUseCase`.
 
-### Step 3 — `CalculationSession`: model/calculation lifecycle, reusable across UIs
+### Step 3 — `CalculationSession`: model/calculation lifecycle, reusable across UIs  ✅ DONE
 
 Steps 1-2 only satisfy "built once, remains fixed" for one `execute()`
 call. The actual requirement: the UI sends **model details** (database,
@@ -270,7 +270,25 @@ GUI-specific request/result DTO glue. Their internals would delegate
 build-system/run-calculation sequencing to `CalculationSession` instead of
 calling `ThermodynamicSystem.build()` directly — this is what actually
 gives system reuse *across* separate calculations, which Steps 1-2 alone
-don't provide.
+don't provide. **Not yet done** — `EquilibriumUseCase`/`PhaseDiagramUseCase`
+still call `ThermodynamicSystem.build()` directly as of this commit;
+wiring them through `CalculationSession` instead is follow-on work, not
+required for `CalculationSession` itself to exist and be usable.
+
+**Implementation note:** `src/session/CalculationSession.java` implemented
+exactly per the sketch above (per-kind result accessors, `session/` package).
+Verified via whole-project compile (clean) and a new test,
+`src/test/CalculationSessionTest.java`, covering the plan's full checklist:
+`setModel(...)` called twice with identical arguments does not rebuild
+(same `ThermodynamicSystem` reference); called with a different phase list
+DOES rebuild (different reference); `calculateEquilibrium(...)` before any
+`setModel(...)` throws `IllegalStateException`; and an end-to-end run
+(`setModel` once, then `calculateEquilibrium` followed by
+`calculatePhaseDiagram` on the same session) confirms both calculation
+kinds succeed against the one held system, with the earlier equilibrium
+result still available afterward. Existing baseline tests
+(`RkModelBaselineTest`, `V2ZrGibbsBaselineTest`, `EMatNCTest`,
+`ThermodynamicSystemSmokeTest`) re-run clean, confirming no regression.
 
 ### Step 4 — Result-flow consistency (small, mechanical)
 
