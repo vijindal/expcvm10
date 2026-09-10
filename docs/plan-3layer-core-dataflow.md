@@ -386,6 +386,57 @@ Flagged as a prerequisite for the separate, already out-of-scope V2-wiring
 follow-on (giving V2 a grid minimizer should reuse `GridMinimizer`, not
 duplicate it).
 
+### Step 6 — Real first run through `CalculationSession`: found a genuine `EquilibriumSolver` bug
+
+**Verification finding (2026-09-10), NOT fixed here — flagged for a
+separate pass.** Per the user's request, ran a real single-point
+calculation ("calG": Gibbs energy at T=1000 K, P=10000 Pa, x_Zr=1/3,
+V2ZR phase, V-Zr database) through `CalculationSession`
+(`src/test/CalculationSessionCalGTest.java`), then a step scan (G vs T,
+same phase/composition, compared against the existing digitized Fig. 9
+baseline) point-by-point through the same session
+(`src/test/CalculationSessionStepCalGTest.java`, since `calculateStep` is
+an intentional stub per Step 3).
+
+**What was found:** `EquilibriumSolver` converges in 1 iteration to a
+**disordered** V2ZR constitution (`y ≈ [0.70, 0.30, 0.60, 0.40]` — partial
+V/Zr mixing on both sublattices) at this stoichiometric composition,
+giving G ≈ -137.35 kJ/mol at T=1000 K. The true, more stable minimum is
+the **ordered** V:ZR end member (`y=[1,0,0,1]`), independently confirmed
+via `V2ZrGibbsLiteratureBaselineTest`'s direct CEF evaluation to give
+G ≈ -150.69 kJ/mol — about 13 kJ/mol lower (more stable). The step scan
+shows this gap across the full range digitized from Fig. 9: **23.8 kJ/mol
+at 300 K, shrinking monotonically to 1.9 kJ/mol at 1950 K** (all 34
+points ran without error; every point disagrees with literature by
+roughly this shrinking margin). The shrinking-with-T pattern is
+thermodynamically sensible (configurational entropy favors disorder more
+as T rises, so the true ordered/disordered energy gap matters
+proportionally less at high T) — it is not noise, it is the solver
+consistently landing on the same wrong (but real) local point.
+
+**Root cause, as far as diagnosed:** V2ZR = (V,Zr)2(V,Zr) has 2 internal
+degrees of freedom (4 site fractions, 2 sum-to-1 constraints) but only 1
+composition constraint at a given overall x_Zr — so there is a
+one-parameter family of constitutions giving the same overall
+composition, and the ordered end member is a distinct, separate minimum
+within that family, not the only one. The TDB itself is NOT missing
+data — `V2ZR,V:V`, `ZR:V`, `V:ZR`, `ZR:ZR` end members and
+`V:V,ZR`/`V,ZR:ZR` interaction parameters are all present
+(`data/VZR-re2.TDB` lines 87-101) — so this is a solver/initialization
+behavior, not incomplete model parameters. `GridMinimizer`'s coarse grid
+apparently doesn't land near the true, narrow, deep minimum at this
+stoichiometric point, and one Newton step from a nearby disordered guess
+doesn't escape to it.
+
+**Scope decision:** per explicit direction, this is flagged and NOT
+investigated or fixed as part of this pass — proceeding to CLI/API/GUI
+wiring (the next step) regardless. It's independent of
+`CalculationSession`'s own correctness (which ran both calculations
+end-to-end without error, exactly as designed) and is instead a
+pre-existing `EquilibriumSolver`/`GridMinimizer` gap for phases with
+internal ordering degrees of freedom at stoichiometric compositions —
+worth its own dedicated investigation later, separate from any UI wiring.
+
 ## Explicitly out of scope for this pass
 
 - **`EquilibriumSolverV2` wiring** (retyping `PhaseWork.model` to
