@@ -23,6 +23,18 @@ Browsing capability (2026-09-10, per user, docs/plan-gui-calculationsession-wiri
   This is what keeps a UI's model-browsing screens (pick a database,
   see what elements/phases exist) from ever reaching around
   CalculationSession into the System Layer directly.
+
+Database discovery, extended to all UIs (2026-09-10, per user):
+- The browse capability above extends to a third query,
+  availableDatabases() -- which .tdb files exist to choose from in the
+  first place, not just what's inside one already-chosen file. Before
+  this, ONLY the GUI could discover databases (a raw File.listFiles()
+  scan of data/, done locally inside DatabaseExtractionPanel, bypassing
+  CalculationSession); CLI and API had no such capability. The UI box
+  is now explicitly labeled "UI (GUI / CLI / API)" and its top arrow's
+  label includes "browse," making clear this whole capability, not just
+  calculation, is meant to be shared across every UI flavor equally --
+  none of them may query the filesystem/database directly.
 """
 import matplotlib
 matplotlib.use("Agg")
@@ -71,22 +83,23 @@ ax.text(FIG_W/2, FIG_H - 1.05, "UI  <->  CalculationSession  <->  System + Calcu
 
 cx = FIG_W/2
 
-b_ui = box(cx, 8.3, 8.6, 1.7, "UI",
-           "sends model + calculation details;\nreads results and status back", COL_UI)
+b_ui = box(cx, 8.3, 8.6, 1.7, "UI  (GUI / CLI / API)",
+           "browses databases + sends model/calculation details;\nreads results and status back",
+           COL_UI, title_fs=15.5)
 b_session = box(cx, 5.7, 9.8, 2.0, "CalculationSession",
                 "holds the current system AND the latest result;\n"
                 "single point of contact for the UI, both ways", COL_SESSION)
 b_sys = box(cx - 3.3, 2.6, 5.2, 2.0, "Thermodynamic\nSystem Layer",
-            "builds GibbsEnergyModel[]; evaluates\nG, dG/dy, d2G/dy2; browsable\nelements/phases metadata",
-            COL_SYS, title_fs=15, sub_fs=9.7)
+            "builds GibbsEnergyModel[]; evaluates\nG, dG/dy, d2G/dy2; browsable\ndatabases/elements/phases metadata",
+            COL_SYS, title_fs=15, sub_fs=9.2)
 b_calc = box(cx + 3.3, 2.6, 5.2, 2.0, "Calculation\nLayer",
              "runs the solver, querying\nthe models many times per solve", COL_CALC, title_fs=15, sub_fs=10.5)
 
 # ── UI <-> CalculationSession: one bidirectional arrow ──────────────
 arrow((cx-0.15, b_ui['bot']), (cx-0.15, b_session['top']), COL_UI, style="-|>")
 arrow((cx+0.15, b_session['top']), (cx+0.15, b_ui['bot']), COL_UI, style="-|>")
-ax.text(cx - 2.6, (b_ui['bot']+b_session['top'])/2, "model + calculation details",
-        fontsize=12.5, ha="right", va="center", color=COL_UI,
+ax.text(cx - 2.6, (b_ui['bot']+b_session['top'])/2, "browse / model / calculation",
+        fontsize=11.8, ha="right", va="center", color=COL_UI,
         bbox=dict(boxstyle="round,pad=0.12", fc="white", ec="none", alpha=0.88))
 ax.text(cx + 2.6, (b_ui['bot']+b_session['top'])/2, "results + status",
         fontsize=12.5, ha="left", va="center", color=COL_UI,
@@ -103,7 +116,7 @@ browse_x = b_sys['left'] - 0.55
 arrow((browse_x-0.1, b_session['bot']), (browse_x-0.1, b_sys['top']), COL_SESSION, lw=1.8, style="-|>")
 arrow((browse_x+0.1, b_sys['top']), (browse_x+0.1, b_session['bot']), COL_SYS, lw=1.8, style="-|>")
 ax.text(browse_x, (b_session['bot']+b_sys['top'])/2,
-        "browse(tdb) /\nelements+phases", fontsize=9, ha="center", va="center", color="#333",
+        "browse: databases /\nelements / phases", fontsize=9, ha="center", va="center", color="#333",
         rotation=90, bbox=dict(boxstyle="round,pad=0.1", fc="white", ec="none", alpha=0.92))
 
 # ── CalculationSession <-> Calculation: calculate(...) / result (two-way) ──
