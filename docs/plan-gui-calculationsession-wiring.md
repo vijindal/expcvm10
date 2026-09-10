@@ -257,3 +257,48 @@ per "does not touch `ModelInspectionService`'s public contracts."
   `V2ZrGibbsBaselineTest`, `EMatNCTest`, `ThermodynamicSystemSmokeTest`)
   to confirm the `TdbParser` caching change (Fix 1) doesn't change any
   numeric result for any consumer.
+
+## Fix 3 (2026-09-10) — extend browsing to database *discovery*, for all three UIs
+
+**Gap found, per direct follow-up:** Fix 2's browsing methods
+(`availableElements`/`availablePhasesFor`) answer "what's inside this
+already-chosen TDB file" — but discovering *which TDB files exist to
+choose from in the first place* was never unified. Confirmed by direct
+check: only the GUI has this capability at all, and even there it
+bypasses `CalculationSession` entirely —
+`DatabaseExtractionPanel.populateTdbCombo()` does a raw
+`new File("data").listFiles((d, name) -> name.endsWith(".tdb"))` scan
+locally inside the panel. The CLI and API have no equivalent — every
+CLI command and the API's request DTOs simply require the caller to
+already know a specific TDB path (`--tdb FILE`, `"tdbFilePath": "..."`).
+
+**Fix:** add a third browsing method,
+`CalculationSession.availableDatabases()`, scanning a fixed `data`
+directory (relative to the working directory — matching what every
+existing hardcoded default in this codebase already assumes; no new
+configuration surface). `DatabaseExtractionPanel.populateTdbCombo()`
+calls this (via `MainController`) instead of scanning the filesystem
+itself; the CLI/API gain the same capability by construction, since
+they already hold or can trivially hold a `CalculationSession`.
+
+**Scope note:** this only lists file names in one fixed, conventional
+directory — it is not a general file-picker replacement. The GUI's
+"Browse..." button (`JFileChooser`, letting a user pick any file
+anywhere on disk) is a different, legitimate capability and is
+untouched by this fix; `availableDatabases()` only serves the
+dropdown's pre-populated list of the project's own `data/*.tdb` files.
+
+**Verification for Fix 3:**
+- `CalculationSessionTest`: `availableDatabases()` lists at least the
+  known fixture files (e.g. `data/VZR-re2.TDB`) and requires no
+  `setModel()` call, matching Fix 2's other two browsing methods.
+- Confirm `DatabaseExtractionPanel`'s combo box is still populated with
+  the same set of files as before (no behavior change from the user's
+  point of view — only the code path moved from local `File.listFiles()`
+  to `CalculationSession`).
+- CLI/API gain no new commands/endpoints in this pass — adding a
+  `list-databases`-style CLI command or `GET /databases` API endpoint
+  that surfaces this is a natural follow-on but is not required by this
+  fix; the fix's scope is making the *capability* exist on
+  `CalculationSession` for any UI to use, not building new UI surface
+  for it in the CLI/API immediately.
