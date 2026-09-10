@@ -113,41 +113,57 @@ instead of 5 panels each independently tracking their own
    window appears instantly and the (now-cached, thanks to Fix 1)
    TDB parse happens in the background/next EDT tick instead of blocking
    construction.
-3. **Route `DatabaseExtractionPanel`'s inspection calls through
-   `MainController`'s existing `CalculationSession`-aware surface,
-   instead of the raw `ModelInspectionService`/`TdbParser` path,** so
-   "browsing a model" and "calculating against a model" share the same
-   notion of "the current system" rather than being two disconnected
-   pieces of state that happen to often point at the same file by
-   coincidence of matching default strings. Concretely: add a thin method
-   on `MainController` — e.g. `inspectModel(tdbPath, elements)` already
-   exists and can internally call
-   `calculationSession.setModel(tdbPath, elements, phases)` (once phases
-   are known) so that by the time the user clicks "Run," the session's
-   `ThermodynamicSystem` is *already* built from the same load the
-   sidebar just did — not rebuilt from scratch a second time.
+3. **`CalculationSession` becomes the UI's ONLY point of contact with the
+   System Layer — for browsing, not just calculating** (design correction,
+   2026-09-10, to stay compatible with `docs/dataflow_target.png`, which
+   shows exactly one arrow each way between "UI" and "CalculationSession"
+   and none between "UI" and the System/Calculation layers directly). The
+   original draft of this plan proposed keeping `DatabaseExtractionPanel`'s
+   TDB-selection step (list available elements from a file, before any
+   phases are chosen) on a separate `ModelInspectionService`-only path,
+   with `CalculationSession.setModel` only invoked once phases are
+   confirmed. **That would recreate the exact disconnect that caused this
+   bug** — the UI reaching around `CalculationSession` into a System-layer
+   concern directly — so it is rejected in favor of:
 
-   **Caveat, to resolve during implementation, not guessed here:**
-   `CalculationSession.setModel(...)` needs a phase list, but
-   `DatabaseExtractionPanel`'s TDB-selection step (`onTdbSelected`)
-   happens *before* the user has picked elements/phases — so this
-   3-argument `setModel` call can only fire once elements+phases are
-   actually confirmed (`onAddElements`/`refreshPhasesForConfirmed`), not
-   at raw TDB-selection time. `inspectModel`'s *no-elements* call (just
-   listing available elements from the file) should stay on a lighter
-   path that doesn't require a full `ThermodynamicSystem` build — likely
-   a `ModelInspectionService`-only call for that first step, with
-   `CalculationSession.setModel` only invoked once phases are confirmed.
-   This nuance needs to be worked out precisely against the actual
-   `DatabaseExtractionPanel` state machine during implementation, not
-   assumed here.
+   - Add two lightweight, calculation-free query methods to
+     `CalculationSession`:
+     ```java
+     public List<String> availableElements(String tdbFilePath) throws IOException;
+     public List<String> availablePhasesFor(String tdbFilePath, List<String> elements) throws IOException;
+     ```
+     Backed internally by a `DatabasePort`/`TdbParser` the session owns
+     for browsing — a *separate* concern from the `ThermodynamicSystem`
+     it builds for calculating, since listing phase names doesn't require
+     a full `GibbsEnergyModel[]` build. Both of the System Layer's two
+     jobs (browsing metadata, building calculable models) are reached
+     through `CalculationSession` and nothing else, matching the diagram.
+   - `DatabaseExtractionPanel.onTdbSelected()` calls
+     `calculationSession.availableElements(tdbPath)` instead of
+     `controller.inspectModel(...)` → `ModelInspectionService` →
+     raw `TdbParser`. `onAddElements()`/`refreshPhasesForConfirmed()`
+     calls `calculationSession.availablePhasesFor(tdbPath, elements)`
+     instead of `controller.getPhasesForElements(...)`.
+   - Once the user has actually confirmed a phase selection (not just
+     browsed), `calculationSession.setModel(tdbPath, elements, phases)`
+     fires — building the real `ThermodynamicSystem` from the same
+     already-cached (via Fix 1) TDB load the browsing steps just did, so
+     "Run Calculation" doesn't rebuild from scratch a second time.
+   - `MainController.inspectModel(...)`/`getPhasesForElements(...)` (the
+     current UI-facing methods backed by `ModelInspectionService`) either
+     become thin pass-throughs to these new `CalculationSession` methods,
+     or are retired in favor of GUI panels calling `CalculationSession`
+     directly via `MainController` — exact call-site shape to be decided
+     at implementation time, but in either case `ModelInspectionService`/
+     raw `TdbParser` must no longer be reachable from any GUI panel except
+     through `CalculationSession`.
 
 ## What this plan does NOT do (explicitly out of scope)
 
-- Does not change `CalculationSession`'s public API (`setModel`/
-  `calculateEquilibrium`/`calculatePhaseDiagram`/accessors) — Fix 2 is
-  purely about *when* and *how often* the GUI calls into it, not what it
-  exposes.
+- Does not change `CalculationSession`'s existing calculation methods
+  (`calculateEquilibrium`/`calculatePhaseDiagram`/`calculateStep`/
+  `calculateMap`/their accessors) — Fix 2 adds two new browsing methods
+  alongside them; it does not touch what's already there.
 - Does not unify the 5 `DatabaseExtractionPanel` instances into one
   shared widget/component — each calculation type (single-point, step,
   map, phase-diagram, inspect) still has its own sidebar UI. What's
