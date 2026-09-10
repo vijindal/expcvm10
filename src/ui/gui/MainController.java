@@ -1,6 +1,5 @@
 package ui.gui;
 
-import ui.request.CalculationRequest;
 import ui.result.CalculationResult;
 import ui.result.ModelInfo;
 import ui.layer.SinglePointUseCase;
@@ -12,6 +11,7 @@ import ui.result.PhaseDiagramResult;
 import ui.layer.PhaseDiagramUseCase;
 import ui.layer.ModelInspectionService;
 import calc.diagram.AxisConfig;
+import session.CalculationSession;
 import util.AppLevel;
 import util.Trace;
 import system.ports.LoggingPort;
@@ -34,6 +34,7 @@ public class MainController {
     private final OptimizationUseCase optimizationUseCase;
     private final PhaseDiagramUseCase phaseDiagramUseCase;
     private final ModelInspectionService modelInspectionService;
+    private final CalculationSession calculationSession = new CalculationSession();
 
     public MainController(SinglePointUseCase singlePointUseCase,
                           OptimizationUseCase optimizationUseCase,
@@ -47,23 +48,31 @@ public class MainController {
 
     /**
      * Run a single-point calculation with the given parameters.
+     *
+     * <p>Routed through {@link CalculationSession} (per
+     * {@code docs/plan-3layer-core-dataflow.md}, Step 7) rather than
+     * {@link SinglePointUseCase}/{@code EquilibriumUseCase} directly --
+     * the same coordinator the REST API and the CLI's {@code equilibrium}
+     * command use. One {@code CalculationSession} is held for the
+     * lifetime of this controller, so repeated single-point runs against
+     * the same TDB/elements/phases reuse the built
+     * {@code ThermodynamicSystem} instead of re-parsing the database
+     * every time.
      */
     public system.ports.EquilibriumResult runSinglePoint(String tdbPath, String[] elements,
                                             String method, String[] phases,
                                             double T, double P,
                                             ArrayList<ArrayList<Double>> compositions) {
         Trace.enter(LOG, AppLevel.FLOW, "MainController", "runSinglePoint");
-        CalculationRequest request = new CalculationRequest();
-        request.setTdbFilePath(tdbPath);
-        request.setElements(new ArrayList<>(Arrays.asList(elements)));
-        request.setMethod(method);
-        request.setPhases(new ArrayList<>(Arrays.asList(phases)));
-        request.setT(T);
-        request.setP(P);
-        request.setCompositions(compositions);
-
         try {
-            system.ports.EquilibriumResult r = singlePointUseCase.execute(request);
+            List<String> elementList = Arrays.asList(elements);
+            List<String> phaseList = Arrays.asList(phases);
+            double[] compOverAll = extractComposition(compositions, elementList.size());
+
+            calculationSession.setModel(tdbPath, elementList, phaseList);
+            calculationSession.calculateEquilibrium(T, P, compOverAll);
+
+            system.ports.EquilibriumResult r = calculationSession.currentEquilibriumResult();
             Trace.exit(LOG, AppLevel.FLOW, "MainController", "runSinglePoint");
             return r;
         } catch (Exception e) {
@@ -71,6 +80,25 @@ public class MainController {
             Trace.exit(LOG, AppLevel.FLOW, "MainController", "runSinglePoint");
             throw new RuntimeException("Single-point calculation failed: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Extracts the overall composition array from the GUI's composition
+     * input, matching {@code EquilibriumUseCase}'s existing convention:
+     * use the first composition vector if present, otherwise fall back to
+     * a uniform composition.
+     */
+    private double[] extractComposition(ArrayList<ArrayList<Double>> compositions, int nc) {
+        double[] comp = new double[nc];
+        if (compositions != null && !compositions.isEmpty()) {
+            List<Double> first = compositions.get(0);
+            for (int i = 0; i < Math.min(nc, first.size()); i++) {
+                comp[i] = first.get(i);
+            }
+        } else {
+            Arrays.fill(comp, 1.0 / nc);
+        }
+        return comp;
     }
 
     /**

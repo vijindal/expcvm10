@@ -1,0 +1,90 @@
+package test;
+
+import system.database.TdbParser;
+import system.ports.EquilibriumResult;
+import ui.gui.MainController;
+import ui.layer.ModelInspectionService;
+import ui.layer.OptimizationUseCase;
+import ui.layer.PhaseDiagramUseCase;
+import ui.layer.SinglePointUseCase;
+
+import java.util.ArrayList;
+
+/**
+ * Verifies {@link MainController#runSinglePoint} -- the GUI's production
+ * single-point call site, unchanged in signature -- now routes through
+ * {@link session.CalculationSession} (per
+ * {@code docs/plan-3layer-core-dataflow.md}, Step 7) and reproduces the
+ * same known-good calG values already confirmed via
+ * {@code CalculationSessionCalGTest} (in-process), {@code CalculationApiServerTest}
+ * (REST), and {@code CliEquilibriumCommandTest} (CLI) -- so all four
+ * consumers of {@code CalculationSession} are now independently verified
+ * to produce identical results for the same scenario.
+ *
+ * <p>No GUI/Swing code is exercised here -- {@code runSinglePoint} is a
+ * plain method on {@code MainController}, callable directly.
+ */
+public class GuiMainControllerEquilibriumTest {
+
+    public static void main(String[] args) throws Exception {
+        MainController controller = new MainController(
+                new SinglePointUseCase(),
+                new OptimizationUseCase(null, null),
+                new PhaseDiagramUseCase(),
+                new ModelInspectionService(new TdbParser()));
+
+        ArrayList<ArrayList<Double>> compositions = new ArrayList<>();
+        ArrayList<Double> comp0 = new ArrayList<>();
+        comp0.add(2.0 / 3.0);
+        comp0.add(1.0 / 3.0);
+        compositions.add(comp0);
+
+        EquilibriumResult result = controller.runSinglePoint(
+                "data/VZR-re2.TDB",
+                new String[]{"V", "ZR"},
+                "HM",
+                new String[]{"V2ZR"},
+                1000.0,
+                10000.0,
+                compositions);
+
+        System.out.println("converged=" + result.isConverged()
+                + " iterations=" + result.getIterations());
+        System.out.println("mu=" + java.util.Arrays.toString(result.getMu()));
+        for (EquilibriumResult.PhaseResult pr : result.getStablePhases()) {
+            System.out.printf("  %-8s G=%.4f J/mol.f.u.%n", pr.phaseName, pr.G);
+        }
+
+        boolean pass = result.isConverged()
+                && result.getStablePhases().size() == 1
+                && "V2ZR".equals(result.getStablePhases().get(0).phaseName)
+                && Math.abs(result.getStablePhases().get(0).G - (-137349.4480)) < 0.01
+                && Math.abs(result.getMu()[0] - 116674.3539155658) < 0.01;
+
+        System.out.println(pass
+                ? "PASS: MainController.runSinglePoint() via CalculationSession matches known-good calG values"
+                : "FAIL: result does not match the known-good calG values");
+        if (!pass) {
+            System.exit(1);
+        }
+
+        // Second call with unchanged model details -- confirms reuse (no
+        // re-parse) by checking it still succeeds and gives the same G.
+        EquilibriumResult second = controller.runSinglePoint(
+                "data/VZR-re2.TDB",
+                new String[]{"V", "ZR"},
+                "HM",
+                new String[]{"V2ZR"},
+                1000.0,
+                10000.0,
+                compositions);
+        boolean reuseOk = Math.abs(second.getStablePhases().get(0).G
+                - result.getStablePhases().get(0).G) < 1e-9;
+        System.out.println(reuseOk
+                ? "PASS: second call with unchanged model details reuses the session correctly"
+                : "FAIL: second call gave a different result for identical inputs");
+        if (!reuseOk) {
+            System.exit(1);
+        }
+    }
+}

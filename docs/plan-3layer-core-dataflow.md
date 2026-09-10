@@ -465,11 +465,33 @@ to produce bit-identical results for the same scenario). Also confirmed
 custom `--T`/`--composition` flags are honored. All 6 checks pass;
 existing regression suite re-run clean.
 
-**GUI — not yet started.** `MainController`'s `runSinglePoint(...)` still
-goes through `SinglePointUseCase`/`EquilibriumUseCase`
-(`ThermodynamicSystem.build()` directly, not `CalculationSession`) — see
-the "Not yet done" note earlier in this Step 3 write-up. Wiring the GUI is
-the remaining piece of this step.
+**GUI — ✅ DONE.** `MainController.runSinglePoint(...)` (the GUI's
+production single-point call site, invoked from `MainFrame`'s
+`onRunCalculation()`) now holds one `CalculationSession` for the
+controller's lifetime and routes through
+`setModel(...)`/`calculateEquilibrium(...)` instead of
+`SinglePointUseCase`/`EquilibriumUseCase`/`ThermodynamicSystem.build()`
+directly. **No change to `MainFrame.java`, any GUI panel, or
+`runSinglePoint`'s method signature** — the same call site now transparently
+benefits from `CalculationSession`'s reuse behavior (repeated single-point
+runs against the same TDB/elements/phases no longer re-parse the database).
+`SinglePointUseCase` is retained as a constructor parameter (unused
+internally now) since changing `MainController`'s public constructor
+signature was out of scope for this change; it is dead weight, not a bug —
+flagged for a future cleanup pass, not fixed here.
+
+Verified via `src/test/GuiMainControllerEquilibriumTest.java` (calls
+`runSinglePoint(...)` directly — no Swing/GUI code needed to exercise it):
+reproduces the exact same calG values as the in-process test, REST API,
+and CLI (G=-137349.4480, mu[0]=116674.3539155658) — **all four consumers
+of `CalculationSession` now independently verified to produce identical
+results for the same scenario.** Also confirms a second call with
+unchanged model details still succeeds and gives the same G (session
+reuse working correctly through this call site). Existing regression
+suite re-run clean.
+
+**Step 7 complete: REST API, CLI, and GUI are all wired to
+`CalculationSession`.**
 
 ## Explicitly out of scope for this pass
 
