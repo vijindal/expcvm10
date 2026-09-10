@@ -101,34 +101,35 @@ down during implementation:
 - Unexpected/solver exceptions → 500, but with a structured JSON error
   body (`{"error": "..."}`), never a raw stack trace to the client
 
-## Open questions — resolve before implementation
+## Decisions (2026-09-10)
 
-1. **Session lifecycle model:** explicit `POST /sessions` + session-ID
-   header/path (proposed above), vs. one-shot stateless calls that bundle
-   model + calculation details together (simpler, but loses reuse). The
-   proposed design assumes the former; confirm.
-2. **Session expiry/cleanup.** In-memory sessions need a lifecycle policy
-   (idle timeout? explicit `DELETE` only? server restart clears all?) —
-   otherwise this is a memory leak in a long-running server. Not decided.
-3. **Concurrency.** `CalculationSession` itself is not thread-safe. If two
-   requests hit the same session ID concurrently, what happens — reject
-   the second (409), queue it, or accept undefined behavior? Needs an
-   explicit answer (likely: synchronize per-session, reject/queue
-   concurrent calls to the same session ID).
-4. **JSON library choice.** `org.json` (tiny, no schema/annotation
-   machinery, very manual mapping) vs. Gson (reflection-based, less
-   boilerplate, slightly heavier). Given `EquilibriumResult`/`PhaseDiagram`
-   are plain data-holding classes already, either works; recommend Gson
-   for less hand-written mapping code, but this is a small decision either
-   way — confirm before adding the dependency.
-5. **Authentication/authorization.** Out of scope for a first version
-   (assume trusted network / localhost), but flag explicitly as
-   deliberately deferred, not forgotten, since "production-level" was
-   mentioned as a future direction.
-6. **Where this lives in the source tree.** A new top-level package,
-   e.g. `src/api/` (sibling to `ui/`, `system/`, `calc/`, `session/`),
-   mirroring the reasoning that put `CalculationSession` in its own
-   `session/` package rather than under `ui/`.
+1. **Session lifecycle: explicit sessions.** `POST /sessions` returns an
+   ID; `PUT .../model` and `POST .../calculations/*` use that ID. This is
+   what actually exercises `CalculationSession`'s build-once/reuse design
+   rather than defeating it with a fresh `ThermodynamicSystem` per call.
+2. **JSON library: Gson.** Reflects over `EquilibriumResult`/
+   `PhaseDiagram`'s existing fields with minimal hand-written mapping code,
+   at the cost of a slightly heavier dependency than `org.json`.
+3. **Concurrency: synchronize per session.** A second request to a session
+   ID that's mid-calculation waits for the first to finish rather than
+   being rejected — one lock per `CalculationSession` instance. Simple,
+   never corrupts state; the tradeoff (a slow calculation blocks a second
+   one on the *same* session) is acceptable since different clients should
+   use different sessions anyway.
+
+**Still open, deferred (not blocking initial implementation):**
+- **Session expiry/cleanup.** In-memory sessions need a lifecycle policy
+  (idle timeout? explicit `DELETE` only? server restart clears all?) —
+  otherwise this is a memory leak in a long-running server. Deferred to a
+  later pass; the first implementation supports explicit `DELETE` only.
+- **Authentication/authorization.** Out of scope for a first version
+  (assume trusted network / localhost), but flagged explicitly as
+  deliberately deferred, not forgotten, since "production-level" was
+  mentioned as a future direction.
+- **Source tree placement.** A new top-level package, `src/api/` (sibling
+  to `ui/`, `system/`, `calc/`, `session/`), mirroring the reasoning that
+  put `CalculationSession` in its own `session/` package rather than
+  under `ui/`.
 
 ## Explicitly out of scope for this pass
 
@@ -143,15 +144,58 @@ down during implementation:
   `docs/plan-3layer-core-dataflow.md`); this plan is scoped to the new
   HTTP/JSON layer only.
 
-## Verification plan (once implemented)
+## Implementation  ✅ DONE (2026-09-10)
 
-- Start the server, use `curl` (or an equivalent scriptable HTTP client)
-  to exercise the full session lifecycle: create session → set model
-  (V-Zr, V2ZR) → run the calG single-point calculation from
-  `CalculationSessionCalGTest` → confirm the JSON response's numeric
-  values match that test's Java-side output exactly.
-- Confirm step/map endpoints return 501 with a clear message, not a crash.
-- Confirm calling a calculation endpoint before `PUT .../model` returns
-  the mapped 409/400, not a 500.
-- Confirm two sessions (two session IDs) with different models don't
-  interfere with each other (session isolation).
+Implemented in a new `src/api/` package:
+- `CalculationApiServer` — the HTTP server (`com.sun.net.httpserver`,
+  no new dependency), routing the six endpoints above.
+- `SessionStore` — in-memory `Map<String, Entry>`, one `CalculationSession`
+  + one lock per API session id (`ConcurrentHashMap` for the map itself;
+  `synchronized (entry.lock)` around every operation on one session, per
+  the concurrency decision above).
+- `api.dto.*` — wire-format DTOs (`SetModelRequest`, `EquilibriumRequest`,
+  `EquilibriumResponse`, `PhaseDiagramRequest`, `PhaseDiagramResponse`,
+  `ErrorResponse`). **`PhaseDiagram`/`EquilibriumResult` are NOT serialized
+  directly** — found during implementation that `DiagramNode` holds
+  `DiagramExit`s that reference their `parentNode` back, a real cycle that
+  would make Gson's reflection-based serializer recurse forever.
+  `PhaseDiagramResponse` flattens nodes/lines into plain, cycle-free data
+  (nodes referenced by integer id, not embedded).
+- `ApiMain` — standalone launcher (`java -cp ... api.ApiMain [port]`,
+  default 8080).
+- `lib/gson-2.11.0.jar` — added, SHA-1 verified against Maven Central
+  (`527175ca6d81050b53bdd4c457a6d6e017626b0e`).
+
+  **Note:** `lib/` is entirely gitignored in this repo (see commit
+  `cece461`, "Remove lib/ JARs from version control" — deliberate,
+  applies to the pre-existing JUnit jars too, not something changed
+  here). This means `gson-2.11.0.jar` will NOT survive a fresh clone and
+  is not restorable from git history — anyone building this project
+  needs to re-download it (e.g. from
+  `https://repo1.maven.org/maven2/com/google/code/gson/gson/2.11.0/gson-2.11.0.jar`,
+  verified against the SHA-1 above) alongside the existing JUnit jars.
+  There is no documented dependency-restoration process in this repo
+  (checked `README.md` — no build/dependencies section exists); this is
+  a pre-existing gap this addition inherits, not something introduced
+  by it, but worth fixing at some point (a `lib/README.md` listing every
+  required jar + its source/checksum, or a small fetch script) so the
+  project remains buildable from a clean clone.
+
+**Verified:**
+- `src/test/CalculationApiServerTest.java` — starts a real server on a
+  test port, drives the full session lifecycle over real HTTP
+  (`java.net.HttpURLConnection`, no test-only HTTP client dependency
+  needed), and checks the calG scenario's JSON response against
+  `CalculationSessionCalGTest`'s known Java-side values
+  (`G=-137349.4480`, `mu[0]=116674.3539155658`) — confirms the REST API
+  reproduces the in-process result exactly, not just "returns something."
+  Also covers: 409 when no model is set, 501 for step/map, 404 for an
+  unknown session id, and two-session isolation. All 13 checks pass.
+- Manually cross-checked via `curl` before writing the automated test
+  (session create → set model → equilibrium → phase-diagram → delete),
+  confirming the phase-diagram endpoint's cycle-avoidance DTO works —
+  no stack overflow, clean JSON, 200 OK.
+- Whole-project compile clean with the new `gson` dependency; all
+  pre-existing tests (`CalculationSessionTest`, `RkModelBaselineTest`,
+  `V2ZrGibbsBaselineTest`, `EMatNCTest`, `ThermodynamicSystemSmokeTest`)
+  re-run clean, confirming no regression.
