@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import system.model.GibbsEnergyModel;
+import system.model.PhaseEquilData;
 import system.model.cef.CefGibbs;
 import system.ports.EquilibriumResult;
 import util.Matrix;
@@ -1576,162 +1577,40 @@ public class EquilibriumSolverV2 {
     }
 
     /**
-     * Builds the Sundman phase matrix (the CEF bordered Hessian):
-     *
-     *     E = [ G_YY   C^T ]
-     *         [ C       0  ]
-     *
-     * Unlike {@link #buildPhaseMatrix()} (which stores the result
-     * directly into {@code phaseWork.phaseMatrix}), this returns the
-     * matrix so it can be inverted by the phase-response calculation
-     * (Sundman Eq. 43-44) without an intervening field read.
-     */
-    private double[][] buildSundmanPhaseMatrix(
-            PhaseWork work,
-            CefGibbs phase) {
-
-        int nip =
-                phase.numSiteVars();
-
-        int ns =
-                phase.numSublattices();
-
-        double[][] e =
-                new double[nip + ns][nip + ns];
-
-        // G_YY
-        for (int i = 0; i < nip; i++) {
-            for (int j = 0; j < nip; j++) {
-                e[i][j] = work.gyy[i][j];
-            }
-        }
-
-        int[] offsets =
-                phase.offsets();
-
-        int[] nconst =
-                phase.constituentsPerSublattice();
-
-        // C^T and C
-        for (int s = 0; s < ns; s++) {
-
-            int row = nip + s;
-
-            for (int i = 0; i < nconst[s]; i++) {
-
-                int k = offsets[s] + i;
-
-                e[k][row] = 1.0;
-                e[row][k] = 1.0;
-            }
-        }
-
-        return e;
-    }
-
-    /**
-     * Inverts a square matrix using the project's existing dense
-     * linear-algebra utility (LU-based).
-     */
-    private static double[][] invertMatrix(double[][] A) {
-        Matrix matA = new Matrix(A);
-        Matrix matInv = matA.inverse();
-        return matInv.getArray();
-    }
-
-    /**
-     * Computes the Sundman phase-response coefficients from the inverted
-     * phase matrix.
-     *
-     * Sundman Eq. (43)-(44):
-     *
-     *     DeltaY_i = c_iG
-     *              + c_iT * DeltaT
-     *              + c_iP * DeltaP
-     *              + sum_A c_iA * l_A
-     *
-     * At fixed T and P:
-     *
-     *     DeltaY_i = c_iG + sum_A c_iA * l_A
-     *
-     * with
-     *
-     *     c_iG = sum_j e_ij * dG/dY_j
-     *
-     *     c_iA = sum_j e_ij * dM_A/dY_j
-     *
-     * per Sundman's Eq. (44) (positive sign on c_iG).
-     *
-     * This method only calculates the phase-response coefficients.
+     * Computes the Sundman phase-response coefficients (Eq. 43-44) for one
+     * phase by delegating to {@link PhaseMatrixAssembler#compute}, the
+     * same bordered-phase-matrix build/invert this method used to
+     * re-implement inline (duplicating {@code PhaseMatrixAssembler}'s
+     * build-matrix, invert, and {@code cG} derivation exactly, just
+     * against {@code PhaseWork}'s raw {@code gy}/{@code gyy}/{@code dMdY}
+     * fields instead of calling the already-extracted, already
+     * pycalphad-verified utility -- see
+     * {@code PhaseMatrixAssemblerContractTest}). Evaluated at {@code mu=0},
+     * {@code deltaT=0}, {@code deltaP=0} so {@code eMat} is exactly
+     * {@code e_ij} and {@link PhaseEquilData#cG} is exactly Sundman's
+     * {@code c_iG} at fixed T, P -- {@code c_iA} is then recovered
+     * directly from that same {@code eMat} and {@code work.dMdY} (Eq. 44),
+     * not re-derived via a separate matrix build.
      */
     private PhaseResponse calculatePhaseResponse(
             PhaseWork work,
             CefGibbs phase) {
 
-        double[][] phaseMatrix =
-                buildSundmanPhaseMatrix(work, phase);
+        int nc =
+                targetAmounts.length;
 
-        double[][] inverse =
-                invertMatrix(phaseMatrix);
+        PhaseEquilData data =
+                PhaseMatrixAssembler.compute(
+                        phase, T, P, work.y, 0.0, 0.0, new double[nc]);
 
         int nip =
                 phase.numSiteVars();
 
-        int ns =
-                phase.numSublattices();
-
-        int nc =
-                targetAmounts.length;
-
         /*
-         * The upper-left nip x nip block of the inverse is e_ij.
-         */
-        double[] cG =
-                new double[nip];
-
-        /*
-         * cA[A][i] = c_iA
+         * cA[A][i] = c_iA = sum_j e_ij * dM_A/dY_j (Sundman Eq. 44).
          */
         double[][] cA =
                 new double[nc][nip];
-
-        // ------------------------------------------------------------
-        // c_iG -- Newton descent direction at mu=0:
-        //
-        //     c_iG = -sum_j e_ij * dG/dY_j
-        //
-        // Confirmed by direct numerical check against
-        // calc.equil.PhaseMatrixAssembler (independently verified against
-        // pycalphad in CefContractTest/PhaseMatrixAssemblerContractTest):
-        // at an interior,
-        // non-stationary y, dot(dG_dy, cG) is strongly negative with this
-        // sign (a genuine descent direction) and strongly positive with
-        // the previously-used "+e*dG/dY" convention (an ascent direction)
-        // -- the sign here was flipped from what Sundman's Eq. (44) and
-        // PhaseMatrixAssembler both use, which would make the Newton step
-        // at fixed chemical potential move the site fractions uphill in
-        // G, a direct cause of the solver's documented non-convergence.
-        // ------------------------------------------------------------
-
-        for (int i = 0; i < nip; i++) {
-
-            double sum = 0.0;
-
-            for (int j = 0; j < nip; j++) {
-
-                sum +=
-                        inverse[i][j]
-                        * work.gy[j];
-            }
-
-            cG[i] = -sum;
-        }
-
-        // ------------------------------------------------------------
-        // c_iA
-        //
-        //     c_iA = sum_j e_ij * dM_A/dY_j
-        // ------------------------------------------------------------
 
         for (int A = 0; A < nc; A++) {
 
@@ -1742,7 +1621,7 @@ public class EquilibriumSolverV2 {
                 for (int j = 0; j < nip; j++) {
 
                     sum +=
-                            inverse[i][j]
+                            data.eMat[i][j]
                             * work.dMdY[A][j];
                 }
 
@@ -1751,8 +1630,8 @@ public class EquilibriumSolverV2 {
         }
 
         return new PhaseResponse(
-                inverse,
-                cG,
+                data.eMat,
+                data.cG,
                 cA);
     }
 
@@ -3076,12 +2955,6 @@ public class EquilibriumSolverV2 {
         final int n =
                 nc + np;
 
-        double[][] A =
-                new double[n][n];
-
-        double[] b =
-                new double[n];
-
         // ------------------------------------------------------------
         // Validate stable-phase mapping and gather phase data.
         // ------------------------------------------------------------
@@ -3148,177 +3021,52 @@ public class EquilibriumSolverV2 {
             }
         }
 
-        // ============================================================
-        // PHASE-EQUILIBRIUM ROWS
-        //
-        // Row k:
-        //
-        //     sum_A M_A^alpha lambda_A = G_M^alpha
-        //
-        // Columns nc...nc+np-1 are zero.
-        // ============================================================
+        // ------------------------------------------------------------
+        // Assemble via GlobalEquilibriumMatrixAssembler (STEP 3-4;
+        // see its javadoc and PhaseMatrixAssemblerContractTest's
+        // sibling test for STEP 1-2). Adapts each stable phase's
+        // PhaseWork into the minimal PhaseEquilData the assembler
+        // reads (mA, G, eMatNC=R_AB, deln=q_A); this avoids
+        // re-implementing the same (A, b) assembly inline a second
+        // time, as this method used to.
+        // ------------------------------------------------------------
+
+        PhaseEquilData[] phaseData =
+                new PhaseEquilData[np];
+
+        double[] stablePhaseAmounts =
+                new double[np];
 
         for (int k = 0; k < np; k++) {
 
-            int phaseIndex =
-                    stablePhases[k];
-
             PhaseWork work =
-                    phaseWorks.get(phaseIndex);
+                    phaseWorks.get(stablePhases[k]);
 
-            int row =
-                    k;
+            phaseData[k] =
+                    new PhaseEquilData(
+                            work.G,
+                            null,
+                            work.massGResponse,
+                            null,
+                            work.mA,
+                            null,
+                            work.massResponse,
+                            null,
+                            null,
+                            null,
+                            null);
 
-            for (int Aidx = 0;
-                 Aidx < nc;
-                 Aidx++) {
-
-                A[row][Aidx] =
-                        work.mA[Aidx];
-            }
-
-            b[row] =
-                    work.G;
+            stablePhaseAmounts[k] =
+                    phaseAmounts[k];
         }
 
-        // ============================================================
-        // ELEMENT MASS-BALANCE RESPONSE ROWS
-        //
-        // Global element equation:
-        //
-        //   sum_alpha omega_alpha
-        //       sum_B R_AB^alpha lambda_B
-        //
-        //   + sum_alpha M_A^alpha DeltaOmega_alpha
-        //
-        //   = r_A - q_A
-        //
-        // where
-        //
-        //   r_A =
-        //       N_A(target)
-        //       - sum_alpha omega_alpha M_A^alpha
-        //
-        //   q_A =
-        //       sum_alpha omega_alpha q_A^alpha.
-        //
-        // For an exactly mass-balanced state r_A = 0 and
-        // the equation reduces to Sundman's Eq. (58)/(59).
-        // ============================================================
+        double[][] A =
+                GlobalEquilibriumMatrixAssembler.buildMatrix(
+                        phaseData, stablePhaseAmounts, targetAmounts);
 
-        for (int Aidx = 0;
-             Aidx < nc;
-             Aidx++) {
-
-            int row =
-                    np + Aidx;
-
-            // --------------------------------------------------------
-            // lambda_B columns
-            // --------------------------------------------------------
-
-            for (int Bidx = 0;
-                 Bidx < nc;
-                 Bidx++) {
-
-                double value =
-                        0.0;
-
-                for (int k = 0;
-                     k < np;
-                     k++) {
-
-                    int phaseIndex =
-                            stablePhases[k];
-
-                    PhaseWork work =
-                            phaseWorks.get(
-                                    phaseIndex);
-
-                    double omega =
-                            phaseAmounts[k];
-
-                    value +=
-                            omega
-                            * work.massResponse[Aidx][Bidx];
-                }
-
-                A[row][Bidx] =
-                        value;
-            }
-
-            // --------------------------------------------------------
-            // DeltaOmega columns
-            //
-            // coefficient = M_A^alpha
-            // --------------------------------------------------------
-
-            for (int k = 0;
-                 k < np;
-                 k++) {
-
-                int phaseIndex =
-                        stablePhases[k];
-
-                PhaseWork work =
-                        phaseWorks.get(
-                                phaseIndex);
-
-                A[row][nc + k] =
-                        work.mA[Aidx];
-            }
-
-            // --------------------------------------------------------
-            // RHS
-            //
-            //     b_A = r_A - q_A
-            //
-            // where
-            //
-            //     r_A = N_A(target) - sum_alpha omega_alpha M_A^alpha
-            //     q_A = sum_alpha omega_alpha q_A^alpha
-            //
-            // For an exactly mass-balanced state r_A = 0, reducing to
-            // Sundman's b_A = -q_A.
-            // --------------------------------------------------------
-
-            double q =
-                    0.0;
-
-            double represented =
-                    0.0;
-
-            for (int k = 0;
-                 k < np;
-                 k++) {
-
-                int phaseIndex =
-                        stablePhases[k];
-
-                PhaseWork work =
-                        phaseWorks.get(
-                                phaseIndex);
-
-                double omega =
-                        phaseAmounts[k];
-
-                q +=
-                        omega
-                        * work.massGResponse[Aidx];
-
-                represented +=
-                        omega
-                        * work.mA[Aidx];
-            }
-
-            double massResidual =
-                    targetAmounts[Aidx]
-                    - represented;
-
-            b[row] =
-                    massResidual
-                    - q;
-        }
+        double[] b =
+                GlobalEquilibriumMatrixAssembler.buildRhs(
+                        phaseData, stablePhaseAmounts, targetAmounts);
 
         equilibriumMatrix =
                 A;
