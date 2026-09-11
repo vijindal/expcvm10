@@ -999,29 +999,51 @@ public class CefGibbs extends GibbsEnergyModel {
     }
 
 
+    /**
+     * Adds the reference-state gradient contribution using the same
+     * second-order automatic differentiation of the complete endmember
+     * probability {@code P_I = product_s y[s][i_s]} that
+     * {@link #referenceHessian} uses for the Hessian -- reading
+     * {@code probability.grad} instead of {@code probability.hess} from
+     * an otherwise identical construction, so gradient and Hessian cannot
+     * silently diverge the way a pair of independently hand-rolled
+     * formulas can.
+     */
     private void referenceGradient(double T,
                                    double[] y,
                                    double[] g) {
+
+        final int n = y.length;
 
         for (int em = 0; em < totalEM; em++) {
 
             int[] idx = endMemberIndices(em);
 
-            double G = endMembers[em].G(T);
+            AD2 probability =
+                    AD2.constant(1.0, n);
 
             for (int s = 0; s < ns; s++) {
 
-                double product = G;
+                int constituent = idx[s];
 
-                for (int q = 0; q < ns; q++) {
+                int varIdx =
+                        offset[s] + constituent;
 
-                    if (q == s)
-                        continue;
+                probability =
+                        probability.multiply(
+                                AD2.variable(
+                                        y[varIdx],
+                                        varIdx,
+                                        n
+                                )
+                        );
+            }
 
-                    product *= y[offset[q] + idx[q]];
-                }
+            double G =
+                    endMembers[em].G(T);
 
-                g[offset[s] + idx[s]] += product;
+            for (int k = 0; k < n; k++) {
+                g[k] += G * probability.grad[k];
             }
         }
     }
@@ -1042,116 +1064,31 @@ public class CefGibbs extends GibbsEnergyModel {
     }
 
 
+    /**
+     * Excess gradient.
+     *
+     * <p>Uses the same {@link #interactionBasisAD} construction that
+     * {@link #excessHessian} uses for the Hessian -- reading
+     * {@code basis.grad} instead of {@code basis.hess} from an otherwise
+     * identical {@code AD2} expression for {@code P * delta^r}, so
+     * gradient and Hessian cannot silently diverge the way a pair of
+     * independently hand-rolled formulas can (as the previous hand-rolled
+     * {@code addInteractionGradient} did for any RK order &gt; 0).</p>
+     */
     private void excessGradient(double T,
                                 double[] y,
                                 double[] g) {
 
         for (CefInteractionParam p : interactions) {
 
-            addInteractionGradient(p, T, y, g);
-        }
-    }
+            AD2 basis = interactionBasisAD(p, y);
 
+            double L = p.L(T);
 
-    /**
-     * Gradient of an interaction basis.
-     *
-     * <p>Following pycalphad's {@code redlich_kister_sum} (each interaction
-     * term is a single symbolic product {@code L * P * delta^r}, with no
-     * separate "order-0-shaped" term folded in for {@code r > 0}), this
-     * differentiates {@code L * P * delta^r} as one product via the
-     * ordinary product rule:
-     * <pre>
-     * d(L * P * delta^r)/dy_k = L * delta^r * dP/dy_k
-     *                         + L * P * r * delta^(r-1) * d(delta)/dy_k
-     * </pre>
-     * where {@code P} is the product of explicit constituent factors and
-     * {@code delta = y_A - y_B} for the RK pair. For {@code r == 0},
-     * {@code delta^0 = 1} and the second term vanishes, reducing to the
-     * plain product-rule gradient of {@code L * P}.</p>
-     */
-    private void addInteractionGradient(CefInteractionParam p,
-                                        double T,
-                                        double[] y,
-                                        double[] g) {
-
-        double L = p.L(T);
-
-        /*
-         * Product of explicit constituent factors.
-         */
-        int n = p.size();
-
-        double[] factors = new double[n];
-
-        for (int k = 0; k < n; k++) {
-            factors[k] =
-                    y[offset[p.sublattice(k)] + p.constituent(k)];
-        }
-
-        int order = p.rkOrder();
-
-        double delta = 0.0;
-        int pairSL = -1, pairA = -1, pairB = -1;
-        double rk = 1.0; // delta^order
-
-        if (order > 0) {
-            int[] pair = findRKPair(p);
-            pairSL = pair[0];
-            pairA  = pair[1];
-            pairB  = pair[2];
-
-            delta = y[offset[pairSL] + pairA]
-                    - y[offset[pairSL] + pairB];
-
-            for (int r = 0; r < order; r++)
-                rk *= delta;
-        }
-
-        /*
-         * L * delta^r * dP/dy_k, for every explicit factor -- the sole
-         * dP-side term (no unconditional "delta^0" duplicate added on top).
-         */
-        for (int k = 0; k < n; k++) {
-
-            double dP = 1.0;
-
-            for (int j = 0; j < n; j++) {
-                if (j != k)
-                    dP *= factors[j];
+            for (int k = 0; k < g.length; k++) {
+                g[k] += L * basis.grad[k];
             }
-
-            int variable =
-                    offset[p.sublattice(k)] + p.constituent(k);
-
-            g[variable] += L * dP * rk;
         }
-
-        if (order == 0)
-            return;
-
-        /*
-         * L * P * r * delta^(r-1), applied only to the RK pair's two
-         * variables (d(delta)/dy_A = +1, d(delta)/dy_B = -1).
-         */
-        double explicitProduct = 1.0;
-
-        for (double f : factors)
-            explicitProduct *= f;
-
-        double deltaPower = 1.0;
-
-        for (int r = 1; r < order; r++)
-            deltaPower *= delta;
-
-        double rkDerivative =
-                order * deltaPower * explicitProduct * L;
-
-        int varA = offset[pairSL] + pairA;
-        int varB = offset[pairSL] + pairB;
-
-        g[varA] += rkDerivative;
-        g[varB] -= rkDerivative;
     }
 
 
