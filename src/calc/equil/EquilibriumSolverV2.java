@@ -1646,9 +1646,20 @@ public class EquilibriumSolverV2 {
                 new double[nc][nip];
 
         // ------------------------------------------------------------
-        // c_iG -- Sundman Eq. (44), positive sign:
+        // c_iG -- Newton descent direction at mu=0:
         //
-        //     c_iG = sum_j e_ij * dG/dY_j
+        //     c_iG = -sum_j e_ij * dG/dY_j
+        //
+        // Confirmed by direct numerical check against
+        // calc.equil.PhaseMatrixAssembler (independently verified against
+        // pycalphad in CefContractTest/EMatNCTest): at an interior,
+        // non-stationary y, dot(dG_dy, cG) is strongly negative with this
+        // sign (a genuine descent direction) and strongly positive with
+        // the previously-used "+e*dG/dY" convention (an ascent direction)
+        // -- the sign here was flipped from what Sundman's Eq. (44) and
+        // PhaseMatrixAssembler both use, which would make the Newton step
+        // at fixed chemical potential move the site fractions uphill in
+        // G, a direct cause of the solver's documented non-convergence.
         // ------------------------------------------------------------
 
         for (int i = 0; i < nip; i++) {
@@ -1662,7 +1673,7 @@ public class EquilibriumSolverV2 {
                         * work.gy[j];
             }
 
-            cG[i] = sum;
+            cG[i] = -sum;
         }
 
         // ------------------------------------------------------------
