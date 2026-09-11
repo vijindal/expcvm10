@@ -1,5 +1,5 @@
 """
-Generates docs/solver_flowchart.png: a Sundman-Figure-1-style flowchart of
+Generates docs/solver_flowchart_current.png: a Sundman-Figure-1-style flowchart of
 the Calculation Layer's actual iteration -- calc.equil.EquilibriumSolverV2,
 implementing Hillert's Lagrange-multiplier method (Sundman 2015 IMMI
 Eq. 6-12; Sundman 2021 Calphad "Algorithm A") -- IN CONTEXT: its callers
@@ -279,5 +279,5 @@ ax.legend(handles=legend, loc="lower center", bbox_to_anchor=(0.5, 0.0),
           ncol=3, fontsize=9.5, frameon=False)
 
 plt.subplots_adjust(left=0.02, right=0.99, top=0.99, bottom=0.02)
-plt.savefig("docs/solver_flowchart.png", dpi=170, facecolor="white")
-print("Saved docs/solver_flowchart.png")
+plt.savefig("docs/solver_flowchart_current.png", dpi=170, facecolor="white")
+print("Saved docs/solver_flowchart_current.png")
