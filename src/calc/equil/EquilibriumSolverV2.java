@@ -3903,26 +3903,79 @@ public class EquilibriumSolverV2 {
 
         /*
          * ------------------------------------------------------------
-         * 1. Construct the full (alpha = 1) trial state for every
-         *    stable phase, without committing anything.
+         * 1. Construct the full-step trial state for every stable
+         *    phase, damping the step size wherever a full step would
+         *    leave the phase amount or a site fraction out of bounds --
+         *    matching pycalphad's advance_state() (minimizer.pyx):
+         *
+         *      - Phase amounts: compute, once, the largest shared step
+         *        size s in (0, 1] such that every omega_k + s*DeltaOmega_k
+         *        stays >= MIN_PHASE_AMOUNT (a closed-form cap, not an
+         *        iterative search -- pycalphad's own phase_amt_step_size).
+         *
+         *      - Site fractions: a shared step size, halved until every
+         *        Y_i = y_i + s*DeltaY_i falls in [MIN_SITE_FRACTION, 1]
+         *        (with pycalphad's own 1e-11 boundary tolerance), then
+         *        any residual tiny overshoot is clamped rather than
+         *        rejected -- so this NEVER hard-fails on a bounds
+         *        violation, exactly like pycalphad. A genuinely invalid
+         *        Y (NaN, wrong dimension, sublattice sum badly off) is
+         *        still a real bug and remains a hard failure below.
+         *
+         * Previously this method took the full (undamped) step and
+         * hard-threw if the result was invalid ("This solver does not
+         * ... damp the step") -- a real behavioral gap from Sundman's own
+         * algorithm (which has no explicit validate-or-fail stage at all)
+         * and from pycalphad (which prevents invalid states by construction
+         * inside this same update step, never by rejecting them after the
+         * fact). See docs/solver_flowchart_target.png's STEP 7 discussion.
          * ------------------------------------------------------------
          */
-        double[][] trialY =
-                new double[np][];
+
+        final double MIN_SITE_FRACTION = 1.0e-14;
+        final double MIN_PHASE_AMOUNT = 1.0e-16;
+        final double BOUNDS_TOLERANCE = 1.0e-11;
+
+        double phaseAmtStepSize =
+                1.0;
+
+        for (int k = 0; k < np; k++) {
+
+            double trial =
+                    phaseAmounts[k] + deltaPhaseAmounts[k];
+
+            if (trial < MIN_PHASE_AMOUNT
+                    && Math.abs(deltaPhaseAmounts[k]) > MIN_PHASE_AMOUNT) {
+
+                phaseAmtStepSize =
+                        Math.min(
+                                phaseAmtStepSize,
+                                (MIN_PHASE_AMOUNT - phaseAmounts[k])
+                                        / deltaPhaseAmounts[k]);
+            }
+        }
 
         double[] trialOmega =
                 new double[np];
 
-        boolean physical =
-                true;
+        for (int k = 0; k < np; k++) {
 
-        int invalidSlot =
-                -1;
+            trialOmega[k] =
+                    phaseAmounts[k]
+                    + phaseAmtStepSize * deltaPhaseAmounts[k];
 
-        for (int k = 0;
-             k < np
-                     && physical;
-             k++) {
+            if (!Double.isFinite(trialOmega[k])) {
+
+                throw new IllegalStateException(
+                        "Non-finite phase amount for stable slot "
+                        + k + ": " + trialOmega[k]);
+            }
+        }
+
+        double[][] trialY =
+                new double[np][];
+
+        for (int k = 0; k < np; k++) {
 
             int phaseIndex =
                     stablePhases[k];
@@ -3941,54 +3994,79 @@ public class EquilibriumSolverV2 {
                         + work.model.phaseName());
             }
 
-            trialY[k] =
-                    new double[work.y.length];
+            int nip =
+                    work.y.length;
 
-            for (int i = 0;
-                 i < work.y.length;
-                 i++) {
+            double siteStepSize =
+                    1.0;
 
-                trialY[k][i] =
-                        work.y[i]
-                        + dy[i];
-            }
+            double[] candidate =
+                    new double[nip];
 
-            trialOmega[k] =
-                    phaseAmounts[k]
-                    + deltaPhaseAmounts[k];
+            while (true) {
 
-            if (!work.model.isValid(trialY[k])
-                    || !Double.isFinite(trialOmega[k])
-                    || trialOmega[k] <= 0.0) {
-
-                physical =
+                boolean exceededBounds =
                         false;
 
-                invalidSlot =
-                        k;
+                for (int i = 0; i < nip; i++) {
+
+                    double value =
+                            work.y[i] + siteStepSize * dy[i];
+
+                    if (value > 1.0) {
+
+                        if (value - 1.0 > BOUNDS_TOLERANCE) {
+                            exceededBounds = true;
+                        }
+                        value = 1.0;
+
+                    } else if (value < MIN_SITE_FRACTION) {
+
+                        if (MIN_SITE_FRACTION - value > BOUNDS_TOLERANCE) {
+                            exceededBounds = true;
+                        }
+                        value = Math.max(
+                                work.y[i] / 100.0,
+                                MIN_SITE_FRACTION);
+                    }
+
+                    candidate[i] = value;
+                }
+
+                if (!exceededBounds
+                        || siteStepSize < 1.0e-20) {
+                    break;
+                }
+
+                siteStepSize *= 0.5;
             }
-        }
 
-        if (!physical) {
+            trialY[k] =
+                    candidate;
 
-            int phaseIndex =
-                    stablePhases[invalidSlot];
+            if (!Double.isFinite(trialOmega[k])
+                    || trialOmega[k] <= 0.0) {
 
-            PhaseWork work =
-                    phaseWorks.get(phaseIndex);
+                throw new IllegalStateException(
+                        "Fixed-phase-set Sundman update produced a "
+                        + "non-positive phase amount for phase "
+                        + work.model.phaseName()
+                        + " (stable slot " + k + "): "
+                        + trialOmega[k]
+                        + ". Phase-set changes are "
+                        + "updateStablePhaseSet()'s responsibility.");
+            }
 
-            throw new IllegalStateException(
-                    "Fixed-phase-set Sundman update is not physically "
-                    + "valid for phase "
-                    + work.model.phaseName()
-                    + " (stable slot "
-                    + invalidSlot
-                    + "): invalid constitution or non-positive "
-                    + "phase amount "
-                    + trialOmega[invalidSlot]
-                    + ". This solver does not add/remove phases or "
-                    + "damp the step; phase-set changes are "
-                    + "updateStablePhaseSet()'s responsibility.");
+            for (double v : trialY[k]) {
+
+                if (!Double.isFinite(v)) {
+
+                    throw new IllegalStateException(
+                            "Non-finite site fraction for phase "
+                            + work.model.phaseName()
+                            + " (stable slot " + k + ").");
+                }
+            }
         }
 
         // ================================================================
