@@ -247,5 +247,4 @@ public abstract class GibbsEnergyModel {
     // ══════════════════════════════════════════════════════════════════
 
     public abstract void printPhaseInfo();
-    public abstract void printDerivatives();
 }

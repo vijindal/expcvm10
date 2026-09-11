@@ -2224,18 +2224,14 @@ public class CefGibbs extends GibbsEnergyModel {
         LOG.fine("  elements=" + elementNames_value);
         LOG.fine("  T=" + T + " K, P=" + P + " Pa");
         LOG.fine("  y=" + java.util.Arrays.toString(y));
-    }
-
-    @Override
-    public void printDerivatives() {
         if (y == null) {
-            LOG.fine("(no site fractions set)");
+            LOG.fine("(no site fractions set -- skipping derivatives)");
             return;
         }
-        LOG.fine("G=" + G(T, P, y));
-        LOG.fine("dG/dT=" + dG_dT(T, y));
-        LOG.fine("dG/dP=" + dG_dP(T, P, y));
-        LOG.fine("dG/dy=" + java.util.Arrays.toString(dG_dy(T, P, y)));
+        LOG.fine("  G=" + G(T, P, y));
+        LOG.fine("  dG/dT=" + dG_dT(T, y));
+        LOG.fine("  dG/dP=" + dG_dP(T, P, y));
+        LOG.fine("  dG/dy=" + java.util.Arrays.toString(dG_dy(T, P, y)));
     }
 
     /* ------------------------------------------------------------------
