@@ -1056,9 +1056,19 @@ public class CefGibbs extends GibbsEnergyModel {
     /**
      * Gradient of an interaction basis.
      *
-     * <p>The derivative is obtained by differentiating the product directly,
-     * rather than dividing by a site fraction. This avoids 0/0 expressions
-     * in the underlying polynomial calculation.</p>
+     * <p>Following pycalphad's {@code redlich_kister_sum} (each interaction
+     * term is a single symbolic product {@code L * P * delta^r}, with no
+     * separate "order-0-shaped" term folded in for {@code r > 0}), this
+     * differentiates {@code L * P * delta^r} as one product via the
+     * ordinary product rule:
+     * <pre>
+     * d(L * P * delta^r)/dy_k = L * delta^r * dP/dy_k
+     *                         + L * P * r * delta^(r-1) * d(delta)/dy_k
+     * </pre>
+     * where {@code P} is the product of explicit constituent factors and
+     * {@code delta = y_A - y_B} for the RK pair. For {@code r == 0},
+     * {@code delta^0 = 1} and the second term vanishes, reducing to the
+     * plain product-rule gradient of {@code L * P}.</p>
      */
     private void addInteractionGradient(CefInteractionParam p,
                                         double T,
@@ -1079,62 +1089,28 @@ public class CefGibbs extends GibbsEnergyModel {
                     y[offset[p.sublattice(k)] + p.constituent(k)];
         }
 
-        /*
-         * Derivative of the explicit product.
-         */
-        for (int k = 0; k < n; k++) {
+        int order = p.rkOrder();
 
-            double d = 1.0;
+        double delta = 0.0;
+        int pairSL = -1, pairA = -1, pairB = -1;
+        double rk = 1.0; // delta^order
 
-            for (int j = 0; j < n; j++) {
+        if (order > 0) {
+            int[] pair = findRKPair(p);
+            pairSL = pair[0];
+            pairA  = pair[1];
+            pairB  = pair[2];
 
-                if (j != k)
-                    d *= factors[j];
-            }
+            delta = y[offset[pairSL] + pairA]
+                    - y[offset[pairSL] + pairB];
 
-            int variable =
-                    offset[p.sublattice(k)] + p.constituent(k);
-
-            g[variable] += L * d;
+            for (int r = 0; r < order; r++)
+                rk *= delta;
         }
 
         /*
-         * RK composition factor.
-         */
-        if (p.rkOrder() == 0)
-            return;
-
-        int[] pair = findRKPair(p);
-
-        int pairSL = pair[0];
-        int pairA  = pair[1];
-        int pairB  = pair[2];
-
-        double delta =
-                y[offset[pairSL] + pairA]
-                - y[offset[pairSL] + pairB];
-
-        double rk = 1.0;
-
-        for (int r = 0; r < p.rkOrder(); r++)
-            rk *= delta;
-
-        /*
-         * Re-evaluate basis without RK factor.
-         */
-        double explicitProduct = 1.0;
-
-        for (double f : factors)
-            explicitProduct *= f;
-
-        int varA = offset[pairSL] + pairA;
-        int varB = offset[pairSL] + pairB;
-
-        /*
-         * Product derivative and RK derivative.
-         *
-         * d(P * delta^r)
-         * = dP * delta^r + P * r delta^(r-1) d(delta)
+         * L * delta^r * dP/dy_k, for every explicit factor -- the sole
+         * dP-side term (no unconditional "delta^0" duplicate added on top).
          */
         for (int k = 0; k < n; k++) {
 
@@ -1148,23 +1124,34 @@ public class CefGibbs extends GibbsEnergyModel {
             int variable =
                     offset[p.sublattice(k)] + p.constituent(k);
 
-            g[variable] +=
-                    L * dP * rk;
+            g[variable] += L * dP * rk;
         }
 
-        if (p.rkOrder() > 0) {
+        if (order == 0)
+            return;
 
-            double deltaPower = 1.0;
+        /*
+         * L * P * r * delta^(r-1), applied only to the RK pair's two
+         * variables (d(delta)/dy_A = +1, d(delta)/dy_B = -1).
+         */
+        double explicitProduct = 1.0;
 
-            for (int r = 1; r < p.rkOrder(); r++)
-                deltaPower *= delta;
+        for (double f : factors)
+            explicitProduct *= f;
 
-            double rkDerivative =
-                    p.rkOrder() * deltaPower * explicitProduct * L;
+        double deltaPower = 1.0;
 
-            g[varA] += rkDerivative;
-            g[varB] -= rkDerivative;
-        }
+        for (int r = 1; r < order; r++)
+            deltaPower *= delta;
+
+        double rkDerivative =
+                order * deltaPower * explicitProduct * L;
+
+        int varA = offset[pairSL] + pairA;
+        int varB = offset[pairSL] + pairB;
+
+        g[varA] += rkDerivative;
+        g[varB] -= rkDerivative;
     }
 
 
