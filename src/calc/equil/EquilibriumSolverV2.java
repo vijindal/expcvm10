@@ -1702,7 +1702,8 @@ public class EquilibriumSolverV2 {
         //
         // Confirmed by direct numerical check against
         // calc.equil.PhaseMatrixAssembler (independently verified against
-        // pycalphad in CefContractTest/EMatNCTest): at an interior,
+        // pycalphad in CefContractTest/PhaseMatrixAssemblerContractTest):
+        // at an interior,
         // non-stationary y, dot(dG_dy, cG) is strongly negative with this
         // sign (a genuine descent direction) and strongly positive with
         // the previously-used "+e*dG/dY" convention (an ascent direction)
