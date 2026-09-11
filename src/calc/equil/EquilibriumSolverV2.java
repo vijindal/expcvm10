@@ -841,33 +841,33 @@ public class EquilibriumSolverV2 {
     /**
      * Initialize the phase-indexed V2 state.
      *
-     * SCOPE LIMITATION: this is NOT Sundman's grid/global initializer.
-     * Sundman's algorithm relies on an initial grid minimization over
-     * candidate phases to obtain a good starting stable-phase set and
-     * constitutions before the local Newton/Sundman iteration begins;
-     * without it the iterative method can converge to a local rather
-     * than global equilibrium, and cannot detect a miscibility gap or
-     * select the initial stable-phase set from among the candidates.
+     * Every candidate phase is evaluated once with a constitution seeded
+     * from the overall requested composition
+     * (initializeSinglePhaseState()); this seed is only used for the
+     * per-candidate PhaseWork bookkeeping (phaseInternalVars, the
+     * metastable candidates' constitutions) and is immediately overwritten
+     * for whichever phases {@link GridMinimizer} selects as stable.
      *
-     * What this method actually does instead, until that global-search
-     * step is implemented:
+     * The initial stable-phase set, per-phase constitutions, and initial
+     * phase amounts are then obtained from {@link GridMinimizer}, which
+     * samples every candidate's internal degrees of freedom directly
+     * (site fractions) -- exact endmembers, endmember-pair edges, and
+     * Halton-sampled interior points -- and takes the lower convex hull of
+     * the combined (composition, G/atom) point cloud, mirroring
+     * pycalphad's {@code calculate()}/{@code starting_point()} global
+     * initializer. This is what allows the solver to detect a miscibility
+     * gap and select an initial stable-phase set from among the
+     * candidates, rather than always starting at candidate 0.
      *
-     *   - every candidate phase is evaluated (arbitrary number of
-     *     candidates supported), but only with a constitution seeded
-     *     from the overall requested composition
-     *     (initializeSinglePhaseState()), not a phase-specific grid
-     *     search;
-     *   - the initial stable set is unconditionally candidate 0 alone
-     *     (no phase selection, no miscibility-gap detection);
-     *   - CEF phases only.
+     * Remaining scope limitation: CEF phases only (GridMinimizer itself is
+     * model-agnostic, but the PhaseWork bookkeeping below still requires
+     * CefGibbs).
      *
      * For a KNOWN, already-validated fixed multiphase starting point
      * (e.g. a controlled two-phase test), use
-     * {@link #setInitialStateForTest} to bypass this limitation rather
-     * than treating candidate-0-only as if it were a general initial
-     * phase-selection procedure. Phase selection during the iteration
-     * itself remains updateStablePhaseSet()'s responsibility (currently
-     * a no-op).
+     * {@link #setInitialStateForTest} to bypass GridMinimizer entirely.
+     * Phase selection during the iteration itself remains
+     * updateStablePhaseSet()'s responsibility (currently a no-op).
      */
     private void initialize() {
 
@@ -965,23 +965,73 @@ public class EquilibriumSolverV2 {
 
             /*
              * ------------------------------------------------------------
-             * First stable phase = candidate 0.
+             * Grid/global initial stable-phase set.
              *
-             * This is only the starting stable set.  Actual phase
-             * selection is a later step.
+             * GridMinimizer samples every candidate phase's internal
+             * degrees of freedom directly (site fractions) -- exact
+             * endmembers, edge points, and Halton-sampled interior points,
+             * mirroring pycalphad's calculate() -- takes the lower convex
+             * hull of the combined (composition, G/atom) point cloud, and
+             * returns the hull facet enclosing the requested overall
+             * composition as the initial stable-phase set, with per-phase
+             * site fractions and lever-rule amounts.
+             *
+             * This replaces the previous "always start at candidate 0"
+             * placeholder, closing the miscibility-gap / global-min gap
+             * documented on this method's class-level javadoc.
              * ------------------------------------------------------------
              */
-            stablePhases =
-                    new int[] {0};
+            GridMinimizer gridMinimizer =
+                    new GridMinimizer();
 
-            /*
-             * One phase amount per stable phase.
-             */
+            EquilibriumState gridState =
+                    gridMinimizer.initialize(
+                            phaseModels, T, P, targetComposition());
+
+            List<PhaseRecord> gridStable =
+                    gridState.stablePhases();
+
+            if (gridStable.isEmpty()) {
+
+                throw new IllegalStateException(
+                        "GridMinimizer returned no stable phases.");
+            }
+
+            stablePhases =
+                    new int[gridStable.size()];
+
             phaseAmounts =
-                    new double[] {
-                        initialPhaseAmount(
-                                phaseWorks.get(0))
-                    };
+                    new double[gridStable.size()];
+
+            for (int k = 0;
+                 k < gridStable.size();
+                 k++) {
+
+                PhaseRecord pr =
+                        gridStable.get(k);
+
+                int p =
+                        phaseModels.indexOf(pr.model);
+
+                if (p < 0) {
+
+                    throw new IllegalStateException(
+                            "GridMinimizer returned a phase record whose "
+                            + "model is not among the candidate phases: "
+                            + pr.phaseName());
+                }
+
+                stablePhases[k] = p;
+                phaseAmounts[k] = pr.amount;
+
+                PhaseWork work =
+                        phaseWorks.get(p);
+
+                work.y =
+                        pr.y.clone();
+
+                evaluatePhaseWork(work);
+            }
         }
 
         /*

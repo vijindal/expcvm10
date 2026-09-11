@@ -7,52 +7,60 @@ import java.util.List;
 import java.util.logging.Logger;
 
 /**
- * Grid minimizer — initial phase set estimator for Algorithm A.
+ * Grid minimizer -- initial phase set estimator, ported to sample and
+ * search exactly the way pycalphad's {@code calculate()} /
+ * {@code lower_convex_hull()} do.
  *
- * Implements Sundman et al. CALPHAD 75 (2021) §2.3.3:
- *   "The grid minimizer approximates the Gibbs energy surface of each
- *    phase with a set of gridpoints and selects the set that gives the
- *    lowest Gibbs energy for the current conditions."
+ * <p>pycalphad's global-minimization starting point (see
+ * {@code pycalphad.core.calculate._sample_phase_constitution} and
+ * {@code pycalphad.core.starting_point.starting_point}) works directly in
+ * the internal degrees of freedom (site fractions), not in composition
+ * space:
  *
- * Algorithm:
- *   1. Build a uniform composition grid on the (nc-1)-simplex.
- *   2. For each grid point x and each phase, evaluate G(x,T)/nfu
- *      (per mole of atoms — common basis for all phases).
- *      For each grid point keep only the phase with lowest G.
- *      This builds the lower envelope.
- *   3. Build the lower convex hull of the (x, G_min) surface.
- *      Binary: Andrew's monotone chain on 2D points.
- *   4. Find the hull facet enclosing xOverall via barycentric coords.
- *      The phases at the facet vertices are the initial stable set.
- *   5. Build EquilibriumState with those phases as stable,
- *      all others as metastable with amount=0.
+ * <ol>
+ *   <li>Sample the site-fraction space of every candidate phase: exact
+ *       endmembers, a fixed grid of points along every endmember-pair edge,
+ *       and {@code pdof * dof} interior points from a scrambled Halton
+ *       sequence transformed onto each sublattice's simplex
+ *       ({@code point_sample}).</li>
+ *   <li>Evaluate G (and hence the per-mole-atom energy) and the overall
+ *       composition X at every sampled point of every phase.</li>
+ *   <li>Take the lower convex hull of the combined (X, G/atom) point cloud
+ *       across all candidate phases.</li>
+ *   <li>The hull facet enclosing the requested overall composition gives
+ *       the initial stable phase set, their site fractions, and (via the
+ *       lever rule / barycentric coordinates) their initial amounts.</li>
+ * </ol>
  *
- * Key design rule from Sundman: G must be compared on a per-atom basis
- * (G_per_FU / nfu) so that phases with different formula units
- * (e.g. V2Zr with nfu=3 vs LIQUID with nfu=1) compete fairly.
+ * <p>This class ports steps 1-4 directly:
+ * {@link #sampleSiteFractions} mirrors
+ * {@code _sample_phase_constitution} ({@link Halton#pointSample} is a
+ * direct port of {@code pycalphad.core.utils.point_sample}, itself built on
+ * {@link Halton#generate}, a direct port of
+ * {@code pycalphad.core.halton.halton}); {@link #initialize} mirrors
+ * {@code starting_point()}'s call into the convex hull.
  *
- * Internal variable minimization: for ordered phases the grid minimizer
- * should ideally minimize G over internal variables at each grid point.
- * Here we use a simple steepest-descent inner loop over site fractions
- * for each phase at each grid point, which correctly finds the ordered
- * configuration at each composition.
+ * <p>The hull/facet search itself ({@link #lowerConvexHull},
+ * {@link #findFacet}) is exact only for binary (2-component) systems
+ * (Andrew's monotone chain, as pycalphad's own {@code hyperplane} routine
+ * is exact for any dimension via QHull); for higher-order systems this
+ * falls back to a nearest-sampled-point search, which is an approximation
+ * of the true facet-finding pycalphad performs via a full N-dimensional
+ * convex hull.
  */
 public class GridMinimizer {
 
     private static final Logger LOG =
         Logger.getLogger(GridMinimizer.class.getName());
 
-    /** Grid density: number of intervals per composition axis. */
-    private static final int DENSITY = 20;
+    /**
+     * Number of Halton-sampled interior points per degree of freedom,
+     * matching pycalphad's {@code calculate(..., pdens=...)} default.
+     */
+    private static final int PDENS = 2000;
 
-    /** Max iterations for inner site-fraction minimization. */
-    private static final int INNER_ITER = 50;
-
-    /** Step size for inner minimization. */
-    private static final double INNER_STEP = 0.05;
-
-    /** Floor for site fractions to avoid log(0). */
-    private static final double Y_FLOOR = 1e-6;
+    /** Floor for site fractions to avoid log(0)/division singularities. */
+    private static final double MIN_SITE_FRACTION = 1.0e-14;
 
     // ─────────────────────────────────────────────────────────────────
     // Public entry point
@@ -73,171 +81,189 @@ public class GridMinimizer {
         int nc = xOverall.length;
         int np = candidates.size();
 
-        // Step 1: composition grid on (nc-1)-simplex
-        List<double[]> grid = buildGrid(nc);
-        int ng = grid.size();
+        // Steps 1-2: sample every candidate phase's internal degrees of
+        // freedom directly (site fractions), evaluate G/atom and X at
+        // every sampled point, and build the combined lower envelope
+        // (minimum G/atom per point, tagged with which phase achieved it).
+        List<double[]> envX     = new ArrayList<>();  // overall composition x at each point
+        List<Double>   envG     = new ArrayList<>();  // G per mole atom (nfu-normalized)
+        List<Integer>  envPhase = new ArrayList<>();  // candidate index
+        List<double[]> envY     = new ArrayList<>();  // site fractions y at each point
 
-        // Step 2: lower envelope — minimum G/atom over all phases
-        // at each grid point, with inner site-fraction minimization
-        double[] envG     = new double[ng];
-        int[]    envPhase = new int[ng];
-        double[][] envY   = new double[ng][];  // best y at each grid point
+        for (int ip = 0; ip < np; ip++) {
+            GibbsEnergyModel m = candidates.get(ip);
+            double nfu = m.nfu();
+            if (nfu <= 0) nfu = 1.0;
 
-        for (int ig = 0; ig < ng; ig++) {
-            envG[ig]     = Double.MAX_VALUE;
-            envPhase[ig] = 0;
-            double[] x   = grid.get(ig);
+            double[][] points = sampleSiteFractions(m);
 
-            for (int ip = 0; ip < np; ip++) {
-                GibbsEnergyModel m = candidates.get(ip);
-                double nfu = m.nfu();
-                if (nfu <= 0) nfu = 1.0;
-
-                // Initialize site fractions from composition
-                double[] y = m.getInitialInternalVars(x);
-                if (y == null || y.length == 0) continue;
-
-                // Inner minimization: descend over site fractions
-                // to find the lowest G configuration at this composition.
-                // This is critical for ordered phases like V2Zr where
-                // the stable configuration is NOT the uniform one.
-                y = minimizeSiteFractions(m, y, x, T, P);
+            for (double[] y : points) {
 
                 double G;
+                double[] x;
                 try {
                     G = m.G(T, P, y) / nfu;
+                    x = m.compositionFromInternal(y);
                 } catch (Exception e) {
                     continue;
                 }
 
-                if (G < envG[ig]) {
-                    envG[ig]     = G;
-                    envPhase[ig] = ip;
-                    envY[ig]     = y.clone();
-                }
+                if (!Double.isFinite(G) || x == null) continue;
+
+                envX.add(x);
+                envG.add(G);
+                envPhase.add(ip);
+                envY.add(y);
             }
-            if (envY[ig] == null)
-                envY[ig] = candidates.get(envPhase[ig])
-                               .getInitialInternalVars(x);
         }
 
-        // Step 3: lower convex hull (binary: 2D monotone chain)
-        List<Integer> hull = lowerConvexHull(grid, envG, nc);
+        int ng = envG.size();
+        if (ng == 0) {
+            throw new IllegalStateException(
+                    "GridMinimizer produced no feasible sample points for "
+                    + "any candidate phase.");
+        }
 
-        // Step 4: find hull facet enclosing xOverall
-        FacetResult facet = findFacet(hull, grid, envPhase, envY,
-                                       xOverall, nc);
+        double[]   G     = new double[ng];
+        int[]      phase = new int[ng];
+        double[][] X     = new double[ng][];
+        double[][] Y     = new double[ng][];
+        for (int i = 0; i < ng; i++) {
+            G[i]     = envG.get(i);
+            phase[i] = envPhase.get(i);
+            X[i]     = envX.get(i);
+            Y[i]     = envY.get(i);
+        }
 
-        // Step 5: build EquilibriumState
+        // Step 3: lower convex hull of the combined (X, G) point cloud.
+        List<Integer> hull = lowerConvexHull(X, G, nc);
+
+        // Step 4: find hull facet enclosing xOverall.
+        FacetResult facet = findFacet(hull, X, phase, Y, xOverall, nc);
+
+        // Step 5: build EquilibriumState.
         return buildState(candidates, facet, xOverall, np, T, P);
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // Step 1: Composition grid
-    // ─────────────────────────────────────────────────────────────────
-
-    private List<double[]> buildGrid(int nc) {
-        List<double[]> pts = new ArrayList<>();
-        buildGridRecursive(nc, new int[nc], 0, DENSITY, pts);
-        return pts;
-    }
-
-    private void buildGridRecursive(int nc, int[] cnt, int dim,
-                                     int rem, List<double[]> out) {
-        if (dim == nc - 1) {
-            cnt[dim] = rem;
-            out.add(countsToX(cnt, nc));
-            return;
-        }
-        for (int i = 0; i <= rem; i++) {
-            cnt[dim] = i;
-            buildGridRecursive(nc, cnt, dim + 1, rem - i, out);
-        }
-    }
-
-    private double[] countsToX(int[] cnt, int nc) {
-        double[] x   = new double[nc];
-        double   sum = 0;
-        for (int i = 0; i < nc; i++) {
-            x[i] = Math.max((double) cnt[i] / DENSITY, Y_FLOOR);
-            sum += x[i];
-        }
-        for (int i = 0; i < nc; i++) x[i] /= sum;
-        return x;
-    }
-
-    // ─────────────────────────────────────────────────────────────────
-    // Inner site-fraction minimization
+    // Steps 1-2: Direct internal-degrees-of-freedom sampling
+    //
+    // Ports pycalphad.core.calculate._sample_phase_constitution
+    // (endmembers + fixed-grid edges + Halton interior sampling), minus
+    // the ionic-liquid charge-balance branch, which this project's models
+    // do not use.
     // ─────────────────────────────────────────────────────────────────
 
     /**
-     * Minimize G(y,T) over site fractions y, subject to sublattice
-     * sum constraints, for fixed overall composition x.
-     *
-     * Uses gradient descent on site fractions within each sublattice.
-     * This ensures ordered phases settle into their correct
-     * configuration (e.g. V2Zr favors V on SL1 and Zr on SL2
-     * near x_Zr=0.333).
-     *
-     * The composition constraint x is enforced by using the
-     * overall composition as a soft constraint — we minimize
-     * G(y,T) while keeping the phase at composition x.
-     * For phases where all sublattices are substitutional,
-     * the composition uniquely determines y only for single-sublattice
-     * phases. For multi-sublattice ordered phases we explore the space.
+     * Number of linear edge points sampled between each pair of
+     * endmembers, matching pycalphad's {@code fixed_grid} pass in
+     * {@code calculate()} (which uses {@code pdens} there too).
      */
-    private double[] minimizeSiteFractions(GibbsEnergyModel m,
-                                            double[] yInit,
-                                            double[] x,
-                                            double T,
-                                            double P) {
-        int nip = yInit.length;
-        if (nip == 0) return yInit;
+    private static final int EDGE_POINTS = PDENS;
 
-        double[] y    = yInit.clone();
-        double   G    = safeEval(m, y, T, P);
-        double   nfu  = Math.max(m.nfu(), 1.0);
+    /**
+     * Samples the site-fraction space of one candidate phase: exact
+     * endmembers, a fixed linear grid along every endmember-pair edge, and
+     * Halton-sampled interior points -- the non-charge-constrained,
+     * non-linearly-constrained path of pycalphad's
+     * {@code _sample_phase_constitution}.
+     */
+    private double[][] sampleSiteFractions(GibbsEnergyModel m) {
 
-        for (int iter = 0; iter < INNER_ITER; iter++) {
+        int ns = m.numSublattices();
+        int[] ncSub = m.constituentsPerSublattice();
+        int[] offsets = m.offsets();
+        int nip = m.numSiteVars();
 
-            // Try a small perturbed-composition step on each component,
-            // re-deriving y via getInitialInternalVars and keeping
-            // whichever perturbation lowers G (direct search, not a true
-            // gradient step -- see class javadoc).
-            boolean improved = false;
-            int nc = x.length;
-            for (int k = 0; k < nc && !improved; k++) {
-                // Perturb composition slightly toward component k
-                double[] xTry = x.clone();
-                double delta  = INNER_STEP * (1.0 / nc - x[k]);
-                xTry[k]      += delta;
-                // Renormalise
-                double s = 0; for (double v : xTry) s += v;
-                for (int i = 0; i < nc; i++) xTry[i] /= s;
-                // Clamp
-                for (int i = 0; i < nc; i++)
-                    xTry[i] = Math.max(xTry[i], Y_FLOOR);
+        List<double[]> points = new ArrayList<>();
 
-                double[] yTry = m.getInitialInternalVars(xTry);
-                if (yTry == null) continue;
-                double gTry = safeEval(m, yTry, T, P);
-                if (gTry < G) {
-                    y = yTry;
-                    G = gTry;
-                    improved = true;
+        // --- Endmembers: full Cartesian product of one-hot vectors per
+        // sublattice (pycalphad's endmember_matrix). ---
+        List<double[]> endmembers = buildEndmemberMatrix(ns, ncSub, offsets, nip);
+        points.addAll(endmembers);
+
+        // --- Fixed grid: linear interpolation along every endmember pair
+        // edge (pycalphad samples EDGE_POINTS points per edge). ---
+        int numEndmembers = endmembers.size();
+        if (numEndmembers >= 2) {
+            for (int a = 0; a < numEndmembers; a++) {
+                for (int b = a + 1; b < numEndmembers; b++) {
+                    double[] emA = endmembers.get(a);
+                    double[] emB = endmembers.get(b);
+                    for (int k = 0; k < EDGE_POINTS; k++) {
+                        double lam = (EDGE_POINTS == 1)
+                                ? 0.5
+                                : (double) k / (EDGE_POINTS - 1);
+                        double[] p = new double[nip];
+                        for (int i = 0; i < nip; i++) {
+                            p[i] = emA[i] * lam + emB[i] * (1.0 - lam);
+                        }
+                        points.add(p);
+                    }
                 }
             }
-            if (!improved) break;
         }
-        return y;
+
+        // --- Interior Halton sampling (pycalphad's point_sample), only
+        // when the phase actually has internal degrees of freedom. ---
+        if (nip > ns) {
+            double[][] interior = Halton.pointSample(ncSub, PDENS);
+            for (double[] p : interior) {
+                points.add(p);
+            }
+        }
+
+        return points.toArray(new double[0][]);
     }
 
-    private double safeEval(GibbsEnergyModel m, double[] y, double T, double P) {
-        try {
-            double nfu = Math.max(m.nfu(), 1.0);
-            return m.G(T, P, y) / nfu;
-        } catch (Exception e) {
-            return Double.MAX_VALUE;
+    /**
+     * Full Cartesian product of one-hot constituent vectors per
+     * sublattice, with zero entries floored to {@link #MIN_SITE_FRACTION}
+     * and each sublattice block renormalized to sum to 1 -- a direct port
+     * of pycalphad's {@code endmember_matrix} (without the vacancy-index
+     * exclusion, which this project's phase models do not require here).
+     */
+    private List<double[]> buildEndmemberMatrix(int ns, int[] ncSub,
+                                                 int[] offsets, int nip) {
+
+        List<int[]> combos = new ArrayList<>();
+        cartesianProduct(ncSub, 0, new int[ns], combos);
+
+        List<double[]> result = new ArrayList<>(combos.size());
+
+        for (int[] combo : combos) {
+            double[] y = new double[nip];
+            for (int i = 0; i < nip; i++) {
+                y[i] = MIN_SITE_FRACTION;
+            }
+            for (int s = 0; s < ns; s++) {
+                y[offsets[s] + combo[s]] = 1.0;
+            }
+            // Renormalize each sublattice block to sum to 1.
+            for (int s = 0; s < ns; s++) {
+                double sum = 0.0;
+                for (int i = 0; i < ncSub[s]; i++) {
+                    sum += y[offsets[s] + i];
+                }
+                for (int i = 0; i < ncSub[s]; i++) {
+                    y[offsets[s] + i] /= sum;
+                }
+            }
+            result.add(y);
+        }
+
+        return result;
+    }
+
+    private void cartesianProduct(int[] ncSub, int s, int[] combo,
+                                   List<int[]> out) {
+        if (s == ncSub.length) {
+            out.add(combo.clone());
+            return;
+        }
+        for (int i = 0; i < ncSub[s]; i++) {
+            combo[s] = i;
+            cartesianProduct(ncSub, s + 1, combo, out);
         }
     }
 
@@ -245,33 +271,28 @@ public class GridMinimizer {
     // Step 3: Lower convex hull
     // ─────────────────────────────────────────────────────────────────
 
-    private List<Integer> lowerConvexHull(List<double[]> grid,
-                                           double[] G, int nc) {
-        if (nc == 2) return monotoneChain(grid, G);
-        return allHullPoints(grid, G); // fallback for nc>2
+    private List<Integer> lowerConvexHull(double[][] X, double[] G, int nc) {
+        if (nc == 2) return monotoneChain(X, G);
+        return allHullPoints(X); // fallback for nc>2
     }
 
-    /** Andrew's monotone chain — lower hull in 2D (binary system). */
-    private List<Integer> monotoneChain(List<double[]> grid,
-                                         double[] G) {
-        int n = grid.size();
-        // Sort by x[0]
+    /** Andrew's monotone chain -- lower hull in 2D (binary system). */
+    private List<Integer> monotoneChain(double[][] X, double[] G) {
+        int n = X.length;
         Integer[] idx = new Integer[n];
         for (int i = 0; i < n; i++) idx[i] = i;
         java.util.Arrays.sort(idx,
-            (a, b) -> Double.compare(grid.get(a)[0], grid.get(b)[0]));
+            (a, b) -> Double.compare(X[a][0], X[b][0]));
 
-        // Build lower hull
         int[] hull = new int[n];
         int   k    = 0;
         for (int ii = 0; ii < n; ii++) {
             int i = idx[ii];
             while (k >= 2) {
                 int a = hull[k-2], b = hull[k-1];
-                // Cross product — keep only right turns (lower hull)
                 double cross =
-                    (grid.get(b)[0] - grid.get(a)[0]) * (G[i]   - G[a]) -
-                    (grid.get(i)[0] - grid.get(a)[0]) * (G[b]   - G[a]);
+                    (X[b][0] - X[a][0]) * (G[i] - G[a]) -
+                    (X[i][0] - X[a][0]) * (G[b] - G[a]);
                 if (cross <= 0) k--;
                 else break;
             }
@@ -282,11 +303,10 @@ public class GridMinimizer {
         return result;
     }
 
-    /** Fallback: return all grid points (safe but slow for nc>2). */
-    private List<Integer> allHullPoints(List<double[]> grid,
-                                         double[] G) {
+    /** Fallback: return all sampled points (safe but slow for nc>2). */
+    private List<Integer> allHullPoints(double[][] X) {
         List<Integer> result = new ArrayList<>();
-        for (int i = 0; i < grid.size(); i++) result.add(i);
+        for (int i = 0; i < X.length; i++) result.add(i);
         return result;
     }
 
@@ -295,14 +315,13 @@ public class GridMinimizer {
     // ─────────────────────────────────────────────────────────────────
 
     private FacetResult findFacet(List<Integer> hull,
-                                   List<double[]> grid,
+                                   double[][] X,
                                    int[] envPhase,
                                    double[][] envY,
                                    double[] xOverall,
                                    int nc) {
-        if (nc == 2) return findFacetBinary(hull, grid, envPhase,
-                                             envY, xOverall);
-        return closestVertex(hull, grid, envPhase, envY, xOverall);
+        if (nc == 2) return findFacetBinary(hull, X, envPhase, envY, xOverall);
+        return closestVertex(hull, X, envPhase, envY, xOverall);
     }
 
     /**
@@ -310,7 +329,7 @@ public class GridMinimizer {
      * xOverall[0], compute lever-rule amounts.
      */
     private FacetResult findFacetBinary(List<Integer> hull,
-                                         List<double[]> grid,
+                                         double[][] X,
                                          int[] envPhase,
                                          double[][] envY,
                                          double[] xOverall) {
@@ -321,8 +340,8 @@ public class GridMinimizer {
         for (int h = 0; h < hull.size() - 1; h++) {
             int    li  = hull.get(h);
             int    ri  = hull.get(h + 1);
-            double xl  = grid.get(li)[0];
-            double xr  = grid.get(ri)[0];
+            double xl  = X[li][0];
+            double xr  = X[ri][0];
             if (xl <= xTarget + 1e-10 && xTarget <= xr + 1e-10) {
                 bestL = li;
                 bestR = ri;
@@ -330,8 +349,8 @@ public class GridMinimizer {
             }
         }
 
-        double xl  = grid.get(bestL)[0];
-        double xr  = grid.get(bestR)[0];
+        double xl  = X[bestL][0];
+        double xr  = X[bestR][0];
         double dx  = xr - xl;
         double lam = (dx > 1e-12) ? (xTarget - xl) / dx : 0.5;
         lam        = Math.max(0.0, Math.min(1.0, lam));
@@ -339,27 +358,27 @@ public class GridMinimizer {
         FacetResult fr  = new FacetResult();
         fr.phaseIdx     = new int[]    { envPhase[bestL], envPhase[bestR] };
         fr.yAtVertex    = new double[][]{ envY[bestL],     envY[bestR]    };
-        fr.xAtVertex    = new double[][]{ grid.get(bestL), grid.get(bestR)};
+        fr.xAtVertex    = new double[][]{ X[bestL],        X[bestR]       };
         fr.amount       = new double[]  { 1.0 - lam,       lam            };
         return fr;
     }
 
     /** Fallback: return the single closest hull vertex. */
     private FacetResult closestVertex(List<Integer> hull,
-                                       List<double[]> grid,
+                                       double[][] X,
                                        int[] envPhase,
                                        double[][] envY,
                                        double[] xOverall) {
         int    best = hull.get(0);
-        double bd   = dist(grid.get(best), xOverall);
+        double bd   = dist(X[best], xOverall);
         for (int ig : hull) {
-            double d = dist(grid.get(ig), xOverall);
+            double d = dist(X[ig], xOverall);
             if (d < bd) { bd = d; best = ig; }
         }
         FacetResult fr = new FacetResult();
         fr.phaseIdx    = new int[]    { envPhase[best] };
         fr.yAtVertex   = new double[][]{ envY[best]    };
-        fr.xAtVertex   = new double[][]{ grid.get(best)};
+        fr.xAtVertex   = new double[][]{ X[best]       };
         fr.amount      = new double[]  { 1.0           };
         return fr;
     }
@@ -375,8 +394,16 @@ public class GridMinimizer {
         boolean[] used = new boolean[np];
         List<PhaseRecord> allPhases = new ArrayList<>();
 
-        // Deduplicate: if facet vertices point to same phase,
-        // keep only one at xOverall
+        // Deduplicate: if facet vertices point to the SAME phase (e.g. a
+        // single-candidate system, or a miscibility gap resolved by two
+        // sample points of one phase straddling xOverall), merge them into
+        // one stable PhaseRecord at the lower-G vertex.
+        //
+        // Both vertices' y came from the site-fraction sampling/hull
+        // search (sampleSiteFractions + lowerConvexHull), NOT re-derived
+        // via getInitialInternalVars(xOverall) -- that naive
+        // composition-only guess is exactly the disordered starting point
+        // this class exists to avoid (see class javadoc).
         boolean allSame = true;
         for (int k = 1; k < facet.phaseIdx.length; k++)
             if (facet.phaseIdx[k] != facet.phaseIdx[0])
@@ -385,10 +412,19 @@ public class GridMinimizer {
         if (allSame) {
             int ip = facet.phaseIdx[0];
             GibbsEnergyModel m = candidates.get(ip);
-            double[] y = m.getInitialInternalVars(xOverall);
+
+            int bestK = 0;
+            double bestG = Double.POSITIVE_INFINITY;
+            for (int k = 0; k < facet.yAtVertex.length; k++) {
+                double g = m.G(T, P, facet.yAtVertex[k]);
+                if (g < bestG) { bestG = g; bestK = k; }
+            }
+
+            double[] y = facet.yAtVertex[bestK].clone();
             double[] x = m.compositionFromInternal(y);
             PhaseRecord pr = new PhaseRecord(m, x, 1.0, true);
             pr.y = y;
+            pr.G = bestG;
             allPhases.add(pr);
             used[ip] = true;
         } else {
@@ -398,10 +434,11 @@ public class GridMinimizer {
                 if (amt < 1e-10) continue;
 
                 GibbsEnergyModel m = candidates.get(ip);
-                double[] y = facet.yAtVertex[k];
+                double[] y = facet.yAtVertex[k].clone();
                 double[] x = m.compositionFromInternal(y);
                 PhaseRecord pr = new PhaseRecord(m, x, amt, true);
-                pr.y = y.clone();
+                pr.y = y;
+                pr.G = m.G(T, P, y);
                 allPhases.add(pr);
                 used[ip] = true;
 
@@ -412,7 +449,10 @@ public class GridMinimizer {
             }
         }
 
-        // Metastable phases
+        // Metastable phases: no sampled point of these phases is on the
+        // hull facet enclosing xOverall, so there is no energy-minimizing
+        // constitution to reuse here -- fall back to the naive
+        // composition-matching seed, same as before.
         for (int ip = 0; ip < np; ip++) {
             if (used[ip]) continue;
             GibbsEnergyModel m = candidates.get(ip);
@@ -420,6 +460,7 @@ public class GridMinimizer {
             double[] x = m.compositionFromInternal(y);
             PhaseRecord pr = new PhaseRecord(m, x, 0.0, false);
             pr.y = y;
+            pr.G = m.G(T, P, y);
             allPhases.add(pr);
         }
 
