@@ -20,7 +20,7 @@ import java.util.logging.Logger;
  * {@code Model(dbe, comps, phase_name)}:</p>
  *
  * <pre>
- * new CefGibbs(database, elements, "FCC_A1")
+ * new CefGibbs(database, elements, "FCC_A1", null, null, PhaseModelKind.AUTO)
  * </pre>
  *
  * <p>The constructor extracts the sublattice structure, site ratios,
@@ -28,7 +28,7 @@ import java.util.logging.Logger;
  * parameters from the database. All CEF math (site-fraction-space
  * {@code G}, {@code dG_dy}, {@code d2G_dy2}, {@code dG_dT},
  * {@code d2G_dydT}) and the rest of the {@link GibbsEnergyModel} contract
- * ({@code compute(...)}, {@code getInitialInternalVars(...)}) live here.</p>
+ * ({@code getInitialInternalVars(...)}) live here.</p>
  *
  * <p>The Gibbs energy is written as</p>
  *
@@ -335,22 +335,15 @@ public class CefGibbs extends GibbsEnergyModel {
 
     /**
      * Builds a CEF model straight from a parsed TDB database, in the style
-     * of pycalphad's {@code Model(dbe, comps, phase_name)}.
+     * of pycalphad's {@code Model(dbe, comps, phase_name)}, additionally
+     * accepting the magnetic {@code A}/{@code p} hint maps parsed from
+     * {@code TYPE_DEFINITION ... MAGNETIC} records and a
+     * {@link PhaseModelKind} selector.
      *
      * @param database  loaded TDB database (element filtering is applied
      *                  internally via {@code getPhaseParam})
      * @param elements  ordered system element symbols
      * @param phaseName phase to build
-     */
-    public CefGibbs(tdb database, List<String> elements, String phaseName) {
-        this(database, elements, phaseName, null, null, PhaseModelKind.AUTO);
-    }
-
-    /**
-     * As {@link #CefGibbs(tdb, List, String)}, additionally accepting the
-     * magnetic {@code A}/{@code p} hint maps parsed from
-     * {@code TYPE_DEFINITION ... MAGNETIC} records and a
-     * {@link PhaseModelKind} selector.
      */
     public CefGibbs(tdb database, List<String> elements, String phaseName,
                     Map<String, Double> affMap, Map<String, Double> pMap,
@@ -564,39 +557,12 @@ public class CefGibbs extends GibbsEnergyModel {
         return ns;
     }
 
-    /** Number of constituents on sublattice {@code s}. */
-    public int numConstituents(int s) {
-        checkSublattice(s);
-        return ncSub[s];
-    }
-
     /** Total site-fraction variables (length of the flat {@code y} vector). */
     public int numSiteVars() {
         int n = 0;
         for (int x : ncSub) n += x;
         return n;
     }
-
-    /** Number of end members. */
-    public int numEndMembers() {
-        return totalEM;
-    }
-
-    /** Site ratio a[s] for sublattice {@code s} (sites per formula unit). */
-    public double siteRatio(int s) {
-        checkSublattice(s);
-        return a[s];
-    }
-
-
-    /**
-     * Returns the flattened composition-vector offset of a sublattice.
-     */
-    public int offset(int s) {
-        checkSublattice(s);
-        return offset[s];
-    }
-
 
     /**
      * Returns the end-member index corresponding to a complete
@@ -630,18 +596,6 @@ public class CefGibbs extends GibbsEnergyModel {
      */
     public CefEndMember endMember(int... constituentIdx) {
         return endMembers[endMemberIndex(constituentIdx)];
-    }
-
-
-    /**
-     * Backward-compatible two-sublattice accessor.
-     */
-    public CefEndMember endMember(int i, int j) {
-        if (ns != 2)
-            throw new IllegalStateException(
-                    "Two-index endMember() is valid only for a two-sublattice model.");
-
-        return endMembers[endMemberIndex(i, j)];
     }
 
 
@@ -1663,14 +1617,6 @@ public class CefGibbs extends GibbsEnergyModel {
             idx[s] = (em / stride[s]) % ncSub[s];
 
         return idx;
-    }
-
-
-    private void checkSublattice(int s) {
-
-        if (s < 0 || s >= ns)
-            throw new IllegalArgumentException(
-                    "Invalid sublattice index: " + s);
     }
 
 
@@ -3494,28 +3440,6 @@ public class CefGibbs extends GibbsEnergyModel {
     }
 
 
-    /**
-     * Returns the first two effective coefficients of a polynomial.
-     *
-     * <p>This is used only for the presently unused magnetic arrays.
-     * CEF G parameters retain their complete SgtePolynomial.</p>
-     */
-    private static double[] effectiveLinearCoefficients(
-            SgtePolynomial poly) {
-
-        double T1 = 298.15;
-        double T2 = 299.15;
-
-        double G1 = poly.G(T1);
-        double G2 = poly.G(T2);
-
-        double b = G2 - G1;
-        double a = G1 - b * T1;
-
-        return new double[] {a, b};
-    }
-
-
     // ══════════════════════════════════════════════════════════════
     // Nested value type: one CEF excess (mixing) parameter
     // ══════════════════════════════════════════════════════════════
@@ -3639,22 +3563,6 @@ public class CefGibbs extends GibbsEnergyModel {
 
 
         /**
-         * Constructs a T-independent interaction.
-         */
-        public static CefInteractionParam constant(int[] sublattice,
-                                                   int[] constituent,
-                                                   int rkOrder,
-                                                   double a) {
-            double[] tLow = {298.15};
-            double[] tHigh = {6000.0};
-            double[][] coeffs = {{a, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
-            SgtePolynomial poly = new SgtePolynomial(tLow, tHigh, coeffs);
-            return new CefInteractionParam(
-                    sublattice, constituent, rkOrder, poly);
-        }
-
-
-        /**
          * Temperature-dependent interaction via polynomial evaluation.
          */
         public double L(double T) {
@@ -3695,47 +3603,10 @@ public class CefGibbs extends GibbsEnergyModel {
 
 
         /**
-         * Returns a copy of the sublattice-factor array.
-         */
-        public int[] sublattices() {
-            return sublattice.clone();
-        }
-
-
-        /**
-         * Returns a copy of the constituent-factor array.
-         */
-        public int[] constituents() {
-            return constituent.clone();
-        }
-
-
-        /**
          * Redlich-Kister order from the TDB parameter.
          */
         public int rkOrder() {
             return rkOrder;
-        }
-
-
-        /**
-         * Returns the polynomial.
-         */
-        public SgtePolynomial polynomial() {
-            return polynomial;
-        }
-
-
-        /**
-         * Returns the CEF constituent-array order.
-         *
-         * <p>For the standard CEF representation this is one less than the
-         * number of explicit constituent factors beyond the implicit
-         * one-constituent-per-sublattice reference structure. This accessor is
-         * mainly diagnostic; it must not be confused with {@link #rkOrder()}.</p>
-         */
-        public int cefOrder(int numberOfSublattices) {
-            return sublattice.length - numberOfSublattices;
         }
 
 
@@ -3774,50 +3645,23 @@ public class CefGibbs extends GibbsEnergyModel {
         /** Constituent index per sublattice, length = ns. */
         public final int[] constituentIdx;
 
-        /** Full SGTE polynomial (preferred). Null if using simple form. */
+        /** Full SGTE polynomial for this end-member's Gibbs energy. */
         private final SgtePolynomial poly;
 
-        /** Fallback constant term when poly is null. */
-        private final double a;
-
-        /** Fallback linear coefficient when poly is null. */
-        private final double b;
-
-        /**
-         * Construct with full SGTE polynomial (preferred constructor).
-         */
         public CefEndMember(int[] constituentIdx, SgtePolynomial poly) {
             this.constituentIdx = constituentIdx.clone();
             this.poly = poly;
-            this.a    = 0.0;
-            this.b    = 0.0;
         }
 
-        /**
-         * Construct with simple a+b*T form (fallback for interactions/missing data).
-         */
-        public CefEndMember(int[] constituentIdx, double a, double b) {
-            this.constituentIdx = constituentIdx.clone();
-            this.poly = null;
-            this.a    = a;
-            this.b    = b;
-        }
-
-        /** G(T) — uses full polynomial if available, else a+b*T. */
+        /** G(T). */
         public double G(double T) {
-            return poly != null ? poly.G(T) : a + b * T;
+            return poly.G(T);
         }
 
-        /** dG/dT — uses full polynomial if available, else b. */
+        /** dG/dT. */
         public double dGdT(double T) {
-            return poly != null ? poly.dGdT(T) : b;
+            return poly.dGdT(T);
         }
-
-        public double a() { return poly != null ? 0.0 : a; }
-        public double b() { return poly != null ? 0.0 : b; }
-
-        /** True if this end-member has a full SGTE polynomial. */
-        public boolean hasPoly() { return poly != null; }
     }
 
 
