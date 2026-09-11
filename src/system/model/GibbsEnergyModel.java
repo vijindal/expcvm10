@@ -3,20 +3,26 @@ package system.model;
 import java.util.ArrayList;
 
 /**
- * Abstract contract for Gibbs energy models, in Sundman's site-fraction
+ * Abstract contract for Gibbs energy models, in Sundman's internal-variable
  * (y-facing) formulation only.
  *
- * <p>This codebase standardizes on Sundman's CEF/Algorithm-A notation
- * (2015 Comput. Mater. Sci. 101; 2021 Calphad 75): the phase's Gibbs
- * energy and its derivatives are evaluated directly in site-fraction
- * space, {@code G(T,P,y)}, {@code dG_dy(T,P,y)}, {@code d2G_dy2(T,P,y)},
- * etc. -- Sundman's {@code G_M(T,P,Y)}. The earlier composition-facing
+ * <p>This is a model-agnostic contract, not a CEF-specific one: {@code y} is
+ * whatever internal-variable vector a given model minimizes over (site
+ * fractions for the Compound Energy Formalism, cluster/point probabilities
+ * for a future Cluster Variation Method model, etc.). Any model implementing
+ * this class -- {@link system.model.cef.CefGibbs} (CEF) today, a CVM model
+ * later -- plugs into the same Sundman Algorithm-A solver
+ * ({@code EquilibriumSolverV2}) as long as it honors this contract: the
+ * phase's Gibbs energy and its derivatives evaluated directly in
+ * internal-variable space, {@code G(T,P,y)}, {@code dG_dy(T,P,y)},
+ * {@code d2G_dy2(T,P,y)}, etc. -- Sundman's {@code G_M(T,P,Y)} (2015 Comput.
+ * Mater. Sci. 101; 2021 Calphad 75). The earlier composition-facing
  * (x-facing) surface
  * ({@code evaluateG(x,T)}/{@code gradient(x,T)}/{@code hessian(x,T)} and
  * related G0/derivative-cache machinery, used by the retired
- * mole-fraction {@code EquilibriumSolver}) has been removed; the sole
- * production solver, {@link system.model.cef.CefGibbs}'s consumer
- * {@code EquilibriumSolverV2}, calls only this surface.
+ * mole-fraction {@code EquilibriumSolver}) has been removed;
+ * {@code EquilibriumSolverV2} calls only this surface, on whichever
+ * concrete model was constructed for the phase.
  *
  * <h2>Structure</h2>
  * <ol>
@@ -73,9 +79,6 @@ public abstract class GibbsEnergyModel {
 
     /** Number of independent components. */
     public abstract int numComponents();
-
-    /** Number of internal parameters (site fractions for CEF, cluster vars for CVM). */
-    public abstract int numInternalParams();
 
     /** Number of total parameters (internal + constraints). */
     public abstract int numTotalParams();
@@ -206,6 +209,17 @@ public abstract class GibbsEnergyModel {
      * @return dM_A/dY, sized [numComponents][{@link #numSiteVars()}]
      */
     public abstract double[][] dMoles_dy();
+
+    // The four accessors below expose how y is partitioned into weighted
+    // blocks -- CEF's sublattices, each with a site ratio a[s] and a
+    // contiguous run of constituents -- so a solver can build M_A =
+    // Sum_s a[s]*y[offset[s]+j] (Sundman 2015 Eq. 58) without knowing the
+    // model's internals. Named after CEF's own vocabulary today since it is
+    // the only implementation; a future non-sublattice model (e.g. CVM,
+    // whose internal variables are cluster/point probabilities) should map
+    // its own block structure onto these same four methods rather than
+    // adding a parallel set -- revisit the naming once that mapping exists
+    // to show what generalization actually fits both models.
 
     /**
      * Site ratios a[s] for each sublattice (moles of sites per formula

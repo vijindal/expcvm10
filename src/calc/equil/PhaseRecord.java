@@ -69,7 +69,6 @@ public class PhaseRecord {
         this.mA     = this.x.clone();
         this.amount = amount;
         this.stable = stable;
-        int nip = model.numInternalParams();
         this.y  = model.getInitialInternalVars(this.x);
         this.G  = 0.0;
         this.drivingForce = 0.0;

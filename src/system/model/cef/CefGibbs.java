@@ -1834,7 +1834,6 @@ public class CefGibbs extends GibbsEnergyModel {
     @Override public ArrayList<String> elementNames() { return new ArrayList<>(elementNames_value); }
     @Override public String[] componentList()  { return elementNames_value.toArray(new String[0]); }
     @Override public int numComponents()       { return elementNames_value.size(); }
-    @Override public int numInternalParams()   { return numSiteVars(); }
     @Override public int numTotalParams()      { return numSiteVars(); }
 
     @Override
