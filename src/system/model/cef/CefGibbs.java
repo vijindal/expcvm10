@@ -1412,6 +1412,7 @@ public class CefGibbs extends GibbsEnergyModel {
      * Temperature derivative of G at fixed pressure and site fractions,
      * including the volume contribution's T-derivative.
      */
+    @Override
     public double dG_dT(double T, double P, double[] y) {
 
         if (!Double.isFinite(T) || T <= 0.0)
@@ -1497,6 +1498,7 @@ public class CefGibbs extends GibbsEnergyModel {
      * Temperature derivative of the composition gradient at fixed
      * pressure, including the volume contribution's mixed derivative.
      */
+    @Override
     public double[] d2G_dydT(double T, double P, double[] y) {
 
         if (!Double.isFinite(T) || T <= 0.0)

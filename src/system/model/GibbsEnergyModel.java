@@ -23,7 +23,8 @@ import java.util.ArrayList;
  *   <li><b>Phase Identity</b> (abstract) — phase name, model type, elements
  *   <li><b>State Variables</b> (concrete) — T, P, y storage &amp; access
  *   <li><b>Site-Fraction Thermodynamics</b> (abstract) — G, dG/dy, d2G/dy2,
- *       dG/dT, moles, and the sublattice structure accessors
+ *       dG/dT, d2G/dydT, dG/dP, d2G/dydP, moles, dMoles/dy, and the
+ *       sublattice structure accessors
  *   <li><b>Internal Variables</b> (abstract) — composition &lt;-&gt; site
  *       fraction mapping
  *   <li><b>Equilibrium Matrix</b> (concrete) — solver support
@@ -137,6 +138,26 @@ public abstract class GibbsEnergyModel {
      * @return d2G/dy2, {@link #numSiteVars()} x {@link #numSiteVars()}
      */
     public abstract double[][] d2G_dy2(double T, double P, double[] y);
+
+    /**
+     * Temperature derivative dG/dT at fixed P, y.
+     *
+     * @param T temperature in Kelvin
+     * @param P pressure in Pa
+     * @param y site-fraction vector
+     * @return dG/dT in J/(mol·K)
+     */
+    public abstract double dG_dT(double T, double P, double[] y);
+
+    /**
+     * Mixed second derivative d2G/dydT at fixed P, y.
+     *
+     * @param T temperature in Kelvin
+     * @param P pressure in Pa
+     * @param y site-fraction vector
+     * @return d2G/dydT, length {@link #numSiteVars()}
+     */
+    public abstract double[] d2G_dydT(double T, double P, double[] y);
 
     /**
      * Pressure derivative dG/dP at fixed T, y (Sundman's molar volume
