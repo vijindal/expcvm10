@@ -15,6 +15,7 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Stack;
 import java.util.logging.Level;
@@ -1469,6 +1470,41 @@ public class tdb {
     public ArrayList<TypeDefinition> getTypeDefinitions() {
         if (typeDefinitionList == null) return new ArrayList<>();
         return new ArrayList<>(typeDefinitionList);
+    }
+
+    /**
+     * Builds the type-definition-character -&gt; phase-names map that
+     * resolves TDB's {@code @}-form {@code TYPE_DEFINITION} records,
+     * mirroring pycalphad's {@code _typechar_map} (io/tdb.py:
+     * {@code _process_phase}/{@code _process_typedef}).
+     *
+     * <p>A TDB {@code PHASE} record's {@code %}-field is one or more flag
+     * characters (e.g. {@code PHASE FCC_A1 %A ...} or
+     * {@code PHASE IONIC_LIQ %YF ...}); a later
+     * {@code TYPE_DEFINITION <char> ... @ MAGNETIC ...} line applies its
+     * hint to every phase whose {@code %}-field contains {@code <char>} --
+     * the placeholder {@code @} in the type-definition line stands for
+     * "whichever phase(s) actually reference this typechar", not a phase
+     * name. This is the dominant real-world MAGNETIC-declaration syntax
+     * (also used for {@code DISORDERED_PART}); the literal-phase-name form
+     * ({@code TYPE_DEFINITION & GES A_P_D BCC_A2 MAGNETIC ...}) is handled
+     * separately by callers checking {@code td.phasename} directly first.
+     *
+     * @return map from a single type-definition character to every phase
+     *         name whose {@code %}-field contains it
+     */
+    public Map<String, ArrayList<String>> getTypecharPhaseMap() {
+        Map<String, ArrayList<String>> map = new HashMap<>();
+        if (phaseList == null) return map;
+        for (Phase p : phaseList) {
+            String flags = p.getDataTypeCode();
+            if (flags == null) continue;
+            for (int i = 0; i < flags.length(); i++) {
+                String ch = String.valueOf(flags.charAt(i));
+                map.computeIfAbsent(ch, k -> new ArrayList<>()).add(p.getPhaseName());
+            }
+        }
+        return map;
     }
 
     public HashMap countElements(String formula) {

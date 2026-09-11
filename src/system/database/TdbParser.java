@@ -95,10 +95,34 @@ public class TdbParser implements DatabasePort {
 
         tdb systdb = this.getUnderlyingTdb();
         if (systdb != null) {
+            java.util.Map<String, java.util.ArrayList<String>> typecharMap = null;
             for (tdb.TypeDefinition td : systdb.getTypeDefinitions()) {
-                if ("MAGNETIC".equalsIgnoreCase(td.property)
-                        && td.phasename != null
-                        && !td.phasename.isEmpty()) {
+                if (!"MAGNETIC".equalsIgnoreCase(td.property)) continue;
+
+                if ("@".equals(td.phasename)) {
+                    // @-form: TYPE_DEFINITION <char> ... @ MAGNETIC aff p --
+                    // the hint applies to every phase whose PHASE record's
+                    // %-field contains <char> (td.dataTypeCode), not to a
+                    // literal phase named "@". See tdb.getTypecharPhaseMap()
+                    // (mirrors pycalphad's _typechar_map).
+                    if (typecharMap == null) {
+                        typecharMap = systdb.getTypecharPhaseMap();
+                    }
+                    java.util.ArrayList<String> matchingPhases =
+                            typecharMap.get(td.dataTypeCode);
+                    if (matchingPhases == null || matchingPhases.isEmpty()) {
+                        LOG.fine("TYPE_DEFINITION " + td.dataTypeCode
+                                + " ... @ MAGNETIC ... matches no PHASE's %-field");
+                        continue;
+                    }
+                    for (String phaseName : matchingPhases) {
+                        affMap.put(phaseName, td.value1);
+                        pMap.put(phaseName, td.value2);
+                        LOG.fine("Magnetic phase: " + phaseName
+                               + " aff=" + td.value1 + " p=" + td.value2
+                               + " (via typechar " + td.dataTypeCode + ")");
+                    }
+                } else if (td.phasename != null && !td.phasename.isEmpty()) {
                     affMap.put(td.phasename, td.value1);
                     pMap.put(td.phasename, td.value2);
                     LOG.fine("Magnetic phase: " + td.phasename
