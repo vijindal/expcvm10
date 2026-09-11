@@ -124,14 +124,32 @@ public class EquilibriumSolverV2 {
     private double lastResidual;
     private double lastStep;
 
-    private PhaseWork phaseWork;
-
     /**
      * Phase-level Sundman state for every candidate phase.
      *
-     * Index i corresponds to phaseModels.get(i).
+     * Index i corresponds to phaseModels.get(i). Used only for cheap
+     * candidate-level metastable bookkeeping (evaluateAllPhases()'s G/gy/
+     * gyy/mA/dMdY refresh, and buildEquilibriumResult()'s metastable-phase
+     * output) -- NOT for stable-phase Newton state, which lives in
+     * stableSlots below.
      */
     private List<PhaseWork> phaseWorks;
+
+    /**
+     * Independent Newton-iteration state for every STABLE SLOT, indexed by
+     * stable slot k (0..stablePhases.length-1) -- parallel to
+     * stablePhases[]/phaseAmounts[]/deltaPhaseAmounts[]/
+     * deltaPhaseInternalVars[].
+     *
+     * This is deliberately a SEPARATE population from the candidate-
+     * indexed phaseWorks above: two stable slots can share the same
+     * candidate phase (a miscibility gap -- stablePhases = [p, p] with two
+     * different site-fraction constitutions), which phaseWorks.get(p)
+     * cannot represent since it is one object per candidate. Each entry
+     * here wraps the same model reference as its candidate but carries
+     * its own independent y, G, gy, gyy, mA, dMdY, mu, gamma, equilData.
+     */
+    private List<PhaseWork> stableSlots;
 
     private static final double SOLVER_TOL = 1.0e-10;
     private static final int MAX_INTERNAL_ITER = 50;
@@ -447,11 +465,8 @@ public class EquilibriumSolverV2 {
                  k < stablePhases.length;
                  k++) {
 
-                int p =
-                        stablePhases[k];
-
                 PhaseWork w =
-                        phaseWorks.get(p);
+                        stableSlots.get(k);
 
                 System.out.println(
                         "Phase " + k
@@ -487,11 +502,8 @@ public class EquilibriumSolverV2 {
                  k < stablePhases.length;
                  k++) {
 
-                int p =
-                        stablePhases[k];
-
                 PhaseWork w =
-                        phaseWorks.get(p);
+                        stableSlots.get(k);
 
                 System.out.println(
                         "DeltaY (phase "
@@ -512,11 +524,8 @@ public class EquilibriumSolverV2 {
                      k < stablePhases.length;
                      k++) {
 
-                    int p =
-                            stablePhases[k];
-
                     PhaseWork w =
-                            phaseWorks.get(p);
+                            stableSlots.get(k);
 
                     represented +=
                             phaseAmounts[k]
@@ -606,10 +615,13 @@ public class EquilibriumSolverV2 {
     /**
      * Assemble EquilibriumResult from the accepted solver state.
      *
-     * For the current one-phase implementation, the active phase state
-     * is taken directly from phaseWork rather than re-entering the legacy
-     * GibbsEnergyModel composition interface. This avoids reconstructing
-     * a CEF constitution from a potentially stale/undefined composition.
+     * Stable-phase results are built from stableSlots (one PhaseResult per
+     * stable SLOT, not per candidate) so a candidate split across two
+     * slots (a miscibility gap) correctly produces two PhaseResults with
+     * the same phase name and independent y/amount/G, rather than only
+     * the first-found slot's data. Metastable-phase results still come
+     * from the candidate-indexed phaseWorks, which is genuinely
+     * one-per-candidate bookkeeping.
      */
     private EquilibriumResult buildEquilibriumResult(
             boolean converged,
@@ -746,46 +758,7 @@ public class EquilibriumSolverV2 {
                 }
             }
 
-            if (isStable[i]) {
-
-                /*
-                 * phaseAmounts is indexed by STABLE SLOT, not candidate
-                 * index -- do not assume candidatePhase[i] ->
-                 * phaseAmounts[i]. Find the stable slot k such that
-                 * stablePhases[k] == i explicitly.
-                 */
-                double amount =
-                        0.0;
-
-                if (stablePhases != null
-                        && phaseAmounts != null) {
-
-                    for (int k = 0;
-                         k < stablePhases.length;
-                         k++) {
-
-                        if (stablePhases[k] == i
-                                && k < phaseAmounts.length) {
-
-                            amount =
-                                    phaseAmounts[k];
-
-                            break;
-                        }
-                    }
-                }
-
-                stableResults.add(
-                        new EquilibriumResult.PhaseResult(
-                                model.phaseName(),
-                                model.modelType(),
-                                amount,
-                                x,
-                                y,
-                                g,
-                                drivingForce));
-
-            } else {
+            if (!isStable[i]) {
 
                 metastableResults.add(
                         new EquilibriumResult.PhaseResult(
@@ -796,6 +769,82 @@ public class EquilibriumSolverV2 {
                                 y,
                                 g,
                                 drivingForce));
+            }
+        }
+
+        /*
+         * Stable-phase results: one PhaseResult per STABLE SLOT (not per
+         * candidate), built directly from stableSlots. This is what lets
+         * the same candidate phase appear twice with independent y/G/mA
+         * when a miscibility gap splits it across two slots -- the
+         * previous candidate-loop-plus-first-match search above could
+         * only ever report one amount/constitution per candidate name.
+         */
+        if (stablePhases != null
+                && stableSlots != null) {
+
+            for (int k = 0;
+                 k < stablePhases.length;
+                 k++) {
+
+                PhaseWork work =
+                        stableSlots.get(k);
+
+                double[] slotMA =
+                        work.mA.clone();
+
+                double slotTotalM =
+                        0.0;
+
+                for (double value : slotMA) {
+                    slotTotalM += value;
+                }
+
+                if (!(slotTotalM > 0.0)
+                        || !Double.isFinite(slotTotalM)) {
+
+                    throw new IllegalStateException(
+                            "Invalid phase element amount sum: "
+                            + slotTotalM);
+                }
+
+                double[] slotX =
+                        new double[nc];
+
+                for (int A = 0;
+                     A < nc;
+                     A++) {
+
+                    slotX[A] =
+                            slotMA[A] / slotTotalM;
+                }
+
+                double slotDrivingForce =
+                        -work.G;
+
+                if (Double.isFinite(work.G)) {
+
+                    for (int A = 0;
+                         A < Math.min(
+                                 nc,
+                                 slotMA.length);
+                         A++) {
+
+                        slotDrivingForce +=
+                                muResult[A]
+                                * slotMA[A];
+                    }
+                }
+
+                stableResults.add(
+                        new EquilibriumResult.PhaseResult(
+                                work.model.phaseName(),
+                                work.model.modelType(),
+                                phaseAmounts[k],
+                                slotX,
+                                work.y.clone(),
+                                work.G,
+                                slotDrivingForce));
             }
         }
 
@@ -914,6 +963,12 @@ public class EquilibriumSolverV2 {
              * setInitialStateForTest()).  Overrides the default
              * single-phase starting guess with a prescribed stable-phase
              * set, per-phase constitution, and phase amounts.
+             *
+             * Each stable slot gets its OWN PhaseWork instance (not a
+             * shared candidate-indexed one from phaseWorks) so that
+             * stablePhases containing the same candidate index twice
+             * (e.g. {0, 0}) produces two independent constitutions rather
+             * than aliasing one object -- see stableSlots' javadoc.
              * ------------------------------------------------------------
              */
             stablePhases =
@@ -922,6 +977,9 @@ public class EquilibriumSolverV2 {
             phaseAmounts =
                     testInitialState.phaseAmounts.clone();
 
+            stableSlots =
+                    new ArrayList<>(stablePhases.length);
+
             for (int k = 0;
                  k < stablePhases.length;
                  k++) {
@@ -929,13 +987,18 @@ public class EquilibriumSolverV2 {
                 int p =
                         stablePhases[k];
 
+                CefGibbs cef =
+                        (CefGibbs) phaseModels.get(p);
+
                 PhaseWork work =
-                        phaseWorks.get(p);
+                        new PhaseWork(cef);
 
                 work.y =
                         testInitialState.y[k].clone();
 
                 evaluatePhaseWork(work);
+
+                stableSlots.add(work);
             }
 
         } else {
@@ -980,6 +1043,9 @@ public class EquilibriumSolverV2 {
             phaseAmounts =
                     new double[gridStable.size()];
 
+            stableSlots =
+                    new ArrayList<>(gridStable.size());
+
             for (int k = 0;
                  k < gridStable.size();
                  k++) {
@@ -1001,13 +1067,25 @@ public class EquilibriumSolverV2 {
                 stablePhases[k] = p;
                 phaseAmounts[k] = pr.amount;
 
+                /*
+                 * A dedicated PhaseWork per stable slot, not a shared
+                 * candidate-indexed one -- GridMinimizer can legitimately
+                 * return the same candidate model at two different hull
+                 * vertices (a miscibility gap), which needs two
+                 * independent constitutions here, not one aliased object.
+                 */
+                CefGibbs cef =
+                        (CefGibbs) phaseModels.get(p);
+
                 PhaseWork work =
-                        phaseWorks.get(p);
+                        new PhaseWork(cef);
 
                 work.y =
                         pr.y.clone();
 
                 evaluatePhaseWork(work);
+
+                stableSlots.add(work);
             }
         }
 
@@ -1026,25 +1104,15 @@ public class EquilibriumSolverV2 {
         }
 
         /*
-         * ------------------------------------------------------------
-         * Temporary compatibility alias.
-         *
-         * Existing single-phase methods still use phaseWork.
-         * ------------------------------------------------------------
-         */
-        phaseWork =
-                phaseWorks.get(
-                        stablePhases[0]);
-
-        /*
          * Initial chemical potentials are obtained from the initially
-         * selected stable phase only.
+         * selected stable phase only (stable slot 0).
          */
-        calculateChemicalPotentials();
+        calculateChemicalPotentials(
+                stableSlots.get(0));
 
         mu =
-                (phaseWork.mu != null)
-                        ? phaseWork.mu.clone()
+                (stableSlots.get(0).mu != null)
+                        ? stableSlots.get(0).mu.clone()
                         : new double[targetAmounts.length];
 
         lastResidual =
@@ -1110,13 +1178,6 @@ public class EquilibriumSolverV2 {
                         work.y.clone();
             }
         }
-
-        /*
-         * Temporary compatibility alias:
-         * phaseWork represents the first candidate phase.
-         */
-        phaseWork =
-                phaseWorks.get(0);
     }
 
     /**
@@ -1242,315 +1303,7 @@ public class EquilibriumSolverV2 {
         return targetM;
     }
 
-    /**
-     * Builds C where each row represents one sublattice-normalization
-     * constraint:
-     *
-     *     sum_i y_is - 1 = 0
-     *
-     * C has dimensions ns x nip.
-     */
-    private double[][] buildSublatticeConstraintMatrix(
-            CefGibbs phase) {
 
-        int ns =
-                phase.numSublattices();
-
-        int nip =
-                phase.numSiteVars();
-
-        double[][] C =
-                new double[ns][nip];
-
-        int[] offsets =
-                phase.offsets();
-
-        int[] nc =
-                phase.constituentsPerSublattice();
-
-        for (int s = 0; s < ns; s++) {
-
-            for (int i = 0;
-                 i < nc[s];
-                 i++) {
-
-                C[s][offsets[s] + i] = 1.0;
-            }
-        }
-
-        return C;
-    }
-
-    /**
-     * Constructs the generic single-phase constrained Newton matrix.
-     *
-     * Unknown ordering:
-     *
-     *   [ DeltaY | DeltaMu | DeltaLambda ]
-     *
-     * Dimensions:
-     *
-     *   nip + nElements + nSublattices
-     */
-    private double[][] buildSinglePhaseKktMatrix(
-            CefGibbs phase) {
-
-        int nip =
-                phase.numSiteVars();
-
-        int nc =
-                targetAmounts.length;
-
-        int ns =
-                phase.numSublattices();
-
-        int n =
-                nip + nc + ns;
-
-        double[][] A =
-                new double[n][n];
-
-        // ------------------------------------------------------------
-        // G_YY
-        // ------------------------------------------------------------
-
-        for (int i = 0; i < nip; i++) {
-
-            for (int j = 0; j < nip; j++) {
-
-                A[i][j] =
-                        phaseWork.gyy[i][j];
-            }
-        }
-
-        // ------------------------------------------------------------
-        // -J_M^T
-        // ------------------------------------------------------------
-
-        for (int i = 0; i < nip; i++) {
-
-            for (int a = 0; a < nc; a++) {
-
-                double v =
-                        phaseWork.dMdY[a][i];
-
-                A[i][nip + a] = -v;
-                A[nip + a][i] = -v;
-            }
-        }
-
-        // ------------------------------------------------------------
-        // -C^T
-        // ------------------------------------------------------------
-
-        double[][] C =
-                buildSublatticeConstraintMatrix(phase);
-
-        for (int s = 0; s < ns; s++) {
-
-            int col =
-                    nip + nc + s;
-
-            for (int i = 0; i < nip; i++) {
-
-                double v = C[s][i];
-
-                if (v == 0.0)
-                    continue;
-
-                A[i][col] = -v;
-                A[col][i] = -v;
-            }
-        }
-
-        return A;
-    }
-
-    /**
-     * Builds the single-phase KKT residual.
-     *
-     * Residual ordering:
-     *
-     *   [ stationarity
-     *     element mass balance
-     *     sublattice normalization ]
-     *
-     * <p>{@code targetM} is the phase-level target element-amount vector
-     * (distinct from the system-level {@link #targetAmounts}); it is an
-     * explicit argument rather than a field so that the later multiphase
-     * solver can supply a per-phase share of the overall target without
-     * ambiguity.
-     */
-    private double[] buildSinglePhaseResidual(
-            CefGibbs phase,
-            double[] targetM) {
-
-        int nip =
-                phase.numSiteVars();
-
-        int nc =
-                targetAmounts.length;
-
-        int ns =
-                phase.numSublattices();
-
-        int n =
-                nip + nc + ns;
-
-        double[] r =
-                new double[n];
-
-        // ------------------------------------------------------------
-        // Stationarity:
-        //
-        // G_Y - J_M^T mu - C^T lambda
-        // ------------------------------------------------------------
-
-        for (int i = 0; i < nip; i++) {
-
-            double value =
-                    phaseWork.gy[i];
-
-            for (int a = 0; a < nc; a++) {
-
-                value -=
-                        phaseWork.dMdY[a][i]
-                        * phaseWork.mu[a];
-            }
-
-            /*
-             * phaseWork.gamma contains one multiplier per
-             * sublattice.
-             */
-            int s =
-                    sublatticeOf(
-                            i,
-                            phase.offsets(),
-                            phase.constituentsPerSublattice());
-
-            value -=
-                    phaseWork.gamma[s];
-
-            r[i] = value;
-        }
-
-        // ------------------------------------------------------------
-        // Element balance:
-        //
-        // M_A - target M_A
-        // ------------------------------------------------------------
-
-        for (int a = 0; a < nc; a++) {
-
-            r[nip + a] =
-                    phaseWork.mA[a]
-                    - targetM[a];
-        }
-
-        // ------------------------------------------------------------
-        // Sublattice normalization:
-        //
-        // sum(y_is) - 1
-        // ------------------------------------------------------------
-
-        int[] offsets =
-                phase.offsets();
-
-        int[] ncSL =
-                phase.constituentsPerSublattice();
-
-        for (int s = 0; s < ns; s++) {
-
-            double sum = 0.0;
-
-            for (int i = 0;
-                 i < ncSL[s];
-                 i++) {
-
-                sum +=
-                        phaseWork.y[
-                                offsets[s] + i];
-            }
-
-            r[nip + nc + s] =
-                    sum - 1.0;
-        }
-
-        return r;
-    }
-
-    /**
-     * Construct the phase matrix
-     *
-     *     [ G_YY   C^T ]
-     *     [ C       0  ]
-     *
-     * where C represents the sublattice constraints 1 - sum_i y_is = 0.
-     */
-    private void buildPhaseMatrix() {
-
-        if (phaseWork == null) {
-            throw new IllegalStateException(
-                    "Phase has not been evaluated.");
-        }
-
-        CefGibbs model =
-                phaseWork.model;
-
-        int nip =
-                model.numSiteVars();
-
-        int ns =
-                model.numSublattices();
-
-        int n =
-                nip + ns;
-
-        double[][] A =
-                new double[n][n];
-
-        // ------------------------------------------------------------
-        // Upper-left block: d2G/dYdY
-        // ------------------------------------------------------------
-        for (int i = 0; i < nip; i++) {
-            for (int j = 0; j < nip; j++) {
-                A[i][j] =
-                        phaseWork.gyy[i][j];
-            }
-        }
-
-        // ------------------------------------------------------------
-        // Constraint Jacobian C
-        //
-        // g_s = 1 - sum_i y_is
-        //
-        // derivative is -1 for every constituent on sublattice s.
-        //
-        // The sign is immaterial provided the same convention is used
-        // consistently for the multipliers.
-        // ------------------------------------------------------------
-        int[] offsets =
-                model.offsets();
-
-        int[] nc =
-                model.constituentsPerSublattice();
-
-        for (int s = 0; s < ns; s++) {
-
-            int row = nip + s;
-
-            for (int i = 0; i < nc[s]; i++) {
-
-                int k =
-                        offsets[s] + i;
-
-                A[k][row] = 1.0;
-                A[row][k] = 1.0;
-            }
-        }
-
-        phaseWork.phaseMatrix = A;
-    }
 
     /*
      * Obtain an initial chemical-potential estimate for the starting
@@ -1560,21 +1313,22 @@ public class EquilibriumSolverV2 {
      * from the global Sundman equilibrium matrix.
      *
      * Solves G_Y = C^T*gamma + J_M^T*mu (J_M[A][i] = dM_A/dY_i) via a
-     * minimum-norm least-squares solve, using whatever single phase is
-     * currently aliased to phaseWork.
+     * minimum-norm least-squares solve, using the given stable slot's
+     * PhaseWork (previously always the phaseWork singular alias, i.e.
+     * always candidate 0 -- now the caller's choice, e.g. stable slot 0).
      */
-    private void calculateChemicalPotentials() {
+    private void calculateChemicalPotentials(PhaseWork work) {
 
-        if (phaseWork == null) {
+        if (work == null) {
             throw new IllegalStateException(
                     "Phase has not been evaluated.");
         }
 
         int nip =
-                phaseWork.model.numSiteVars();
+                work.model.numSiteVars();
 
         int ns =
-                phaseWork.model.numSublattices();
+                work.model.numSublattices();
 
         int nc =
                 targetAmounts.length;
@@ -1596,21 +1350,21 @@ public class EquilibriumSolverV2 {
             for (int a = 0; a < nc; a++) {
 
                 A[i][a] =
-                        phaseWork.dMdY[a][i];
+                        work.dMdY[a][i];
             }
 
             b[i] =
-                    phaseWork.gy[i];
+                    work.gy[i];
         }
 
         // ------------------------------------------------------------
         // C^T * gamma
         // ------------------------------------------------------------
         int[] offsets =
-                phaseWork.model.offsets();
+                work.model.offsets();
 
         int[] nconst =
-                phaseWork.model
+                work.model
                         .constituentsPerSublattice();
 
         for (int s = 0; s < ns; s++) {
@@ -1630,403 +1384,21 @@ public class EquilibriumSolverV2 {
         double[] solution =
                 solveMinimumNormSystem(A, b);
 
-        phaseWork.mu =
+        work.mu =
                 Arrays.copyOf(
                         solution, nc);
 
-        phaseWork.gamma =
+        work.gamma =
                 Arrays.copyOfRange(
                         solution, nc,
                         nc + ns);
 
         this.mu =
-                phaseWork.mu.clone();
+                work.mu.clone();
     }
 
-    /**
-     * Constrained Newton correction for the single closed-system phase,
-     * solving simultaneously for DeltaY, Delta-mu and Delta-gamma:
-     *
-     *     [ G_YY   J_M^T   C^T ] [DeltaY    ]   [G_Y - J_M^T*mu - C^T*gamma]
-     *     [ J_M     0      0   ] [Delta-mu  ] = -[M - N                    ]
-     *     [ C       0      0   ] [Delta-gamma]  [g(Y)                     ]
-     */
-    private void solveSinglePhaseCorrection() {
 
-        if (phaseWork == null) {
-            throw new IllegalStateException(
-                    "Phase has not been evaluated.");
-        }
 
-        int nip =
-                phaseWork.model.numSiteVars();
-
-        int ns =
-                phaseWork.model.numSublattices();
-
-        int nc =
-                targetAmounts.length;
-
-        int n =
-                nip + nc + ns;
-
-        double[][] A =
-                new double[n][n];
-
-        double[] rhs =
-                new double[n];
-
-        // ============================================================
-        // 1. d2G/dYdY block
-        // ============================================================
-
-        for (int i = 0; i < nip; i++) {
-            for (int j = 0; j < nip; j++) {
-                A[i][j] =
-                        phaseWork.gyy[i][j];
-            }
-        }
-
-        // ============================================================
-        // 2. J_M^T block
-        // ============================================================
-
-        for (int i = 0; i < nip; i++) {
-
-            for (int a = 0; a < nc; a++) {
-
-                double value =
-                        phaseWork.dMdY[a][i];
-
-                A[i][nip + a] = value;
-                A[nip + a][i] = value;
-            }
-        }
-
-        // ============================================================
-        // 3. Sublattice constraints
-        // ============================================================
-
-        int[] offsets =
-                phaseWork.model.offsets();
-
-        int[] nconst =
-                phaseWork.model
-                        .constituentsPerSublattice();
-
-        for (int s = 0; s < ns; s++) {
-
-            int gammaCol =
-                    nip + nc + s;
-
-            for (int i = 0; i < nconst[s]; i++) {
-
-                int k =
-                        offsets[s] + i;
-
-                A[k][gammaCol] = 1.0;
-                A[gammaCol][k] = 1.0;
-            }
-        }
-
-        // ============================================================
-        // 4. Stationarity residual
-        //
-        //      G_Y - J_M^T mu - C^T gamma
-        // ============================================================
-
-        for (int i = 0; i < nip; i++) {
-
-            double r =
-                    phaseWork.gy[i];
-
-            for (int a = 0; a < nc; a++) {
-
-                r -=
-                        phaseWork.dMdY[a][i]
-                        * phaseWork.mu[a];
-            }
-
-            int sublattice =
-                    sublatticeOf(
-                            i, offsets, nconst);
-
-            r -=
-                    phaseWork.gamma[sublattice];
-
-            rhs[i] = -r;
-        }
-
-        // ============================================================
-        // 5. Element mass-balance residual
-        //
-        //       M_A - N_A = 0
-        // ============================================================
-
-        double[] target =
-                targetAmounts;
-
-        for (int a = 0; a < nc; a++) {
-
-            rhs[nip + a] =
-                    -(phaseWork.mA[a]
-                            - target[a]);
-        }
-
-        // ============================================================
-        // 6. Sublattice normalization residual
-        // ============================================================
-
-        for (int s = 0; s < ns; s++) {
-
-            double sum = 0.0;
-
-            for (int i = 0; i < nconst[s]; i++) {
-
-                sum +=
-                        phaseWork.y[
-                                offsets[s] + i];
-            }
-
-            rhs[nip + nc + s] =
-                    -(sum - 1.0);
-        }
-
-        double[] correction =
-                solveLinearSystem(A, rhs);
-
-        System.arraycopy(
-                correction, 0,
-                phaseWork.y, 0,
-                nip);
-
-        this.lastStep =
-                vectorNorm(correction);
-    }
-
-    /**
-     * Temporary single-phase main loop connecting the phase-level
-     * evaluation and constrained Newton correction above. Does not yet
-     * call the full global {@link #buildEquilibriumMatrix()} or the
-     * phase-set management logic.
-     */
-    private boolean solveSinglePhase() {
-
-        if (phaseWork == null) {
-            throw new IllegalStateException(
-                    "Phase has not been initialized.");
-        }
-
-        for (int iter = 0;
-                iter < MAX_INTERNAL_ITER;
-                iter++) {
-
-            evaluateAllPhases();
-
-            calculateChemicalPotentials();
-
-            buildPhaseMatrix();
-
-            solveSinglePhaseCorrection();
-
-            evaluateAllPhases();
-
-            calculateChemicalPotentials();
-
-            double residual =
-                    singlePhaseResidualNorm();
-
-            lastResidual =
-                    residual;
-
-            if (residual < SOLVER_TOL
-                    && lastStep < SOLVER_TOL) {
-
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Combined residual norm over element mass balance, sublattice
-     * constraints and stationarity, at the current phaseWork state.
-     */
-    private double singlePhaseResidualNorm() {
-
-        double sum2 = 0.0;
-
-        // ------------------------------------------------------------
-        // Element mass balance
-        // ------------------------------------------------------------
-        for (int a = 0;
-                a < targetAmounts.length;
-                a++) {
-
-            double r =
-                    phaseWork.mA[a]
-                    - targetAmounts[a];
-
-            sum2 += r * r;
-        }
-
-        // ------------------------------------------------------------
-        // Sublattice constraints
-        // ------------------------------------------------------------
-        int[] offsets =
-                phaseWork.model.offsets();
-
-        int[] nconst =
-                phaseWork.model
-                        .constituentsPerSublattice();
-
-        for (int s = 0; s < nconst.length; s++) {
-
-            double sum = 0.0;
-
-            for (int i = 0; i < nconst[s]; i++) {
-
-                sum +=
-                        phaseWork.y[
-                                offsets[s] + i];
-            }
-
-            double r =
-                    sum - 1.0;
-
-            sum2 += r * r;
-        }
-
-        // ------------------------------------------------------------
-        // Stationarity
-        // ------------------------------------------------------------
-        for (int i = 0;
-                i < phaseWork.y.length;
-                i++) {
-
-            double r =
-                    phaseWork.gy[i];
-
-            for (int a = 0;
-                    a < targetAmounts.length;
-                    a++) {
-
-                r -=
-                        phaseWork.dMdY[a][i]
-                        * phaseWork.mu[a];
-            }
-
-            int s =
-                    sublatticeOf(
-                            i, offsets, nconst);
-
-            r -= phaseWork.gamma[s];
-
-            sum2 += r * r;
-        }
-
-        return Math.sqrt(sum2);
-    }
-
-    /**
-     * Thermodynamic stationarity residual norm at the current accepted
-     * phase state:
-     *
-     *     || G_Y - J_M^T lambda - C^T gamma ||
-     *
-     * checkConvergence() must require this to be small, not merely
-     * lastStep -- a small step does not by itself certify that the
-     * governing equations are satisfied.
-     */
-    private double singlePhaseStationarityNorm() {
-
-        if (phaseWork == null
-                || phaseWork.y == null) {
-
-            return Double.POSITIVE_INFINITY;
-        }
-
-        int nip =
-                phaseWork.model
-                        .numSiteVars();
-
-        int nc =
-                targetAmounts.length;
-
-        int ns =
-                phaseWork.model
-                        .numSublattices();
-
-        int[] offsets =
-                phaseWork.model
-                        .offsets();
-
-        int[] nconst =
-                phaseWork.model
-                        .constituentsPerSublattice();
-
-        double sum2 = 0.0;
-
-        /*
-         * G_Y - J_M^T lambda - C^T gamma
-         */
-        for (int i = 0;
-             i < nip;
-             i++) {
-
-            double r =
-                    phaseWork.gy[i];
-
-            for (int A = 0;
-                 A < nc;
-                 A++) {
-
-                r -=
-                        phaseWork.dMdY[A][i]
-                        * phaseWork.mu[A];
-            }
-
-            int s =
-                    sublatticeOf(
-                            i,
-                            offsets,
-                            nconst);
-
-            r -=
-                    phaseWork.gamma[s];
-
-            sum2 += r * r;
-        }
-
-        return Math.sqrt(sum2);
-    }
-
-    /**
-     * Re-evaluates G, G_Y, G_YY, M_A and dM/dY for the given phase at the
-     * given constitution y, writing the results into {@link #phaseWork}.
-     * Does not modify {@code phaseWork.y} itself, so callers can probe a
-     * trial constitution without disturbing the accepted state.
-     */
-    private void evaluateSinglePhaseState(
-            CefGibbs phase,
-            double[] y) {
-
-        phaseWork.G =
-                phase.G(T, P, y);
-
-        phaseWork.gy =
-                phase.dG_dy(T, P, y);
-
-        phaseWork.gyy =
-                phase.d2G_dy2(T, P, y);
-
-        phaseWork.mA =
-                phase.moles(y);
-
-        phaseWork.dMdY =
-                phase.dMoles_dy();
-    }
 
     /**
      * Evaluate one PhaseWork object from its current constitution.
@@ -2143,11 +1515,8 @@ public class EquilibriumSolverV2 {
              k < stablePhases.length;
              k++) {
 
-            int p =
-                    stablePhases[k];
-
             PhaseWork work =
-                    phaseWorks.get(p);
+                    stableSlots.get(k);
 
             double omega =
                     phaseAmounts[k];
@@ -2206,216 +1575,6 @@ public class EquilibriumSolverV2 {
         }
     }
 
-    /**
-     * Performs the generic single-phase constrained Newton iteration.
-     *
-     * This is the first real equilibrium kernel of the new solver.
-     *
-     * It is intentionally limited to one phase.  Phase selection and the
-     * Sundman global equilibrium matrix will be added later.
-     *
-     * <p>Uses {@link #phaseWork}'s existing {@code gamma} field for the
-     * per-sublattice Lagrange multipliers (the same role referred to as
-     * "lambda" in the KKT formulation), rather than introducing a second,
-     * differently-named field alongside it.
-     */
-    private boolean solveSinglePhaseNewton(
-            CefGibbs phase,
-            double[] targetM) {
-
-        int nip =
-                phase.numSiteVars();
-
-        int nc =
-                targetAmounts.length;
-
-        int ns =
-                phase.numSublattices();
-
-        /*
-         * Start with zero Lagrange multipliers.
-         */
-        phaseWork.mu =
-                new double[nc];
-
-        phaseWork.gamma =
-                new double[ns];
-
-        for (int iter = 0;
-             iter < MAX_INTERNAL_ITER;
-             iter++) {
-
-            evaluateSinglePhaseState(
-                    phase,
-                    phaseWork.y);
-
-            double[] residual =
-                    buildSinglePhaseResidual(
-                            phase,
-                            targetM);
-
-            double norm =
-                    vectorNorm(residual);
-
-            if (norm < SOLVER_TOL) {
-
-                lastResidual = norm;
-
-                return true;
-            }
-
-            double[][] A =
-                    buildSinglePhaseKktMatrix(
-                            phase);
-
-            double[] rhs =
-                    negate(residual);
-
-            double[] delta =
-                    solveLinearSystem(
-                            A,
-                            rhs);
-
-            /*
-             * Partition correction.
-             */
-            double[] dy =
-                    Arrays.copyOfRange(
-                            delta,
-                            0,
-                            nip);
-
-            double[] dmu =
-                    Arrays.copyOfRange(
-                            delta,
-                            nip,
-                            nip + nc);
-
-            double[] dgamma =
-                    Arrays.copyOfRange(
-                            delta,
-                            nip + nc,
-                            nip + nc + ns);
-
-            /*
-             * Backtracking keeps every CEF site fraction physical.
-             */
-            double alpha = 1.0;
-
-            double[] trialY =
-                    new double[nip];
-
-            boolean accepted = false;
-
-            for (int ls = 0;
-                 ls < 25;
-                 ls++) {
-
-                for (int i = 0; i < nip; i++) {
-
-                    trialY[i] =
-                            phaseWork.y[i]
-                            + alpha * dy[i];
-                }
-
-                if (!phase.isValid(trialY)) {
-
-                    alpha *= 0.5;
-                    continue;
-                }
-
-                /*
-                 * Evaluate trial residual.
-                 */
-                double[] oldY =
-                        phaseWork.y;
-
-                double[] oldMu =
-                        phaseWork.mu;
-
-                double[] oldGamma =
-                        phaseWork.gamma;
-
-                phaseWork.y =
-                        trialY.clone();
-
-                phaseWork.mu =
-                        addScaled(
-                                oldMu,
-                                dmu,
-                                alpha);
-
-                phaseWork.gamma =
-                        addScaled(
-                                oldGamma,
-                                dgamma,
-                                alpha);
-
-                evaluateSinglePhaseState(
-                        phase,
-                        phaseWork.y);
-
-                double trialNorm =
-                        vectorNorm(
-                                buildSinglePhaseResidual(
-                                        phase,
-                                        targetM));
-
-                phaseWork.y =
-                        oldY;
-
-                phaseWork.mu =
-                        oldMu;
-
-                phaseWork.gamma =
-                        oldGamma;
-
-                if (trialNorm < norm) {
-
-                    accepted = true;
-
-                    for (int i = 0;
-                         i < nip;
-                         i++) {
-
-                        phaseWork.y[i] =
-                                trialY[i];
-                    }
-
-                    for (int a = 0;
-                         a < nc;
-                         a++) {
-
-                        phaseWork.mu[a] +=
-                                alpha * dmu[a];
-                    }
-
-                    for (int s = 0;
-                         s < ns;
-                         s++) {
-
-                        phaseWork.gamma[s] +=
-                                alpha * dgamma[s];
-                    }
-
-                    lastResidual =
-                            trialNorm;
-
-                    lastStep =
-                            alpha * vectorNorm(dy);
-
-                    break;
-                }
-
-                alpha *= 0.5;
-            }
-
-            if (!accepted)
-                return false;
-        }
-
-        return false;
-    }
 
     // ================================================================
     // Numerical helpers
@@ -2596,11 +1755,20 @@ public class EquilibriumSolverV2 {
         }
 
         /*
-         * Restore phase 0 alias.
+         * Each stable slot needs its OWN equilData evaluated at its OWN
+         * y -- the candidate-indexed pass above cannot serve two stable
+         * slots that share one candidate (a miscibility gap), since each
+         * candidate has only one PhaseWork in phaseWorks.
          */
-        if (!phaseWorks.isEmpty()) {
-            phaseWork =
-                    phaseWorks.get(0);
+        if (stableSlots != null) {
+
+            for (PhaseWork work : stableSlots) {
+
+                work.equilData =
+                        PhaseMatrixAssembler.compute(
+                                work.model, T, P, work.y, 0.0, 0.0,
+                                new double[nc]);
+            }
         }
     }
 
@@ -2736,8 +1904,8 @@ public class EquilibriumSolverV2 {
      */
     private void buildEquilibriumMatrix() {
 
-        if (phaseWorks == null
-                || phaseWorks.isEmpty()) {
+        if (stableSlots == null
+                || stableSlots.isEmpty()) {
 
             throw new IllegalStateException(
                     "Phase-indexed state has not been initialized.");
@@ -2788,7 +1956,7 @@ public class EquilibriumSolverV2 {
                     stablePhases[k];
 
             if (phaseIndex < 0
-                    || phaseIndex >= phaseWorks.size()) {
+                    || phaseIndex >= phaseModels.size()) {
 
                 throw new IllegalStateException(
                         "Invalid stable phase index "
@@ -2796,7 +1964,7 @@ public class EquilibriumSolverV2 {
             }
 
             PhaseWork work =
-                    phaseWorks.get(phaseIndex);
+                    stableSlots.get(k);
 
             if (work == null
                     || work.model == null) {
@@ -2862,7 +2030,7 @@ public class EquilibriumSolverV2 {
         for (int k = 0; k < np; k++) {
 
             PhaseWork work =
-                    phaseWorks.get(stablePhases[k]);
+                    stableSlots.get(k);
 
             phaseData[k] =
                     work.equilData;
@@ -3247,7 +2415,7 @@ public class EquilibriumSolverV2 {
                     stablePhases[k];
 
             PhaseWork work =
-                    phaseWorks.get(phaseIndex);
+                    stableSlots.get(k);
 
             System.out.printf(
                     "  phase %d (%s): DeltaOmega = %.15e%n",
@@ -3320,8 +2488,8 @@ public class EquilibriumSolverV2 {
      */
     private void calculateInternalCorrections() {
 
-        if (phaseWorks == null
-                || phaseWorks.isEmpty()) {
+        if (stableSlots == null
+                || stableSlots.isEmpty()) {
 
             throw new IllegalStateException(
                     "Phase-indexed state has not been initialized.");
@@ -3383,7 +2551,7 @@ public class EquilibriumSolverV2 {
                     stablePhases[k];
 
             if (phaseIndex < 0
-                    || phaseIndex >= phaseWorks.size()) {
+                    || phaseIndex >= phaseModels.size()) {
 
                 throw new IllegalStateException(
                         "Invalid stable phase index "
@@ -3393,7 +2561,7 @@ public class EquilibriumSolverV2 {
             }
 
             PhaseWork work =
-                    phaseWorks.get(phaseIndex);
+                    stableSlots.get(k);
 
             if (work == null
                     || work.model == null) {
@@ -3547,98 +2715,6 @@ public class EquilibriumSolverV2 {
     }
 
     /**
-     * Recompute the sublattice Lagrange multipliers gamma for the
-     * current accepted constitution and accepted chemical potentials.
-     *
-     * The stationarity equation is
-     *
-     *     G_Y - J_M^T * mu - C^T * gamma = 0.
-     *
-     * For each sublattice the corresponding row of C contains ones,
-     * therefore gamma_s is simply the common value of
-     *
-     *     G_i - sum_A (dM_A/dY_i) * mu_A
-     *
-     * over all constituents i belonging to sublattice s.
-     *
-     * At a converged state all values within a sublattice should agree
-     * to numerical precision.
-     */
-    private void recomputeSublatticeMultipliers() {
-
-        if (phaseWork == null) {
-            throw new IllegalStateException(
-                    "Phase state is not available.");
-        }
-
-        if (phaseWork.mu == null) {
-            throw new IllegalStateException(
-                    "Chemical potentials are not available.");
-        }
-
-        int nip =
-                phaseWork.model
-                        .numSiteVars();
-
-        int nc =
-                targetAmounts.length;
-
-        int ns =
-                phaseWork.model
-                        .numSublattices();
-
-        int[] offsets =
-                phaseWork.model
-                        .offsets();
-
-        int[] nconst =
-                phaseWork.model
-                        .constituentsPerSublattice();
-
-        double[] gamma =
-                new double[ns];
-
-        for (int s = 0; s < ns; s++) {
-
-            int begin =
-                    offsets[s];
-
-            int end =
-                    begin + nconst[s];
-
-            double sum = 0.0;
-
-            int count = 0;
-
-            for (int i = begin;
-                 i < end;
-                 i++) {
-
-                double value =
-                        phaseWork.gy[i];
-
-                for (int A = 0;
-                     A < nc;
-                     A++) {
-
-                    value -=
-                            phaseWork.dMdY[A][i]
-                            * phaseWork.mu[A];
-                }
-
-                sum += value;
-                count++;
-            }
-
-            gamma[s] =
-                    sum / count;
-        }
-
-        phaseWork.gamma =
-                gamma.clone();
-    }
-
-    /**
      * Recompute the sublattice Lagrange multipliers for one PhaseWork.
      *
      * Stationarity:
@@ -3778,8 +2854,8 @@ public class EquilibriumSolverV2 {
      */
     private void updateState() {
 
-        if (phaseWorks == null
-                || phaseWorks.isEmpty()) {
+        if (stableSlots == null
+                || stableSlots.isEmpty()) {
 
             throw new IllegalStateException(
                     "Phase-indexed state has not been initialized.");
@@ -3839,11 +2915,8 @@ public class EquilibriumSolverV2 {
              k < np;
              k++) {
 
-            int p =
-                    stablePhases[k];
-
             PhaseWork work =
-                    phaseWorks.get(p);
+                    stableSlots.get(k);
 
             previousPhaseG[k] =
                     work.G;
@@ -3977,11 +3050,8 @@ public class EquilibriumSolverV2 {
 
         for (int k = 0; k < np; k++) {
 
-            int phaseIndex =
-                    stablePhases[k];
-
             PhaseWork work =
-                    phaseWorks.get(phaseIndex);
+                    stableSlots.get(k);
 
             double[] dy =
                     deltaPhaseInternalVars[k];
@@ -4081,8 +3151,7 @@ public class EquilibriumSolverV2 {
                     stablePhases[k];
 
             PhaseWork work =
-                    phaseWorks.get(
-                            phaseIndex);
+                    stableSlots.get(k);
 
             // ------------------------------------------------------------
             // Constitution and phase amount
@@ -4093,6 +3162,13 @@ public class EquilibriumSolverV2 {
             phaseAmounts[k] =
                     trialOmega[k];
 
+            /*
+             * Candidate-indexed diagnostic/seed array -- when a candidate
+             * has multiple stable slots (a miscibility gap), this reflects
+             * only the LAST slot processed for that candidate. Acceptable:
+             * phaseInternalVars is not read anywhere in the equilibrium
+             * math, only as a rough per-candidate seed/diagnostic.
+             */
             phaseInternalVars[phaseIndex] =
                     work.y.clone();
 
@@ -4136,15 +3212,6 @@ public class EquilibriumSolverV2 {
         lastStep =
                 maxDY;
 
-        /*
-         * Keep the phase-0 compatibility alias.
-         */
-        if (!phaseWorks.isEmpty()) {
-
-            phaseWork =
-                    phaseWorks.get(0);
-        }
-
         // ================================================================
         // 4. Diagnostics
         // ================================================================
@@ -4163,12 +3230,8 @@ public class EquilibriumSolverV2 {
              k < np;
              k++) {
 
-            int phaseIndex =
-                    stablePhases[k];
-
             PhaseWork work =
-                    phaseWorks.get(
-                            phaseIndex);
+                    stableSlots.get(k);
 
             System.out.printf(
                     "phase slot %d (%s)%n",
@@ -4265,7 +3328,7 @@ public class EquilibriumSolverV2 {
              k++) {
 
             PhaseWork work =
-                    phaseWorks.get(stablePhases[k]);
+                    stableSlots.get(k);
 
             dMPerPhase[k] =
                     PhaseMatrixAssembler.compute(
@@ -4406,11 +3469,8 @@ public class EquilibriumSolverV2 {
              k < np;
              k++) {
 
-            int p =
-                    stablePhases[k];
-
             PhaseWork work =
-                    phaseWorks.get(p);
+                    stableSlots.get(k);
 
             // ----------------------------------------------------------
             // Finite thermodynamic quantities
@@ -4767,11 +3827,19 @@ public class EquilibriumSolverV2 {
      * instead -- see that method for its (intentionally more limited)
      * scope.
      */
+    /**
+     * Validates the current stable-phase state (finiteness, physical
+     * site fractions, mass balance, sublattice normalization,
+     * stationarity). Always delegates to {@link #validateMultiphaseUpdate()},
+     * which is written generically over np = stablePhases.length and
+     * handles np == 1 correctly -- the previous np == 1 special case here
+     * (built around the phaseWork singular alias, which only worked when
+     * the sole stable phase happened to be candidate 0) has been retired.
+     */
     private void validateState() {
 
-        if (phaseWork == null
-                && (phaseWorks == null
-                    || phaseWorks.isEmpty())) {
+        if (stableSlots == null
+                || stableSlots.isEmpty()) {
 
             throw new IllegalStateException(
                     "Phase state is not available.");
@@ -4790,268 +3858,7 @@ public class EquilibriumSolverV2 {
                     "No stable phases are available.");
         }
 
-        /*
-         * The V2 solver now supports a prescribed multiphase stable set.
-         *
-         * Use the multiphase validator whenever more than one stable
-         * phase is present. The existing one-phase validation below
-         * remains unchanged.
-         */
-        if (stablePhases.length > 1) {
-
-            validateMultiphaseUpdate();
-
-            return;
-        }
-
-        if (phaseAmounts.length != 1) {
-
-            throw new IllegalStateException(
-                    "Single-phase validation requires exactly one "
-                    + "phase amount.");
-        }
-
-        if (stablePhases[0] != 0) {
-
-            throw new IllegalStateException(
-                    "Current validation supports one stable phase only.");
-        }
-
-        // ------------------------------------------------------------
-        // 1. Basic finiteness
-        // ------------------------------------------------------------
-
-        checkFinite(
-                "phase Gibbs energy",
-                phaseWork.G);
-
-        if (phaseWork.y == null) {
-            throw new IllegalStateException(
-                    "Phase constitution is null.");
-        }
-
-        if (!phaseWork.model.isValid(phaseWork.y)) {
-            throw new IllegalStateException(
-                    "CEF phase constitution is physically invalid: "
-                    + Arrays.toString(phaseWork.y));
-        }
-
-        for (int i = 0;
-             i < phaseWork.y.length;
-             i++) {
-
-            checkFinite(
-                    "Y[" + i + "]",
-                    phaseWork.y[i]);
-
-            if (phaseWork.y[i] < -1.0e-12
-                    || phaseWork.y[i] > 1.0 + 1.0e-12) {
-
-                throw new IllegalStateException(
-                        "Unphysical site fraction Y[" + i + "] = "
-                                + phaseWork.y[i]);
-            }
-        }
-
-        if (phaseWork.mA == null
-                || phaseWork.dMdY == null
-                || phaseWork.gy == null
-                || phaseWork.gyy == null) {
-
-            throw new IllegalStateException(
-                    "Incomplete phase thermodynamic state.");
-        }
-
-        // ------------------------------------------------------------
-        // 2. Phase amount
-        // ------------------------------------------------------------
-
-        double omega =
-                phaseAmounts[0];
-
-        checkFinite(
-                "phase amount",
-                omega);
-
-        if (omega <= 0.0) {
-            throw new IllegalStateException(
-                    "Stable phase has non-positive amount: "
-                            + omega);
-        }
-
-        // ------------------------------------------------------------
-        // 3. Sublattice normalization
-        // ------------------------------------------------------------
-
-        int[] offsets =
-                phaseWork.model.offsets();
-
-        int[] nconst =
-                phaseWork.model
-                        .constituentsPerSublattice();
-
-        double maxConstraintResidual =
-                0.0;
-
-        for (int s = 0;
-             s < nconst.length;
-             s++) {
-
-            double sum = 0.0;
-
-            for (int i = 0;
-                 i < nconst[s];
-                 i++) {
-
-                sum +=
-                        phaseWork.y[
-                                offsets[s] + i];
-            }
-
-            double residual =
-                    sum - 1.0;
-
-            maxConstraintResidual =
-                    Math.max(
-                            maxConstraintResidual,
-                            Math.abs(residual));
-
-            if (Math.abs(residual) > 1.0e-10) {
-
-                throw new IllegalStateException(
-                        "Sublattice "
-                                + (s + 1)
-                                + " normalization residual = "
-                                + residual);
-            }
-        }
-
-        // ------------------------------------------------------------
-        // 4. Element mass balance
-        //
-        //     N_A(target) = omega * M_A
-        // ------------------------------------------------------------
-
-        if (targetAmounts.length != phaseWork.mA.length) {
-
-            throw new IllegalStateException(
-                    "Target amount/component dimension mismatch.");
-        }
-
-        double maxMassResidual =
-                0.0;
-
-        for (int A = 0;
-             A < targetAmounts.length;
-             A++) {
-
-            double residual =
-                    targetAmounts[A]
-                    - omega * phaseWork.mA[A];
-
-            maxMassResidual =
-                    Math.max(
-                            maxMassResidual,
-                            Math.abs(residual));
-
-            checkFinite(
-                    "mass-balance residual[" + A + "]",
-                    residual);
-
-            if (Math.abs(residual) > 1.0e-9) {
-
-                throw new IllegalStateException(
-                        "Element mass balance failed for component "
-                                + A
-                                + ": residual = "
-                                + residual);
-            }
-        }
-
-        // ------------------------------------------------------------
-        // 5. Phase equilibrium relation
-        //
-        //     G_M = sum_A M_A * mu_A
-        // ------------------------------------------------------------
-
-        if (phaseWork.mu == null
-                || phaseWork.mu.length != targetAmounts.length) {
-
-            throw new IllegalStateException(
-                    "Chemical-potential vector is unavailable.");
-        }
-
-        double phaseChemicalPotentialSum =
-                0.0;
-
-        for (int A = 0;
-             A < targetAmounts.length;
-             A++) {
-
-            checkFinite(
-                    "mu[" + A + "]",
-                    phaseWork.mu[A]);
-
-            phaseChemicalPotentialSum +=
-                    phaseWork.mA[A]
-                    * phaseWork.mu[A];
-        }
-
-        double phaseEquilibriumResidual =
-                phaseWork.G
-                - phaseChemicalPotentialSum;
-
-        checkFinite(
-                "phase-equilibrium residual",
-                phaseEquilibriumResidual);
-
-        // ------------------------------------------------------------
-        // 6. Stationarity
-        //
-        //     G_Y - J_M^T mu - C^T gamma = 0
-        // ------------------------------------------------------------
-
-        double stationarityResidual =
-                singlePhaseStationarityNorm();
-
-        checkFinite(
-                "stationarity residual",
-                stationarityResidual);
-
-        // ------------------------------------------------------------
-        // 7. Store useful residual information
-        // ------------------------------------------------------------
-
-        lastResidual =
-                Math.max(
-                        Math.max(
-                                maxMassResidual,
-                                Math.abs(
-                                        phaseEquilibriumResidual)),
-                        Math.max(
-                                maxConstraintResidual,
-                                stationarityResidual));
-
-        System.out.println();
-        System.out.println(
-                "State validation");
-        System.out.println(
-                "----------------");
-        System.out.printf(
-                "max mass-balance residual = %.6e%n",
-                maxMassResidual);
-        System.out.printf(
-                "phase-equilibrium residual = %.6e%n",
-                Math.abs(phaseEquilibriumResidual));
-        System.out.printf(
-                "sublattice residual = %.6e%n",
-                maxConstraintResidual);
-        System.out.printf(
-                "stationarity residual = %.6e%n",
-                stationarityResidual);
-        System.out.printf(
-                "overall state residual = %.6e%n",
-                lastResidual);
+        validateMultiphaseUpdate();
     }
 
     /*
@@ -5101,8 +3908,8 @@ public class EquilibriumSolverV2 {
      */
     private boolean checkConvergence() {
 
-        if (phaseWorks == null
-                || phaseWorks.isEmpty()) {
+        if (stableSlots == null
+                || stableSlots.isEmpty()) {
             return false;
         }
 
@@ -5156,11 +3963,8 @@ public class EquilibriumSolverV2 {
              k < np;
              k++) {
 
-            int p =
-                    stablePhases[k];
-
             PhaseWork work =
-                    phaseWorks.get(p);
+                    stableSlots.get(k);
 
             // ----------------------------------------------------------
             // Sublattice normalization
@@ -5270,11 +4074,8 @@ public class EquilibriumSolverV2 {
                  k < np;
                  k++) {
 
-                int p =
-                        stablePhases[k];
-
                 PhaseWork work =
-                        phaseWorks.get(p);
+                        stableSlots.get(k);
 
                 represented +=
                         phaseAmounts[k]
