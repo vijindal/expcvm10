@@ -9,8 +9,9 @@ import java.util.ArrayList;
  * <p>This codebase standardizes on Sundman's CEF/Algorithm-A notation
  * (2015 Comput. Mater. Sci. 101; 2021 Calphad 75): the phase's Gibbs
  * energy and its derivatives are evaluated directly in site-fraction
- * space, {@code G(T,y)}, {@code dG_dy(T,y)}, {@code d2G_dy2(T,y)}, etc.
- * The earlier composition-facing (x-facing) surface
+ * space, {@code G(T,P,y)}, {@code dG_dy(T,P,y)}, {@code d2G_dy2(T,P,y)},
+ * etc. -- Sundman's {@code G_M(T,P,Y)}. The earlier composition-facing
+ * (x-facing) surface
  * ({@code evaluateG(x,T)}/{@code gradient(x,T)}/{@code hessian(x,T)} and
  * related G0/derivative-cache machinery, used by the retired
  * mole-fraction {@code EquilibriumSolver}) has been removed; the sole
@@ -33,6 +34,12 @@ public abstract class GibbsEnergyModel {
     // ══════════════════════════════════════════════════════════════════
     // State Variables (Concrete Storage)
     // ══════════════════════════════════════════════════════════════════
+    //
+    // T, P and y are also passed explicitly to every method in the
+    // Site-Fraction Thermodynamics block below (Sundman's G_M(T,P,Y)) --
+    // these fields are scratch storage for callers that want to hold a
+    // "current state" (e.g. printPhaseInfo()), never read implicitly by
+    // G/dG_dy/d2G_dy2/etc. themselves.
 
     protected double T;
     protected double P;
@@ -92,37 +99,65 @@ public abstract class GibbsEnergyModel {
     //
     // The direct, stateless, site-fraction-space contract used by the
     // Sundman-algorithm equilibrium solver (EquilibriumSolverV2) -- see
-    // Sundman 2015 §2.2-2.3 / 2021 §2.2, Eq. (4): G_M(T,P,y).
+    // Sundman 2015 §2.2-2.3 / 2021 §2.2, Eq. (4): G_M(T,P,y). T, P and y
+    // are always explicit arguments here, never read from the scratch
+    // fields above -- this mirrors pycalphad's explicit v.T/v.P symbolic
+    // dependence and avoids the "silently reinterpreted via instance
+    // state" hazard the retired x-facing evaluateG(x,T) had.
     // ══════════════════════════════════════════════════════════════════
 
     /**
-     * Molar Gibbs energy G(Y) at fixed T, evaluated directly in
-     * site-fraction space.
+     * Molar Gibbs energy G(T,P,Y), evaluated directly in site-fraction
+     * space.
      *
      * @param T temperature in Kelvin
+     * @param P pressure in Pa
      * @param y site-fraction / internal-variable vector, length
      *          {@link #numSiteVars()}
      * @return G in J/mol
      */
-    public abstract double G(double T, double[] y);
+    public abstract double G(double T, double P, double[] y);
 
     /**
-     * Gradient dG/dy at fixed T, in site-fraction space.
+     * Gradient dG/dy at fixed T, P, in site-fraction space.
      *
      * @param T temperature in Kelvin
+     * @param P pressure in Pa
      * @param y site-fraction vector
      * @return dG/dy, length {@link #numSiteVars()}
      */
-    public abstract double[] dG_dy(double T, double[] y);
+    public abstract double[] dG_dy(double T, double P, double[] y);
 
     /**
-     * Hessian d2G/dy2 at fixed T, in site-fraction space.
+     * Hessian d2G/dy2 at fixed T, P, in site-fraction space.
      *
      * @param T temperature in Kelvin
+     * @param P pressure in Pa
      * @param y site-fraction vector
      * @return d2G/dy2, {@link #numSiteVars()} x {@link #numSiteVars()}
      */
-    public abstract double[][] d2G_dy2(double T, double[] y);
+    public abstract double[][] d2G_dy2(double T, double P, double[] y);
+
+    /**
+     * Pressure derivative dG/dP at fixed T, y (Sundman's molar volume
+     * contribution, e.g. TDB {@code V0}/{@code VA} parameters).
+     *
+     * @param T temperature in Kelvin
+     * @param P pressure in Pa
+     * @param y site-fraction vector
+     * @return dG/dP in J/(mol·Pa)
+     */
+    public abstract double dG_dP(double T, double P, double[] y);
+
+    /**
+     * Mixed second derivative d2G/dydP at fixed T, y.
+     *
+     * @param T temperature in Kelvin
+     * @param P pressure in Pa
+     * @param y site-fraction vector
+     * @return d2G/dydP, length {@link #numSiteVars()}
+     */
+    public abstract double[] d2G_dydP(double T, double P, double[] y);
 
     /**
      * Element content M_A(Y): moles of each system component per formula

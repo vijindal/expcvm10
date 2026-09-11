@@ -153,7 +153,7 @@ public class CefBuildTest {
                     y[offset + i] = 1.0 / nc[s];
                 offset += nc[s];
             }
-            double G = m.G(1000.0, y);
+            double G = m.G(1000.0, 101325.0, y);
             System.out.printf("  %-10s G = %14.2f J/mol%n", m.phaseName(), G);
         }
 
@@ -168,7 +168,7 @@ public class CefBuildTest {
             for (double xV : xVals) {
                 double[] x = {xV, 1.0 - xV};
                 double[] y = gm.getInitialInternalVars(x);
-                double G = gm.G(1000.0, y);
+                double G = gm.G(1000.0, 101325.0, y);
                 double[] xBack = gm.compositionFromInternal(y);
                 System.out.printf("  x_V=%.2f -> G=%.2f  y=%s  xBack=[%.3f,%.3f]%n",
                     xV, G,
@@ -220,7 +220,7 @@ public class CefBuildTest {
             sb.append(String.format("%.2f", xV));
             for (var gm : gibbsModels) {
                 double[] y = gm.getInitialInternalVars(xc);
-                double G   = gm.G(1000.0, y);
+                double G   = gm.G(1000.0, 101325.0, y);
                 double nfu = Math.max(gm.nfu(), 1.0);
                 sb.append(String.format(",%.2f", G / nfu));
             }

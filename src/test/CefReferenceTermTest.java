@@ -262,7 +262,7 @@ public class CefReferenceTermTest {
                 y[offs[s] + chosen] = 1.0;
             }
 
-            double se = phase.G(T, y);
+            double se = phase.G(T, 101325.0, y);
             double emG = g.endMember(emIdx).G(T);
             double identityDiff = Math.abs(se - emG);
             if (identityDiff > 1e-6) {

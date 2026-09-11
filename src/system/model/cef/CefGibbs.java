@@ -297,6 +297,23 @@ public class CefGibbs extends GibbsEnergyModel {
     private final CefEndMember[] bmagEndMembers;
     private final List<CefInteractionParam> bmagInteractions;
 
+    /**
+     * {@code V0} (molar volume at the reference pressure) as a CEF
+     * constituent-array quantity, same structure as {@link #tcEndMembers}.
+     * Empty for a phase with no {@code V0} parameters (no volume/pressure
+     * contribution).
+     */
+    private final CefEndMember[] v0EndMembers;
+    private final List<CefInteractionParam> v0Interactions;
+
+    /**
+     * {@code VA} (thermal-expansion polynomial exponent, dimensionless)
+     * as a CEF constituent-array quantity. {@code G_vol = V0(y)*exp(VA(T,y))
+     * * (P - P0)}, following pycalphad's {@code Model.volume_energy}.
+     */
+    private final CefEndMember[] vaEndMembers;
+    private final List<CefInteractionParam> vaInteractions;
+
     /** Phase name, e.g. "FCC_A1". */
     private final String phaseName_value;
 
@@ -352,6 +369,8 @@ public class CefGibbs extends GibbsEnergyModel {
         this(p.siteRatios, p.constituents, p.endMembers, p.interactions,
              p.magnetic, p.tcEndMembers, p.tcInteractions,
              p.bmagEndMembers, p.bmagInteractions,
+             p.v0EndMembers, p.v0Interactions,
+             p.vaEndMembers, p.vaInteractions,
              p.phaseName, new ArrayList<>(p.elements),
              p.constituentNames);
     }
@@ -383,6 +402,10 @@ public class CefGibbs extends GibbsEnergyModel {
              List<CefInteractionParam> tcInteractions,
              CefEndMember[] bmagEndMembers,
              List<CefInteractionParam> bmagInteractions,
+             CefEndMember[] v0EndMembers,
+             List<CefInteractionParam> v0Interactions,
+             CefEndMember[] vaEndMembers,
+             List<CefInteractionParam> vaInteractions,
              String phaseName,
              ArrayList<String> elements,
              ArrayList<ArrayList<String>> constituentNames) {
@@ -478,6 +501,20 @@ public class CefGibbs extends GibbsEnergyModel {
                 bmagEndMembers == null ? new CefEndMember[0] : bmagEndMembers.clone();
         this.bmagInteractions =
                 bmagInteractions == null ? List.of() : List.copyOf(bmagInteractions);
+
+        /*
+         * Volume / pressure (V0, VA) state. Same CEF constituent-array
+         * structure as TC / BMAGN. Empty for a phase with no V0 parameters
+         * (no volume/pressure contribution -- dG_dP == 0).
+         */
+        this.v0EndMembers =
+                v0EndMembers == null ? new CefEndMember[0] : v0EndMembers.clone();
+        this.v0Interactions =
+                v0Interactions == null ? List.of() : List.copyOf(v0Interactions);
+        this.vaEndMembers =
+                vaEndMembers == null ? new CefEndMember[0] : vaEndMembers.clone();
+        this.vaInteractions =
+                vaInteractions == null ? List.of() : List.copyOf(vaInteractions);
 
         /*
          * Composition-facing model state.
@@ -688,10 +725,11 @@ public class CefGibbs extends GibbsEnergyModel {
      * ------------------------------------------------------------------ */
 
     /**
-     * Molar Gibbs energy G(T, y), in J per mole of formula unit
-     * ({@code G = Gref + Gid + Gex}).
+     * Molar Gibbs energy G(T, P, y), in J per mole of formula unit
+     * ({@code G = Gref + Gid + Gex + Gmagn + Gvol}).
      */
-    public double G(double T, double[] y) {
+    @Override
+    public double G(double T, double P, double[] y) {
 
         if (!Double.isFinite(T) || T <= 0.0)
             throw new IllegalArgumentException(
@@ -700,7 +738,7 @@ public class CefGibbs extends GibbsEnergyModel {
         checkY(y);
 
         return referenceEnergy(T, y) + idealEnergy(T, y) + excessEnergy(T, y)
-                + magneticEnergy(T, y);
+                + magneticEnergy(T, y) + volumeEnergy(T, P, y);
     }
 
     /**
@@ -729,6 +767,16 @@ public class CefGibbs extends GibbsEnergyModel {
     public double Gex(double T, double[] y) {
         checkY(y);
         return excessEnergy(T, y);
+    }
+
+    /**
+     * The volume/pressure contribution alone, {@code Gvol = V0(y)*
+     * exp(VA(T,y))*(P-101325)}, in J per mole of formula unit; 0 if this
+     * phase has no {@code V0} parameters.
+     */
+    public double Gvol(double T, double P, double[] y) {
+        checkY(y);
+        return volumeEnergy(T, P, y);
     }
 
 
@@ -970,7 +1018,8 @@ public class CefGibbs extends GibbsEnergyModel {
     /**
      * Analytical gradient of G with respect to the flattened site fractions.
      */
-    public double[] dG_dy(double T, double[] y) {
+    @Override
+    public double[] dG_dy(double T, double P, double[] y) {
 
         if (!Double.isFinite(T) || T <= 0.0)
             throw new IllegalArgumentException(
@@ -988,6 +1037,11 @@ public class CefGibbs extends GibbsEnergyModel {
         if (magn != null)
             for (int k = 0; k < g.length; k++)
                 g[k] += magn.grad[k];
+
+        AD2 vol = volumeEnergyAD(T, P, y);
+        if (vol != null)
+            for (int k = 0; k < g.length; k++)
+                g[k] += vol.grad[k];
 
         return g;
     }
@@ -1172,7 +1226,8 @@ public class CefGibbs extends GibbsEnergyModel {
      * <p>As for the gradient, this method requires strictly positive site
      * fractions because the ideal entropy Hessian contains 1/y.</p>
      */
-    public double[][] d2G_dy2(double T, double[] y) {
+    @Override
+    public double[][] d2G_dy2(double T, double P, double[] y) {
 
         if (!Double.isFinite(T) || T <= 0.0)
             throw new IllegalArgumentException(
@@ -1192,6 +1247,12 @@ public class CefGibbs extends GibbsEnergyModel {
             for (int i = 0; i < n; i++)
                 for (int j = 0; j < n; j++)
                     H[i][j] += magn.hess[i][j];
+
+        AD2 vol = volumeEnergyAD(T, P, y);
+        if (vol != null)
+            for (int i = 0; i < n; i++)
+                for (int j = 0; j < n; j++)
+                    H[i][j] += vol.hess[i][j];
 
         return H;
     }
@@ -1338,9 +1399,20 @@ public class CefGibbs extends GibbsEnergyModel {
      * ------------------------------------------------------------------ */
 
     /**
-     * Temperature derivative of G at fixed site fractions.
+     * Temperature derivative of G at fixed site fractions, at the
+     * reference pressure P0 = 101325 Pa (i.e. excludes the volume
+     * contribution's T-derivative; see {@link #dG_dT(double, double, double[])}
+     * for the pressure-aware form).
      */
     public double dG_dT(double T, double[] y) {
+        return dG_dT(T, P_REF, y);
+    }
+
+    /**
+     * Temperature derivative of G at fixed pressure and site fractions,
+     * including the volume contribution's T-derivative.
+     */
+    public double dG_dT(double T, double P, double[] y) {
 
         if (!Double.isFinite(T) || T <= 0.0)
             throw new IllegalArgumentException(
@@ -1401,14 +1473,31 @@ public class CefGibbs extends GibbsEnergyModel {
          */
         dGdT += magneticDGDT(T, y);
 
+        /*
+         * Volume contribution.
+         */
+        dGdT += volumeDGDT(T, P, y);
+
         return dGdT;
     }
 
 
     /**
-     * Temperature derivative of the composition gradient.
+     * Temperature derivative of the composition gradient, at the
+     * reference pressure P0 = 101325 Pa (i.e. excludes the volume
+     * contribution's mixed derivative; see
+     * {@link #d2G_dydT(double, double, double[])} for the pressure-aware
+     * form).
      */
     public double[] d2G_dydT(double T, double[] y) {
+        return d2G_dydT(T, P_REF, y);
+    }
+
+    /**
+     * Temperature derivative of the composition gradient at fixed
+     * pressure, including the volume contribution's mixed derivative.
+     */
+    public double[] d2G_dydT(double T, double P, double[] y) {
 
         if (!Double.isFinite(T) || T <= 0.0)
             throw new IllegalArgumentException(
@@ -1470,6 +1559,13 @@ public class CefGibbs extends GibbsEnergyModel {
         double[] magnDT = magneticGradientDT(T, y);
         for (int k = 0; k < n; k++)
             result[k] += magnDT[k];
+
+        /*
+         * Volume contribution.
+         */
+        double[] volDT = volumeGradientDT(T, P, y);
+        for (int k = 0; k < n; k++)
+            result[k] += volDT[k];
 
         return result;
     }
@@ -1655,6 +1751,27 @@ public class CefGibbs extends GibbsEnergyModel {
         }
         return copy;
     }
+
+    /**
+     * dG/dP = V0(y)*exp(VA(T,y)), the molar volume at (T,y); 0 if this
+     * phase has no {@code V0} parameters.
+     */
+    @Override
+    public double dG_dP(double T, double P, double[] y) {
+        checkY(y);
+        return volumeDGDP(T, y);
+    }
+
+    /**
+     * d2G/dydP = dV0/dy (at fixed T); zero vector if this phase has no
+     * {@code V0} parameters.
+     */
+    @Override
+    public double[] d2G_dydP(double T, double P, double[] y) {
+        checkPositiveY(y);
+        return volumeGradientDP(T, y);
+    }
+
     /**
      * Element content:
      *
@@ -2109,11 +2226,11 @@ public class CefGibbs extends GibbsEnergyModel {
         int nc = elementNames_value.size();
 
         // Step 1: evaluate G and all derivatives
-        double G = this.G(T, y);
-        double[] Gx = this.dG_dy(T, y);
-        double[][] Gxx = this.d2G_dy2(T, y);
-        double[] GxT = this.d2G_dydT(T, y);
-        double[] GxP = new double[nip];  // no P-dependence
+        double G = this.G(T, P, y);
+        double[] Gx = this.dG_dy(T, P, y);
+        double[][] Gxx = this.d2G_dy2(T, P, y);
+        double[] GxT = this.d2G_dydT(T, P, y);
+        double[] GxP = this.d2G_dydP(T, P, y);
 
         // Step 2: assemble phase matrix M (nip+ns)×(nip+ns), with one
         // Lagrange-multiplier row/column per sublattice s, enforcing
@@ -2241,9 +2358,10 @@ public class CefGibbs extends GibbsEnergyModel {
             LOG.fine("(no site fractions set)");
             return;
         }
-        LOG.fine("G=" + G(T, y));
+        LOG.fine("G=" + G(T, P, y));
         LOG.fine("dG/dT=" + dG_dT(T, y));
-        LOG.fine("dG/dy=" + java.util.Arrays.toString(dG_dy(T, y)));
+        LOG.fine("dG/dP=" + dG_dP(T, P, y));
+        LOG.fine("dG/dy=" + java.util.Arrays.toString(dG_dy(T, P, y)));
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -2723,6 +2841,132 @@ public class CefGibbs extends GibbsEnergyModel {
         return -dds / A;
     }
 
+    /* ------------------------------------------------------------------
+     * Volume / pressure contribution
+     *
+     * Follows pycalphad's Model.volume_energy. V0 and VA are CEF
+     * constituent-array quantities (magneticFieldAD/magneticFieldValue
+     * sum them exactly like TC/BMAGN):
+     *
+     *   V_p0(T,y) = V0(y) * exp(VA(T,y))
+     *   G_vol     = V_p0(T,y) * (P - P0),   P0 = 101325 Pa
+     *
+     * V_p0 is linear in (P - P0), so unlike the magnetic term every
+     * derivative here is closed-form with no branch/AD2 composition
+     * needed beyond what magneticFieldAD already provides:
+     *
+     *   dG_vol/dy   = dV_p0/dy * (P - P0)
+     *   d2G_vol/dy2 = d2V_p0/dy2 * (P - P0)
+     *   dG_vol/dP   = V_p0(T,y)
+     *   d2G_vol/dydP = dV_p0/dy
+     *   dG_vol/dT   = dV_p0/dT * (P - P0)
+     *   d2G_vol/dydT = d2V_p0/dydT * (P - P0)
+     *
+     * VK (isothermal compressibility) is rejected in extract() -- as in
+     * pycalphad, its pressure dependence is not implemented.
+     *
+     * pycalphad divides by _site_ratio_normalization to get J/mol-atom;
+     * this class works in J/mol-formula-unit throughout, so no division
+     * is applied here (consistent with G_ref/G_id/G_ex and the magnetic
+     * term above).
+     * ------------------------------------------------------------------ */
+
+    /** Reference pressure P0 in the TDB V0/(P-P0) convention. */
+    private static final double P_REF = 101325.0;
+
+    /** True if this phase has a volume/pressure contribution (V0 present). */
+    private boolean hasVolume() {
+        return v0EndMembers.length > 0
+                && (anyNonNull(v0EndMembers) || !v0Interactions.isEmpty());
+    }
+
+    private static boolean anyNonNull(CefEndMember[] arr) {
+        for (CefEndMember em : arr) if (em != null) return true;
+        return false;
+    }
+
+    /**
+     * V_p0(T,y) = V0(y) * exp(VA(T,y)), as an AD2 in y.
+     */
+    private AD2 molarVolumeAD(double T, double[] y) {
+        AD2 v0 = magneticFieldAD(v0EndMembers, v0Interactions, T, y);
+        if (vaEndMembers.length == 0 && vaInteractions.isEmpty())
+            return v0;
+        AD2 va = magneticFieldAD(vaEndMembers, vaInteractions, T, y);
+        AD2 expVa = va.compose(Math.exp(va.value), Math.exp(va.value), Math.exp(va.value));
+        return v0.multiply(expVa);
+    }
+
+    /** Value-only V_p0(T,y). */
+    private double molarVolumeValue(double T, double[] y) {
+        double v0 = magneticFieldValue(v0EndMembers, v0Interactions, T, y);
+        if (vaEndMembers.length == 0 && vaInteractions.isEmpty())
+            return v0;
+        double va = magneticFieldValue(vaEndMembers, vaInteractions, T, y);
+        return v0 * Math.exp(va);
+    }
+
+    /** Value-only volume Gibbs energy contribution G_vol(T,P,y); 0 if none. */
+    private double volumeEnergy(double T, double P, double[] y) {
+        if (!hasVolume())
+            return 0.0;
+        return molarVolumeValue(T, y) * (P - P_REF);
+    }
+
+    /** AD2 (in y) of the volume Gibbs energy contribution; null if none. */
+    private AD2 volumeEnergyAD(double T, double P, double[] y) {
+        if (!hasVolume())
+            return null;
+        return molarVolumeAD(T, y).scale(P - P_REF);
+    }
+
+    /** dG_vol/dP = V_p0(T,y); 0 if no volume contribution. */
+    private double volumeDGDP(double T, double[] y) {
+        if (!hasVolume())
+            return 0.0;
+        return molarVolumeValue(T, y);
+    }
+
+    /** d2G_vol/dydP = dV_p0/dy; zero vector if no volume contribution. */
+    private double[] volumeGradientDP(double T, double[] y) {
+        int n = y.length;
+        if (!hasVolume())
+            return new double[n];
+        return molarVolumeAD(T, y).grad.clone();
+    }
+
+    /**
+     * dG_vol/dT = dV_p0/dT * (P - P0). V0/VA polynomials are generally
+     * T-dependent (VA especially), so unlike the magnetic block this uses
+     * a central finite difference in T on {@link #molarVolumeValue}
+     * rather than a closed-form dV0/dT -- V0/VA are rarely used with
+     * strongly nonlinear T-dependence, and this keeps the AD2 engine
+     * (which differentiates in y, not T) out of the loop.
+     */
+    private double volumeDGDT(double T, double P, double[] y) {
+        if (!hasVolume())
+            return 0.0;
+        double h = Math.max(1.0e-4 * T, 1.0e-6);
+        double vPlus  = molarVolumeValue(T + h, y);
+        double vMinus = molarVolumeValue(T - h, y);
+        double dVdT = (vPlus - vMinus) / (2.0 * h);
+        return dVdT * (P - P_REF);
+    }
+
+    /** d2G_vol/dydT = d2V_p0/dydT * (P - P0), via the same finite difference in T. */
+    private double[] volumeGradientDT(double T, double P, double[] y) {
+        int n = y.length;
+        if (!hasVolume())
+            return new double[n];
+        double h = Math.max(1.0e-4 * T, 1.0e-6);
+        double[] gPlus  = molarVolumeAD(T + h, y).grad;
+        double[] gMinus = molarVolumeAD(T - h, y).grad;
+        double[] result = new double[n];
+        for (int k = 0; k < n; k++)
+            result[k] = (gPlus[k] - gMinus[k]) / (2.0 * h) * (P - P_REF);
+        return result;
+    }
+
     /**
      * Convert unconstrained logits into strictly positive site fractions.
      *
@@ -2879,6 +3123,10 @@ public class CefGibbs extends GibbsEnergyModel {
         List<CefInteractionParam> tcInteractions;
         CefEndMember[] bmagEndMembers;
         List<CefInteractionParam> bmagInteractions;
+        CefEndMember[] v0EndMembers;
+        List<CefInteractionParam> v0Interactions;
+        CefEndMember[] vaEndMembers;
+        List<CefInteractionParam> vaInteractions;
         String phaseName;
         List<String> elements;
         ArrayList<ArrayList<String>> constituentNames;
@@ -3103,6 +3351,20 @@ public class CefGibbs extends GibbsEnergyModel {
         List<CefInteractionParam> tcInteractions   = new ArrayList<>();
         List<CefInteractionParam> bmagInteractions = new ArrayList<>();
 
+        /*
+         * V0 (molar volume at the reference pressure) and VA (thermal
+         * expansion polynomial exponent) are CEF constituent-array
+         * quantities too, feeding the volume/pressure contribution (see
+         * volumeEnergy): G_vol = V0(y)*exp(VA(T,y)) * (P - P0). VK
+         * (isothermal compressibility) is detected and rejected below --
+         * pycalphad's Model.volume_energy also leaves it unimplemented.
+         */
+        CefEndMember[] v0EndMembers = new CefEndMember[totalEM];
+        CefEndMember[] vaEndMembers = new CefEndMember[totalEM];
+        List<CefInteractionParam> v0Interactions = new ArrayList<>();
+        List<CefInteractionParam> vaInteractions = new ArrayList<>();
+        boolean hasVK = false;
+
 
         /*
          * ---------------------------------------------------------------
@@ -3130,9 +3392,16 @@ public class CefGibbs extends GibbsEnergyModel {
                     ? ""
                     : param.getType().trim().toUpperCase();
 
+            if (type.equals("VK")) {
+                hasVK = true;
+                continue;
+            }
+
             if (!type.equals("G") &&
                 !type.equals("TC") &&
-                !type.equals("BMAGN")) {
+                !type.equals("BMAGN") &&
+                !type.equals("V0") &&
+                !type.equals("VA")) {
 
                 continue;
             }
@@ -3216,6 +3485,10 @@ public class CefGibbs extends GibbsEnergyModel {
                     tcEndMembers[em] = new CefEndMember(emIdx, poly);
                 } else if (type.equals("BMAGN")) {
                     bmagEndMembers[em] = new CefEndMember(emIdx, poly);
+                } else if (type.equals("V0")) {
+                    v0EndMembers[em] = new CefEndMember(emIdx, poly);
+                } else if (type.equals("VA")) {
+                    vaEndMembers[em] = new CefEndMember(emIdx, poly);
                 }
 
                 continue;
@@ -3249,9 +3522,11 @@ public class CefGibbs extends GibbsEnergyModel {
              *
              * G interactions feed the excess Gibbs energy; TC / BMAGN
              * interactions feed the magnetic Curie-temperature / moment
-             * constituent-array sums.
+             * constituent-array sums; V0 / VA interactions feed the molar
+             * volume / thermal-expansion constituent-array sums.
              */
-            if (type.equals("G") || type.equals("TC") || type.equals("BMAGN")) {
+            if (type.equals("G") || type.equals("TC") || type.equals("BMAGN")
+                    || type.equals("V0") || type.equals("VA")) {
 
                 int factorCount = 0;
 
@@ -3317,10 +3592,23 @@ public class CefGibbs extends GibbsEnergyModel {
                     interactions.add(ip);
                 } else if (type.equals("TC")) {
                     tcInteractions.add(ip);
-                } else {
+                } else if (type.equals("BMAGN")) {
                     bmagInteractions.add(ip);
+                } else if (type.equals("V0")) {
+                    v0Interactions.add(ip);
+                } else {
+                    vaInteractions.add(ip);
                 }
             }
+        }
+
+        if (hasVK) {
+            throw new UnsupportedOperationException(
+                    "Phase " + phaseName + " has a VK (isothermal "
+                    + "compressibility) parameter; the pressure "
+                    + "dependence of molar volume from VK is not "
+                    + "implemented (pycalphad's Model.volume_energy "
+                    + "leaves this unimplemented too).");
         }
 
 
@@ -3387,6 +3675,18 @@ public class CefGibbs extends GibbsEnergyModel {
         }
 
         /*
+         * A volume/pressure contribution exists only if this phase has at
+         * least one V0 parameter -- matching pycalphad, which checks for
+         * the parameter's presence rather than a phase-level hint (unlike
+         * MAGNETIC, there is no TYPE_DEFINITION gate for volume).
+         */
+        boolean hasV0 = false;
+        for (CefEndMember em : v0EndMembers) {
+            if (em != null) { hasV0 = true; break; }
+        }
+        if (!hasV0 && !v0Interactions.isEmpty()) hasV0 = true;
+
+        /*
          * ---------------------------------------------------------------
          * 12. Assemble the extracted parts
          * ---------------------------------------------------------------
@@ -3401,6 +3701,10 @@ public class CefGibbs extends GibbsEnergyModel {
         parts.tcInteractions = magnetic == null ? null : tcInteractions;
         parts.bmagEndMembers   = magnetic == null ? null : bmagEndMembers;
         parts.bmagInteractions = magnetic == null ? null : bmagInteractions;
+        parts.v0EndMembers   = hasV0 ? v0EndMembers : null;
+        parts.v0Interactions = hasV0 ? v0Interactions : null;
+        parts.vaEndMembers   = hasV0 ? vaEndMembers : null;
+        parts.vaInteractions = hasV0 ? vaInteractions : null;
         parts.phaseName = phaseName;
         parts.elements = new ArrayList<>(elements);
         parts.constituentNames = deepCopyConstituentList(constituentList);

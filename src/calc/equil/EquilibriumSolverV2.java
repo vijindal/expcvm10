@@ -2163,13 +2163,13 @@ public class EquilibriumSolverV2 {
             double[] y) {
 
         phaseWork.G =
-                phase.G(T, y);
+                phase.G(T, P, y);
 
         phaseWork.gy =
-                phase.dG_dy(T, y);
+                phase.dG_dy(T, P, y);
 
         phaseWork.gyy =
-                phase.d2G_dy2(T, y);
+                phase.d2G_dy2(T, P, y);
 
         phaseWork.mA =
                 phase.moles(y);
@@ -2200,16 +2200,19 @@ public class EquilibriumSolverV2 {
         work.G =
                 work.model.G(
                         T,
+                        P,
                         work.y);
 
         work.gy =
                 work.model.dG_dy(
                         T,
+                        P,
                         work.y);
 
         work.gyy =
                 work.model.d2G_dy2(
                         T,
+                        P,
                         work.y);
 
         work.mA =

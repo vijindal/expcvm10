@@ -1379,13 +1379,27 @@ public class tdb {
     private static final double DEFAULT_UPPER_TEMPERATURE = 6000.0;
 
     /**
-     * Parses a FUNCTION/PARAMETER temperature-range limit token, accepting
-     * the {@code ,,} (or empty) shorthand for "use the default upper
-     * temperature" -- {@link #DEFAULT_UPPER_TEMPERATURE}. A trailing
-     * {@code ,} (as in {@code low ,}) is treated the same way.
+     * Parses a FUNCTION/PARAMETER temperature-range limit token.
+     *
+     * <p>Mirrors pycalphad's grammar for this position ({@code io/tdb.py},
+     * {@code func_expr}): after the {@code ;} that ends an expression, the
+     * remainder is, independently and in order, zero or more commas, then
+     * an optional upper-limit number, then an optional {@code Y}/{@code N}
+     * continuation flag -- e.g. {@code 6000}, {@code 6000,N}, {@code ,,N}
+     * (no explicit upper limit, glued continuation flag), or {@code ,}
+     * (no explicit upper limit, no flag). The continuation flag's value is
+     * never read, only stripped; an absent upper limit defaults to
+     * {@link #DEFAULT_UPPER_TEMPERATURE} (pycalphad/OC both treat piecewise
+     * temperature bounds as extending to +/-inf beyond the last range).
      */
     private static double parseRangeLimit(String token) {
         String t = token == null ? "" : token.trim();
+        // Strip a trailing Y/N continuation flag (pycalphad: Optional('Y')
+        // within the loop, Optional('N') at the end -- either way, a single
+        // trailing flag letter with no other meaning here).
+        if (t.endsWith("Y") || t.endsWith("N") || t.endsWith("y") || t.endsWith("n")) {
+            t = t.substring(0, t.length() - 1).trim();
+        }
         // Strip a trailing comma-run: "6000," -> "6000", "," / ",," -> ""
         while (t.endsWith(",")) {
             t = t.substring(0, t.length() - 1).trim();
@@ -1686,9 +1700,28 @@ public class tdb {
         ss = ss.replace("#", "");
         //Replace LN( as LOG( to normalise natural-log syntax without mangling identifiers like ALNBB2
         ss = ss.replace("LN(", "LOG(");
+        //Substitute the bare gas-constant symbol R (as in "R*T*LN(...)",
+        //seen in GAS-phase parameters) with its numeric value, mirroring
+        //pycalphad (io/tdb.py:_sympify_string, via variables.R = 8.3145).
+        //This project uses the 2014 CODATA value (GAS_CONSTANT_R below),
+        //matching CefGibbs/MagneticContribution's convention, rather than
+        //pycalphad's older SGTE 8.3145; a whole-word match ("R" only,
+        //never as part of a longer identifier like GHSERAL) is required
+        //since '#' has already been stripped above (R# -> R).
+        ss = ss.replaceAll("(?<![A-Z0-9_])R(?![A-Z0-9_])",
+                Double.toString(GAS_CONSTANT_R));
         //System.out.println("ss: " + ss);
         return (ss);
     }
+
+    /**
+     * Gas constant used to substitute the bare {@code R} symbol in TDB
+     * expressions (e.g. GAS-phase {@code R*T*LN(P)} terms). 2014 CODATA
+     * value, matching {@code CefGibbs}/{@code MagneticContribution}'s
+     * convention elsewhere in this project (pycalphad uses the older SGTE
+     * value 8.3145 instead -- see {@code variables.R} in pycalphad).
+     */
+    private static final double GAS_CONSTANT_R = 8.3144598;
 
     /*
         this method reads coefficient at the end of input str 

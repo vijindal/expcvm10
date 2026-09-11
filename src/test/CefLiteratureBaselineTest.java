@@ -390,7 +390,7 @@ public class CefLiteratureBaselineTest {
         for (double[] point : FIG9_SOLID_CURVE) {
             double T = point[0];
             double gFig9 = point[1];
-            double gCefKJ = phase.G(T, y) / 1000.0;
+            double gCefKJ = phase.G(T, 101325.0, y) / 1000.0;
             double error = Math.abs(gCefKJ - gFig9);
             maxAbsError = Math.max(maxAbsError, error);
             boolean pass = error <= A_TOLERANCE_KJ;
@@ -456,7 +456,7 @@ public class CefLiteratureBaselineTest {
      */
     private static double pureEnthalpy(CefGibbs gm, double xV, double xZr) {
         double[] y = { xV, xZr };
-        double g = gm.G(D_T, y);
+        double g = gm.G(D_T, 101325.0, y);
         double dgdt = gm.dG_dT(D_T, y);
         return g - D_T * dgdt;
     }
@@ -500,7 +500,7 @@ public class CefLiteratureBaselineTest {
                 cache.put(key, phase);
             }
 
-            double gProj = phase.G(T, y);
+            double gProj = phase.G(T, 101325.0, y);
             double absDiff = gProj - gRef;
             double relDiff = Math.abs(gRef) > 0 ? absDiff / Math.abs(gRef) : absDiff;
 

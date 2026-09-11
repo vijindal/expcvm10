@@ -101,11 +101,11 @@ public class GridMinimizer {
                 // to find the lowest G configuration at this composition.
                 // This is critical for ordered phases like V2Zr where
                 // the stable configuration is NOT the uniform one.
-                y = minimizeSiteFractions(m, y, x, T);
+                y = minimizeSiteFractions(m, y, x, T, P);
 
                 double G;
                 try {
-                    G = m.G(T, y) / nfu;
+                    G = m.G(T, P, y) / nfu;
                 } catch (Exception e) {
                     continue;
                 }
@@ -189,12 +189,13 @@ public class GridMinimizer {
     private double[] minimizeSiteFractions(GibbsEnergyModel m,
                                             double[] yInit,
                                             double[] x,
-                                            double T) {
+                                            double T,
+                                            double P) {
         int nip = yInit.length;
         if (nip == 0) return yInit;
 
         double[] y    = yInit.clone();
-        double   G    = safeEval(m, y, T);
+        double   G    = safeEval(m, y, T, P);
         double   nfu  = Math.max(m.nfu(), 1.0);
 
         for (int iter = 0; iter < INNER_ITER; iter++) {
@@ -219,7 +220,7 @@ public class GridMinimizer {
 
                 double[] yTry = m.getInitialInternalVars(xTry);
                 if (yTry == null) continue;
-                double gTry = safeEval(m, yTry, T);
+                double gTry = safeEval(m, yTry, T, P);
                 if (gTry < G) {
                     y = yTry;
                     G = gTry;
@@ -231,10 +232,10 @@ public class GridMinimizer {
         return y;
     }
 
-    private double safeEval(GibbsEnergyModel m, double[] y, double T) {
+    private double safeEval(GibbsEnergyModel m, double[] y, double T, double P) {
         try {
             double nfu = Math.max(m.nfu(), 1.0);
-            return m.G(T, y) / nfu;
+            return m.G(T, P, y) / nfu;
         } catch (Exception e) {
             return Double.MAX_VALUE;
         }
