@@ -33,17 +33,18 @@ import java.util.ArrayList;
  *       sublattice structure accessors
  *   <li><b>Internal Variables</b> (abstract) — composition &lt;-&gt; site
  *       fraction mapping
- *   <li><b>Full Per-Phase Computation</b> (abstract) — {@code compute()},
- *       returning an immutable {@link PhaseEquilData}
  * </ol>
  *
- * <p>Assembling and inverting the Newton phase matrix from these values
- * is the calculation layer's job, not the model's -- matching pycalphad,
- * whose model-layer {@code Model}/{@code PhaseRecord} only ever compute
- * and return raw value/gradient/Hessian; all Newton-iteration state
+ * <p>Assembling and inverting the Newton phase matrix from these values is
+ * the calculation layer's job, not the model's -- matching pycalphad, whose
+ * model-layer {@code Model}/{@code PhaseRecord} only ever compute and
+ * return raw value/gradient/Hessian; all Newton-iteration state
  * ({@code SystemState}, the assembled/inverted matrix) lives in
- * {@code pycalphad.core}. This class therefore carries no phase-matrix
- * or equilibrium-matrix state of its own.
+ * {@code pycalphad.core}. This class therefore has no {@code compute()}
+ * method of its own -- {@code calc.equil.PhaseMatrixAssembler} borders,
+ * inverts, and projects the phase matrix for any model purely through this
+ * abstract surface, so a new model gets that machinery for free instead of
+ * reimplementing it.
  */
 public abstract class GibbsEnergyModel {
 
@@ -239,13 +240,6 @@ public abstract class GibbsEnergyModel {
 
     /** Number of constituents on each sublattice. */
     public abstract int[] constituentsPerSublattice();
-
-    // ══════════════════════════════════════════════════════════════════
-    // Full Per-Phase Computation (Abstract - Each Model Implements)
-    // ══════════════════════════════════════════════════════════════════
-
-    public abstract PhaseEquilData compute(double T, double P, double[] y,
-                                          double deltaT, double deltaP, double[] mu);
 
     // ══════════════════════════════════════════════════════════════════
     // Output / Debugging (Abstract - Each Model Implements)

@@ -1,7 +1,7 @@
 package system.model;
 
 /**
- * Immutable data returned by GibbsEnergyModel.compute() for one phase.
+ * Immutable data returned by PhaseMatrixAssembler.compute() for one phase.
  *
  * Notation follows Sundman et al. CALPHAD 75 (2021) 102330:
  *   G^α_M   — Gibbs energy per mole formula unit

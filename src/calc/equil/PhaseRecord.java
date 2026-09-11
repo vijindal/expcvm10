@@ -75,13 +75,13 @@ public class PhaseRecord {
     }
 
     /**
-     * Delegates to model.compute() and caches result.
+     * Delegates to PhaseMatrixAssembler.compute() and caches result.
      * Updates G, x, mA, y from the returned PhaseEquilData.
      */
     public void updateFromModel(double T, double P,
                                 double deltaT, double deltaP,
                                 double[] mu) {
-        lastCompute = model.compute(T, P, y, deltaT, deltaP, mu);
+        lastCompute = PhaseMatrixAssembler.compute(model, T, P, y, deltaT, deltaP, mu);
         this.G  = lastCompute.G;
         this.x  = lastCompute.x;
         this.mA = lastCompute.mA;

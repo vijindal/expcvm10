@@ -1,5 +1,6 @@
 package test;
 
+import calc.equil.PhaseMatrixAssembler;
 import system.database.TdbParser;
 import system.model.GibbsEnergyModel;
 import system.model.PhaseEquilData;
@@ -16,7 +17,7 @@ import java.util.List;
  *   (b) x = compositionFromInternal(y) is still the normalized mole
  *       fraction, unaffected by the mA change;
  *   (c) the real (non-identity) eMatNC[A][B] = dM_A[A]/dmu_B computed by
- *       CefGibbs.compute() matches a central-difference
+ *       PhaseMatrixAssembler.compute() matches a central-difference
  *       approximation, for BCC_A2 and V2ZR.
  *
  * This checks only that mA/eMatNC are internally consistent with the
@@ -64,7 +65,7 @@ public class EMatNCTest {
         GibbsEnergyModel gm = PhaseModelFactory.toGibbsModel(pm, elements);
 
         double[] mu0 = {100.0, -50.0}; // arbitrary non-zero base point, away from mu=0 degeneracy
-        PhaseEquilData base = gm.compute(T, 101325.0, y, 0, 0, mu0);
+        PhaseEquilData base = PhaseMatrixAssembler.compute(gm, T, 101325.0, y, 0, 0, mu0);
 
         System.out.println("mA (Sundman M_A) = " + Arrays.toString(base.mA));
         System.out.println("x  (mole fraction) = " + Arrays.toString(base.x));
@@ -112,8 +113,8 @@ public class EMatNCTest {
                 yPlus[m] += deltaYPlus[m];
                 yMinus[m] += deltaYMinus[m];
             }
-            double[] mAPlus = gm.compute(T, 101325.0, yPlus, 0, 0, new double[nc]).mA;
-            double[] mAMinus = gm.compute(T, 101325.0, yMinus, 0, 0, new double[nc]).mA;
+            double[] mAPlus = PhaseMatrixAssembler.compute(gm, T, 101325.0, yPlus, 0, 0, new double[nc]).mA;
+            double[] mAMinus = PhaseMatrixAssembler.compute(gm, T, 101325.0, yMinus, 0, 0, new double[nc]).mA;
 
             for (int A = 0; A < nc; A++) {
                 double fdDeriv = (mAPlus[A] - mAMinus[A]) / (2 * h);
@@ -133,8 +134,8 @@ public class EMatNCTest {
      * cancels the mu-independent terms, leaving sum_j eMat[m][j]*muMapped(mu)[j].
      */
     private static double[] muOnlyDeltaY(GibbsEnergyModel gm, double[] y, double[] mu, double T) {
-        PhaseEquilData withMu = gm.compute(T, 101325.0, y, 0, 0, mu);
-        PhaseEquilData zeroMu = gm.compute(T, 101325.0, y, 0, 0, new double[mu.length]);
+        PhaseEquilData withMu = PhaseMatrixAssembler.compute(gm, T, 101325.0, y, 0, 0, mu);
+        PhaseEquilData zeroMu = PhaseMatrixAssembler.compute(gm, T, 101325.0, y, 0, 0, new double[mu.length]);
         double[] result = new double[y.length];
         for (int m = 0; m < y.length; m++) {
             result[m] = withMu.dely[m] - zeroMu.dely[m];
