@@ -27,8 +27,17 @@ import java.util.ArrayList;
  *       sublattice structure accessors
  *   <li><b>Internal Variables</b> (abstract) — composition &lt;-&gt; site
  *       fraction mapping
- *   <li><b>Equilibrium Matrix</b> (concrete) — solver support
+ *   <li><b>Full Per-Phase Computation</b> (abstract) — {@code compute()},
+ *       returning an immutable {@link PhaseEquilData}
  * </ol>
+ *
+ * <p>Assembling and inverting the Newton phase matrix from these values
+ * is the calculation layer's job, not the model's -- matching pycalphad,
+ * whose model-layer {@code Model}/{@code PhaseRecord} only ever compute
+ * and return raw value/gradient/Hessian; all Newton-iteration state
+ * ({@code SystemState}, the assembled/inverted matrix) lives in
+ * {@code pycalphad.core}. This class therefore carries no phase-matrix
+ * or equilibrium-matrix state of its own.
  */
 public abstract class GibbsEnergyModel {
 
@@ -218,31 +227,6 @@ public abstract class GibbsEnergyModel {
     public abstract int[] constituentsPerSublattice();
 
     // ══════════════════════════════════════════════════════════════════
-    // Equilibrium Matrix (Concrete Implementation)
-    // ══════════════════════════════════════════════════════════════════
-
-    public void setEquilibriumMatrix(double[][] emat) { this.eMat = cloneMatrix(emat); }
-    public double[][] getEquilibriumMatrix()          { return cloneMatrix(eMat); }
-
-    public void setConstraintGradients(double[] cg)    { this.cG = cg != null ? cg.clone() : null; }
-    public double[] getConstraintGradients()           { return cG != null ? cG.clone() : null; }
-
-    public void setConstraintTempDeriv(double[] ct)    { this.cT = ct != null ? ct.clone() : null; }
-    public double[] getConstraintTempDeriv()           { return cT != null ? cT.clone() : null; }
-
-    public void setConstraintPressDeriv(double[] cp)   { this.cP = cp != null ? cp.clone() : null; }
-    public double[] getConstraintPressDeriv()          { return cP != null ? cP.clone() : null; }
-
-    public void setABMatrix(double[][] cab)            { this.cAB = cloneMatrix(cab); }
-    public double[][] getABMatrix()                    { return cloneMatrix(cAB); }
-
-    protected double[][] eMat;
-    protected double[] cG;
-    protected double[] cT;
-    protected double[] cP;
-    protected double[][] cAB;
-
-    // ══════════════════════════════════════════════════════════════════
     // Full Per-Phase Computation (Abstract - Each Model Implements)
     // ══════════════════════════════════════════════════════════════════
 
@@ -255,16 +239,4 @@ public abstract class GibbsEnergyModel {
 
     public abstract void printPhaseInfo();
     public abstract void printDerivatives();
-
-    // ══════════════════════════════════════════════════════════════════
-    // Private Helpers
-    // ══════════════════════════════════════════════════════════════════
-
-    protected static double[][] cloneMatrix(double[][] mat) {
-        if (mat == null) return null;
-        double[][] clone = new double[mat.length][];
-        for (int i = 0; i < mat.length; i++)
-            clone[i] = mat[i].clone();
-        return clone;
-    }
 }

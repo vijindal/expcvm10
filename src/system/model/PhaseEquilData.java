@@ -9,7 +9,7 @@ package system.model;
  *   y       — site fractions (internal variables), length nip
  *   eMat    — nip×nip response matrix = top-left block of inverse(PhaseMatrix)
  *   eMatNC  — nc×nc projected response = Σ_m Σ_j ny[A][m]*eMat[m][j]*ny[B][j]
- *             used by EquilibriumSolver for Jacobian assembly
+ *             a phase's contribution to a Jacobian assembled by a solver
  *   cG      — ∂y/∂G   = -eMat * Gx,  length nip
  *   cT      — ∂y/∂T   = -eMat * GxT, length nip
  *   dely    — Δy = cG + cT*ΔT + Σ_A cN[A]*μ_A
@@ -39,8 +39,8 @@ public final class PhaseEquilData {
 
     /**
      * Projected response matrix eMatNC[A][B] = Σ_m Σ_j ny[A][m]*eMat[m][j]*ny[B][j]
-     * = ∂M^α_A/∂μ_B, size nc×nc.
-     * Used directly by EquilibriumSolver Jacobian assembly.
+     * = ∂M^α_A/∂μ_B, size nc×nc. A phase's contribution to a solver's
+     * multiphase Jacobian assembly.
      */
     public final double[][] eMatNC;
 
