@@ -3,6 +3,7 @@ package session;
 import calc.diagram.AxisConfig;
 import calc.diagram.PhaseDiagram;
 import calc.equil.EquilibriumSolverV2;
+import calc.equil.GridMinimizer;
 import system.ThermodynamicSystem;
 import system.database.TdbParser;
 import system.model.PhaseModelKind;
@@ -60,6 +61,7 @@ public final class CalculationSession {
     private ModelKey currentKey;
     private ThermodynamicSystem currentSystem;
     private EquilibriumResult currentEquilibriumResult;
+    private EquilibriumResult currentInitialState;
     private PhaseDiagram currentPhaseDiagram;
 
     /**
@@ -157,6 +159,7 @@ public final class CalculationSession {
                 ThermodynamicSystem.build(tdbFilePath, elements, phases, modelKind);
         this.currentKey = requested;
         this.currentEquilibriumResult = null;
+        this.currentInitialState = null;
         this.currentPhaseDiagram = null;
     }
 
@@ -269,6 +272,32 @@ public final class CalculationSession {
     }
 
     /**
+     * Runs only the equilibrium initializer -- {@link GridMinimizer}'s
+     * site-fraction grid sampling and lower-convex-hull search -- against
+     * the currently held system, without the Newton iteration
+     * {@link #calculateEquilibrium} additionally performs. Stores the
+     * result; read it back via {@link #currentInitialState()}.
+     *
+     * <p>This is a distinct calculation type dispatched to the Calculation
+     * layer, the same way {@link #calculateEquilibrium} and
+     * {@link #calculatePhaseDiagram} are -- {@link GridMinimizer} lives in
+     * {@code calc/equil} alongside {@link EquilibriumSolverV2} for exactly
+     * this reason, and this method delegates to it in one line, the same
+     * shape as {@link #calculateEquilibrium}. It mirrors pycalphad's own
+     * separation between {@code calculate()}/{@code starting_point()}
+     * (grid sampling and convex-hull starting point, independently
+     * callable and testable) and {@code equilibrium()} (which additionally
+     * runs the Newton solve): the initializer is a genuinely separate
+     * calculation there, not merely an internal step of the full solve.
+     *
+     * @throws IllegalStateException if {@link #setModel} hasn't been called yet
+     */
+    public void calculateInitialState(double T, double P, double[] compOverAll) {
+        this.currentInitialState =
+                new GridMinimizer().solve(currentSystem().phaseModels(), T, P, compOverAll);
+    }
+
+    /**
      * Runs a phase-diagram calculation against the currently held system and
      * stores the result; read it back via {@link #currentPhaseDiagram()}.
      *
@@ -330,6 +359,16 @@ public final class CalculationSession {
      */
     public EquilibriumResult currentEquilibriumResult() {
         return currentEquilibriumResult;
+    }
+
+    /**
+     * The most recent initializer-only result from
+     * {@link #calculateInitialState}, or {@code null} if none has
+     * completed yet, or it was invalidated by a subsequent {@link #setModel}
+     * call onto a different system.
+     */
+    public EquilibriumResult currentInitialState() {
+        return currentInitialState;
     }
 
     /**

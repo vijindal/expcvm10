@@ -1,6 +1,7 @@
 package calc.equil;
 
 import system.model.GibbsEnergyModel;
+import system.ports.EquilibriumResult;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,13 +10,13 @@ import java.util.logging.Logger;
 /**
  * Grid minimizer -- initial phase set estimator, ported to sample and
  * search exactly the way pycalphad's {@code calculate()} /
- * {@code lower_convex_hull()} do.
+ * {@code starting_point()} / {@code lower_convex_hull()} do.
  *
  * <p>pycalphad's global-minimization starting point (see
- * {@code pycalphad.core.calculate._sample_phase_constitution} and
- * {@code pycalphad.core.starting_point.starting_point}) works directly in
- * the internal degrees of freedom (site fractions), not in composition
- * space:
+ * {@code pycalphad.core.calculate._sample_phase_constitution},
+ * {@code pycalphad.core.starting_point.starting_point}, and
+ * {@code pycalphad.core.hyperplane.hyperplane}) works directly in the
+ * internal degrees of freedom (site fractions), not in composition space:
  *
  * <ol>
  *   <li>Sample the site-fraction space of every candidate phase: exact
@@ -25,28 +26,26 @@ import java.util.logging.Logger;
  *       ({@code point_sample}).</li>
  *   <li>Evaluate G (and hence the per-mole-atom energy) and the overall
  *       composition X at every sampled point of every phase.</li>
- *   <li>Take the lower convex hull of the combined (X, G/atom) point cloud
- *       across all candidate phases.</li>
- *   <li>The hull facet enclosing the requested overall composition gives
- *       the initial stable phase set, their site fractions, and (via the
- *       lever rule / barycentric coordinates) their initial amounts.</li>
+ *   <li>Find the lower-hull simplex (an N-component tangent hyperplane)
+ *       enclosing the requested overall composition, via a Dantzig-style
+ *       simplex pivot directly on the combined (X, G/atom) point cloud
+ *       across all candidate phases -- not a low-dimension-specific
+ *       geometric convex hull, so this generalizes to any number of
+ *       components.</li>
+ *   <li>The simplex's vertices give the initial stable phase set, their
+ *       site fractions, and (via the returned barycentric fractions) their
+ *       initial amounts.</li>
  * </ol>
  *
- * <p>This class ports steps 1-4 directly:
- * {@link #sampleSiteFractions} mirrors
- * {@code _sample_phase_constitution} ({@link Halton#pointSample} is a
- * direct port of {@code pycalphad.core.utils.point_sample}, itself built on
- * {@link Halton#generate}, a direct port of
+ * <p>This class ports every stage directly: {@link #sampleSiteFractions}
+ * mirrors {@code _sample_phase_constitution} ({@link Halton#pointSample} is
+ * a direct port of {@code pycalphad.core.utils.point_sample}, itself built
+ * on {@link Halton#generate}, a direct port of
  * {@code pycalphad.core.halton.halton}); {@link #initialize} mirrors
- * {@code starting_point()}'s call into the convex hull.
- *
- * <p>The hull/facet search itself ({@link #lowerConvexHull},
- * {@link #findFacet}) is exact only for binary (2-component) systems
- * (Andrew's monotone chain, as pycalphad's own {@code hyperplane} routine
- * is exact for any dimension via QHull); for higher-order systems this
- * falls back to a nearest-sampled-point search, which is an approximation
- * of the true facet-finding pycalphad performs via a full N-dimensional
- * convex hull.
+ * {@code starting_point()}'s call into the hull, dispatching to
+ * {@link Hyperplane#solve}, a direct port of
+ * {@code pycalphad.core.hyperplane.hyperplane} verified against pycalphad
+ * to ~1e-11 J (see {@code HyperplanePortTest}).
  */
 public class GridMinimizer {
 
@@ -135,14 +134,115 @@ public class GridMinimizer {
             Y[i]     = envY.get(i);
         }
 
-        // Step 3: lower convex hull of the combined (X, G) point cloud.
-        List<Integer> hull = lowerConvexHull(X, G, nc);
+        // Steps 3-4: find the lower-hull simplex enclosing xOverall via
+        // Hyperplane's direct port of pycalphad's simplex-pivot search.
+        // Independent targets are components 0..nc-2 (the last component's
+        // fraction is implied by summing to 1), matching Hyperplane.solve's
+        // contract.
+        double[] targetMoleFractions = new double[nc - 1];
+        System.arraycopy(xOverall, 0, targetMoleFractions, 0, nc - 1);
 
-        // Step 4: find hull facet enclosing xOverall.
-        FacetResult facet = findFacet(hull, X, phase, Y, xOverall, nc);
+        Hyperplane.Result hyperplaneResult =
+                Hyperplane.solve(X, G, targetMoleFractions);
+
+        FacetResult facet = toFacetResult(hyperplaneResult, phase, Y, X);
 
         // Step 5: build EquilibriumState.
         return buildState(candidates, facet, xOverall, np, T, P);
+    }
+
+    /**
+     * Adapts a {@link Hyperplane.Result} (indices into the flattened
+     * sample arrays) into the {@link FacetResult} shape
+     * {@link #buildState} consumes, dropping any simplex vertex whose
+     * barycentric fraction is (numerically) zero or negative -- the
+     * "Gibbs phase rule" trim pycalphad itself applies to its own
+     * {@code result_fractions}/{@code result_simplex} outputs.
+     */
+    private FacetResult toFacetResult(Hyperplane.Result hr,
+                                       int[] phase, double[][] Y, double[][] X) {
+
+        List<Integer> keep = new ArrayList<>();
+        for (int i = 0; i < hr.fractions.length; i++) {
+            if (hr.fractions[i] > 1e-10) {
+                keep.add(i);
+            }
+        }
+        if (keep.isEmpty()) {
+            // Degenerate: fall back to the single largest-fraction vertex.
+            int best = 0;
+            for (int i = 1; i < hr.fractions.length; i++) {
+                if (hr.fractions[i] > hr.fractions[best]) best = i;
+            }
+            keep.add(best);
+        }
+
+        FacetResult fr = new FacetResult();
+        fr.phaseIdx = new int[keep.size()];
+        fr.yAtVertex = new double[keep.size()][];
+        fr.xAtVertex = new double[keep.size()][];
+        fr.amount = new double[keep.size()];
+
+        for (int k = 0; k < keep.size(); k++) {
+            int i = keep.get(k);
+            int pointIdx = hr.simplex[i];
+            fr.phaseIdx[k] = phase[pointIdx];
+            fr.yAtVertex[k] = Y[pointIdx];
+            fr.xAtVertex[k] = X[pointIdx];
+            fr.amount[k] = hr.fractions[i];
+        }
+
+        return fr;
+    }
+
+    /**
+     * Runs the initializer as a standalone calculation and returns its
+     * result in the same {@link EquilibriumResult} shape
+     * {@link EquilibriumSolverV2#solve} produces, so a caller (e.g.
+     * {@code CalculationSession}) can dispatch to either one identically.
+     *
+     * <p>Mirrors pycalphad's own separation between {@code calculate()} /
+     * {@code starting_point()} (grid sampling and convex-hull starting
+     * point -- independently callable and testable on their own) and
+     * {@code equilibrium()} (which additionally runs the Newton solve):
+     * the initializer is a genuinely separate calculation there, not
+     * merely an internal step of the full solve, and this method gives it
+     * the same standing here.
+     *
+     * <p>The returned result has {@code converged=false} and
+     * {@code iterations=0} -- it is a starting point, not a converged
+     * equilibrium.
+     *
+     * @param candidates  all candidate phase models
+     * @param T           temperature (K)
+     * @param P           pressure (Pa)
+     * @param xOverall    overall mole fractions, length nc, must sum to 1
+     * @return            the initial phase set/constitutions as an
+     *                     unconverged {@link EquilibriumResult}
+     */
+    public EquilibriumResult solve(List<GibbsEnergyModel> candidates,
+                                    double T, double P,
+                                    double[] xOverall) {
+
+        EquilibriumState state = initialize(candidates, T, P, xOverall);
+
+        List<EquilibriumResult.PhaseResult> stableResults = new ArrayList<>();
+        for (PhaseRecord pr : state.stablePhases()) {
+            stableResults.add(new EquilibriumResult.PhaseResult(
+                    pr.phaseName(), pr.modelType(), pr.amount, pr.x, pr.y,
+                    pr.G, pr.drivingForce));
+        }
+
+        List<EquilibriumResult.PhaseResult> metastableResults = new ArrayList<>();
+        for (PhaseRecord pr : state.metastablePhases()) {
+            metastableResults.add(new EquilibriumResult.PhaseResult(
+                    pr.phaseName(), pr.modelType(), pr.amount, pr.x, pr.y,
+                    pr.G, pr.drivingForce));
+        }
+
+        return new EquilibriumResult(
+                T, P, state.mu, stableResults, metastableResults,
+                false, 0);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -268,122 +368,6 @@ public class GridMinimizer {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // Step 3: Lower convex hull
-    // ─────────────────────────────────────────────────────────────────
-
-    private List<Integer> lowerConvexHull(double[][] X, double[] G, int nc) {
-        if (nc == 2) return monotoneChain(X, G);
-        return allHullPoints(X); // fallback for nc>2
-    }
-
-    /** Andrew's monotone chain -- lower hull in 2D (binary system). */
-    private List<Integer> monotoneChain(double[][] X, double[] G) {
-        int n = X.length;
-        Integer[] idx = new Integer[n];
-        for (int i = 0; i < n; i++) idx[i] = i;
-        java.util.Arrays.sort(idx,
-            (a, b) -> Double.compare(X[a][0], X[b][0]));
-
-        int[] hull = new int[n];
-        int   k    = 0;
-        for (int ii = 0; ii < n; ii++) {
-            int i = idx[ii];
-            while (k >= 2) {
-                int a = hull[k-2], b = hull[k-1];
-                double cross =
-                    (X[b][0] - X[a][0]) * (G[i] - G[a]) -
-                    (X[i][0] - X[a][0]) * (G[b] - G[a]);
-                if (cross <= 0) k--;
-                else break;
-            }
-            hull[k++] = i;
-        }
-        List<Integer> result = new ArrayList<>();
-        for (int i = 0; i < k; i++) result.add(hull[i]);
-        return result;
-    }
-
-    /** Fallback: return all sampled points (safe but slow for nc>2). */
-    private List<Integer> allHullPoints(double[][] X) {
-        List<Integer> result = new ArrayList<>();
-        for (int i = 0; i < X.length; i++) result.add(i);
-        return result;
-    }
-
-    // ─────────────────────────────────────────────────────────────────
-    // Step 4: Find enclosing facet
-    // ─────────────────────────────────────────────────────────────────
-
-    private FacetResult findFacet(List<Integer> hull,
-                                   double[][] X,
-                                   int[] envPhase,
-                                   double[][] envY,
-                                   double[] xOverall,
-                                   int nc) {
-        if (nc == 2) return findFacetBinary(hull, X, envPhase, envY, xOverall);
-        return closestVertex(hull, X, envPhase, envY, xOverall);
-    }
-
-    /**
-     * Binary case: find the hull segment [left, right] that encloses
-     * xOverall[0], compute lever-rule amounts.
-     */
-    private FacetResult findFacetBinary(List<Integer> hull,
-                                         double[][] X,
-                                         int[] envPhase,
-                                         double[][] envY,
-                                         double[] xOverall) {
-        double xTarget = xOverall[0];
-        int    bestL   = hull.get(0);
-        int    bestR   = hull.get(hull.size() - 1);
-
-        for (int h = 0; h < hull.size() - 1; h++) {
-            int    li  = hull.get(h);
-            int    ri  = hull.get(h + 1);
-            double xl  = X[li][0];
-            double xr  = X[ri][0];
-            if (xl <= xTarget + 1e-10 && xTarget <= xr + 1e-10) {
-                bestL = li;
-                bestR = ri;
-                break;
-            }
-        }
-
-        double xl  = X[bestL][0];
-        double xr  = X[bestR][0];
-        double dx  = xr - xl;
-        double lam = (dx > 1e-12) ? (xTarget - xl) / dx : 0.5;
-        lam        = Math.max(0.0, Math.min(1.0, lam));
-
-        FacetResult fr  = new FacetResult();
-        fr.phaseIdx     = new int[]    { envPhase[bestL], envPhase[bestR] };
-        fr.yAtVertex    = new double[][]{ envY[bestL],     envY[bestR]    };
-        fr.xAtVertex    = new double[][]{ X[bestL],        X[bestR]       };
-        fr.amount       = new double[]  { 1.0 - lam,       lam            };
-        return fr;
-    }
-
-    /** Fallback: return the single closest hull vertex. */
-    private FacetResult closestVertex(List<Integer> hull,
-                                       double[][] X,
-                                       int[] envPhase,
-                                       double[][] envY,
-                                       double[] xOverall) {
-        int    best = hull.get(0);
-        double bd   = dist(X[best], xOverall);
-        for (int ig : hull) {
-            double d = dist(X[ig], xOverall);
-            if (d < bd) { bd = d; best = ig; }
-        }
-        FacetResult fr = new FacetResult();
-        fr.phaseIdx    = new int[]    { envPhase[best] };
-        fr.yAtVertex   = new double[][]{ envY[best]    };
-        fr.xAtVertex   = new double[][]{ X[best]       };
-        fr.amount      = new double[]  { 1.0           };
-        return fr;
-    }
-
-    // ─────────────────────────────────────────────────────────────────
     // Step 5: Build EquilibriumState
     // ─────────────────────────────────────────────────────────────────
 
@@ -394,59 +378,37 @@ public class GridMinimizer {
         boolean[] used = new boolean[np];
         List<PhaseRecord> allPhases = new ArrayList<>();
 
-        // Deduplicate: if facet vertices point to the SAME phase (e.g. a
-        // single-candidate system, or a miscibility gap resolved by two
-        // sample points of one phase straddling xOverall), merge them into
-        // one stable PhaseRecord at the lower-G vertex.
-        //
-        // Both vertices' y came from the site-fraction sampling/hull
-        // search (sampleSiteFractions + lowerConvexHull), NOT re-derived
-        // via getInitialInternalVars(xOverall) -- that naive
-        // composition-only guess is exactly the disordered starting point
-        // this class exists to avoid (see class javadoc).
-        boolean allSame = true;
-        for (int k = 1; k < facet.phaseIdx.length; k++)
-            if (facet.phaseIdx[k] != facet.phaseIdx[0])
-                { allSame = false; break; }
+        // Each hyperplane simplex vertex becomes its own stable
+        // PhaseRecord, even when two or more vertices are the SAME phase
+        // model -- e.g. a single-candidate system where the tangent
+        // hyperplane at xOverall is approximated by several distinct
+        // site-fraction states of that one phase, or a genuine
+        // miscibility gap. This matches pycalphad's own
+        // lower_convex_hull(), which likewise copies out Phase/X/Y/NP
+        // per simplex vertex without merging same-named phases (see
+        // lower_convex_hull.py's per-vertex "take(points, ...)" copy).
+        // Collapsing same-phase vertices down to a single lowest-G point
+        // (the previous behavior here) silently discards the
+        // composition-matching mixture and returns a phase at the WRONG
+        // composition entirely for cases like a ternary phase's own
+        // internal ordering (see GridMinimizerChiA12PycalphadTest).
+        for (int k = 0; k < facet.phaseIdx.length; k++) {
+            int    ip  = facet.phaseIdx[k];
+            double amt = facet.amount[k];
+            if (amt < 1e-10) continue;
 
-        if (allSame) {
-            int ip = facet.phaseIdx[0];
             GibbsEnergyModel m = candidates.get(ip);
-
-            int bestK = 0;
-            double bestG = Double.POSITIVE_INFINITY;
-            for (int k = 0; k < facet.yAtVertex.length; k++) {
-                double g = m.G(T, P, facet.yAtVertex[k]);
-                if (g < bestG) { bestG = g; bestK = k; }
-            }
-
-            double[] y = facet.yAtVertex[bestK].clone();
+            double[] y = facet.yAtVertex[k].clone();
             double[] x = m.compositionFromInternal(y);
-            PhaseRecord pr = new PhaseRecord(m, x, 1.0, true);
+            PhaseRecord pr = new PhaseRecord(m, x, amt, true);
             pr.y = y;
-            pr.G = bestG;
+            pr.G = m.G(T, P, y);
             allPhases.add(pr);
             used[ip] = true;
-        } else {
-            for (int k = 0; k < facet.phaseIdx.length; k++) {
-                int    ip  = facet.phaseIdx[k];
-                double amt = facet.amount[k];
-                if (amt < 1e-10) continue;
 
-                GibbsEnergyModel m = candidates.get(ip);
-                double[] y = facet.yAtVertex[k].clone();
-                double[] x = m.compositionFromInternal(y);
-                PhaseRecord pr = new PhaseRecord(m, x, amt, true);
-                pr.y = y;
-                pr.G = m.G(T, P, y);
-                allPhases.add(pr);
-                used[ip] = true;
-
-                LOG.fine(String.format(
-                    "GridMin stable [%s] amt=%.4f x=[%.4f,%.4f]",
-                    m.phaseName(), amt,
-                    x.length>0?x[0]:0, x.length>1?x[1]:0));
-            }
+            LOG.fine(String.format(
+                "GridMin stable [%s] amt=%.4f x=%s",
+                m.phaseName(), amt, java.util.Arrays.toString(x)));
         }
 
         // Metastable phases: no sampled point of these phases is on the
@@ -476,15 +438,5 @@ public class GridMinimizer {
         double[][] yAtVertex;
         double[][] xAtVertex;
         double[]   amount;
-    }
-
-    // ─────────────────────────────────────────────────────────────────
-    // Utilities
-    // ─────────────────────────────────────────────────────────────────
-
-    private double dist(double[] a, double[] b) {
-        double s = 0;
-        for (int i = 0; i < a.length; i++) { double d=a[i]-b[i]; s+=d*d; }
-        return Math.sqrt(s);
     }
 }
