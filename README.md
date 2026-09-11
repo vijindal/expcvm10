@@ -187,7 +187,7 @@ clone.
 Most validation is still standalone diagnostic `main()` programs under
 `src/test/` run directly, not through the Gradle test task.
 
-## Current state (as of the 3-layer refactor and `CalculationSession` wiring)
+## Current state (as of the CEF model-layer hardening pass)
 
 The codebase is organized into the layers described above. The legacy
 assessment code is quarantined under `legacy/`.
@@ -196,17 +196,53 @@ assessment code is quarantined under `legacy/`.
 
 - TDB parsing for standard SGTE-style syntax: elements, `FUNCTION`
   substitution, multi-sublattice `PHASE`/`CONSTITUENT` records, `G`/`L`
-  (Redlich-Kister interaction) and `TC`/`BMAGN` (magnetic) parameters,
-  `TYPE_DEFINITION` magnetic declarations. `TdbParser` caches by file
-  path, so repeated loads of the same database are no-ops.
-- A general n-sublattice CEF Gibbs-energy evaluator (`system/model/cef`)
-  with analytical G, gradient, and Hessian, wired end-to-end into the
-  equilibrium solver via `CefPhaseModelAdapter`. The
-  site-fraction-to-mole-fraction response projection (`eMatNC`) is a real
-  analytical computation, verified against central differences by
-  `src/test/EMatNCTest.java`.
+  (Redlich-Kister interaction, arbitrary order) and `TC`/`BMAGN`
+  (magnetic) parameters, `V0`/`VA` (molar volume) parameters, both
+  literal-phase-name and `%`-flag-resolved `TYPE_DEFINITION` (magnetic/
+  disordered-part) declarations. `TdbParser` caches by file path, so
+  repeated loads of the same database are no-ops. 516/545 phase ×
+  database combinations across the 11 bundled TDBs build and evaluate
+  cleanly; the rest are genuine missing-parameter rejections, not parser
+  bugs. Known, precisely-characterized gap: end-member `G()` expressions
+  with pressure dependence expressed through nested transcendental
+  `FUNCTION` chains (an older, pre-`V0`/`VA` mechanism) are silently
+  dropped rather than evaluated — see `CefContractTest`'s
+  `knownPResidual` cases for the two instances found.
+- `GibbsEnergyModel` is a minimal, model-agnostic abstract contract
+  (`system/model`): every method on it is either required by Sundman's
+  phase-matrix/equilibrium-matrix construction (2015 Eq. 40/58) or is a
+  genuine external entry point, verified by an explicit audit this
+  session (no dead accessors, no CEF-specific assumptions baked in
+  beyond the sublattice-block accessors, deliberately deferred pending a
+  second, CVM, implementation). `CefGibbs` (`system/model/cef`) is its
+  sole current implementation: a general n-sublattice CEF Gibbs-energy
+  evaluator with analytical `G`, `dG_dy`, `d2G_dy2`, `dG_dT`,
+  `d2G_dydT`, `dG_dP`, `d2G_dydP` — reference, ideal, excess, magnetic
+  (Inden-Hillert-Jarl), and volume/pressure (`V0*exp(VA)*(P-P_ref)`)
+  contributions all analytically differentiated, with reference/excess
+  gradients and Hessians both derived from one shared `AD2`
+  (second-order automatic differentiation) construction so they cannot
+  silently diverge from each other.
+- Assembling and inverting the Newton phase matrix from those values is
+  calculation-layer work, not model-layer work
+  (`calc/equil/PhaseMatrixAssembler`) — it operates purely through
+  `GibbsEnergyModel`'s abstract surface, so a future non-CEF model (e.g.
+  CVM) gets phase-matrix/equilibrium-matrix assembly for free instead of
+  reimplementing it. `EquilibriumSolverV2` is the sole production
+  solver consumer.
+- `CefContractTest` (`src/test/`) verifies every quantity on
+  `GibbsEnergyModel`'s abstract contract against pycalphad 0.11.1 with
+  every comparison gated (no report-only exceptions — the R-constant
+  convention difference is corrected analytically in the reference
+  values, not excused), plus structural invariants (Hessian symmetry,
+  `dMoles_dy` y-independence, composition/mole consistency, `isValid`
+  accept/reject) that hold independent of any reference implementation.
+  This caught a real bug this session: the Redlich-Kister interaction
+  gradient double-counted a term for any RK order > 0, silently wrong
+  for essentially any phase with a binary/ternary interaction parameter,
+  fixed and now regression-tested.
 - A Sundman-style (CALPHAD 75, 2021) single-phase equilibrium path in
-  `calc/equil/EquilibriumSolver`: given a fixed T, P, and overall
+  `calc/equil/EquilibriumSolverV2`: given a fixed T, P, and overall
   composition, it builds the correct site-fraction state, converges the
   chemical potentials via the tangent-plane/Euler relation, and reports a
   self-consistent Gibbs energy, mole fractions, and zero driving force.
@@ -241,30 +277,36 @@ assessment code is quarantined under `legacy/`.
 ### Current limitations
 
 - **Multiphase equilibrium is not yet validated.** The Newton iteration in
-  `EquilibriumSolver` for 2+ stable phases does not yet converge to
+  `EquilibriumSolverV2` for 2+ stable phases does not yet converge to
   physically correct results; the multi-phase JUnit case
   (`src-test/calc/equil/EquilibriumSolverV2TwoPhaseEndToEndTest.java`)
   deliberately asserts only that the iteration runs, not its output.
+  This is the natural next target now that the model layer underneath
+  it has been hardened and regression-tested.
 - **Single-phase solver misses the ordered minimum at stoichiometric
-  points.** For V2ZR at its ideal stoichiometry, `EquilibriumSolver` /
+  points.** For V2ZR at its ideal stoichiometry, `EquilibriumSolverV2` /
   `GridMinimizer` converge to a *disordered* constitution ~13 kJ/mol
   above the true ordered end-member minimum (see
   `src/test/CalculationSessionCalGTest.java`). The grid minimizer's
   coarse scan does not land near the narrow, deep ordered minimum, and a
   single Newton step from a nearby disordered guess does not reach it.
-  Flagged for a dedicated `EquilibriumSolver`/`GridMinimizer` pass.
+  Flagged for a dedicated solver/`GridMinimizer` pass.
 - `calculateStep`/`calculateMap` on `CalculationSession` are explicit
   unimplemented stubs — there is no plain property-sampling engine (as
   opposed to full phase-boundary tracing) in the codebase yet.
-- CEF interaction parameters currently support only 2-sublattice pair×
-  single-sublattice interactions with a single T-linear term; there is no
-  higher-order Redlich-Kister expansion within CEF interactions.
-- The magnetic contribution (Inden-Hillert model) is implemented but its
-  composition-dependent Curie temperature/Bohr-magneton-number
-  calculation is not yet wired in (`computeTc`/`computeBeta` return 0).
+- Two-state/Einstein and ordering/disordering (B2/L1₂-style) contributions
+  are not implemented in `CefGibbs` at all (separate from the
+  pressure-dependent-`FUNCTION` gap noted above). `VK` (isothermal
+  compressibility) is detected and rejected with an explicit exception
+  rather than silently ignored, matching pycalphad's own unimplemented
+  status for it.
 - RK and CVM models are not connected to the TDB → equilibrium production
   path; only CEF phases can currently be built and solved end-to-end from
-  a TDB file.
+  a TDB file. `GibbsEnergyModel`'s sublattice-block accessors
+  (`numSublattices`/`offsets`/`constituentsPerSublattice`) carry CEF's
+  own vocabulary for now — deliberately not generalized until a second
+  (CVM) implementation exists to validate what generalization actually
+  fits both.
 - The test suite is mostly standalone diagnostic `main()` programs under
   `src/test/` rather than the Gradle/JUnit setup `build.gradle` declares;
   only one true JUnit test exists so far (`src-test/`). There is no
