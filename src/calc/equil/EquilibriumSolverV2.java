@@ -158,43 +158,19 @@ public class EquilibriumSolverV2 {
         double[] mu;
         double[] gamma;
 
-        PhaseResponse response;
-
-        /** R_AB = sum_i (dM_A/dY_i) c_iB. */
-        double[][] massResponse;
-
-        /** q_A = sum_i (dM_A/dY_i) c_iG. */
-        double[] massGResponse;
+        /**
+         * This phase's Sundman response coefficients at fixed T, P,
+         * mu=0: G, M_A, eMat (e_ij), cG (c_iG), eMatNC (R_AB = the global
+         * mass-balance response matrix, Sundman Eq. 58/59), and deln
+         * (q_A = sum_i dM_A/dy_i * c_iG at this mu=0 evaluation point --
+         * see {@link PhaseMatrixAssembler#compute}'s class javadoc for why
+         * deln reduces to exactly q_A there). Computed once per phase per
+         * iteration by {@link #buildPhaseResponses()}.
+         */
+        PhaseEquilData equilData;
 
         PhaseWork(CefGibbs model) {
             this.model = model;
-        }
-    }
-
-    /**
-     * Sundman phase-response coefficients (Eq. 43-44): the phase-matrix
-     * inverse e_ij together with c_iG and c_iA, used at fixed T, P to
-     * express the site-fraction correction as
-     *
-     *     Delta y_i = c_iG + sum_A c_iA * lambda_A.
-     *
-     * lambda_A is the new (absolute) chemical potential from Sundman's
-     * Eq. (58), not an increment Delta mu_A.
-     */
-    private static final class PhaseResponse {
-
-        final double[][] e;
-        final double[] cG;
-        final double[][] cA;
-
-        PhaseResponse(
-                double[][] e,
-                double[] cG,
-                double[][] cA) {
-
-            this.e = e;
-            this.cG = cG;
-            this.cA = cA;
         }
     }
 
@@ -488,7 +464,7 @@ public class EquilibriumSolverV2 {
                 double maxAbsCG =
                         0.0;
 
-                for (double v : w.response.cG) {
+                for (double v : w.equilData.cG) {
                     maxAbsCG =
                             Math.max(
                                     maxAbsCG,
@@ -1576,65 +1552,6 @@ public class EquilibriumSolverV2 {
         phaseWork.phaseMatrix = A;
     }
 
-    /**
-     * Computes the Sundman phase-response coefficients (Eq. 43-44) for one
-     * phase by delegating to {@link PhaseMatrixAssembler#compute}, the
-     * same bordered-phase-matrix build/invert this method used to
-     * re-implement inline (duplicating {@code PhaseMatrixAssembler}'s
-     * build-matrix, invert, and {@code cG} derivation exactly, just
-     * against {@code PhaseWork}'s raw {@code gy}/{@code gyy}/{@code dMdY}
-     * fields instead of calling the already-extracted, already
-     * pycalphad-verified utility -- see
-     * {@code PhaseMatrixAssemblerContractTest}). Evaluated at {@code mu=0},
-     * {@code deltaT=0}, {@code deltaP=0} so {@code eMat} is exactly
-     * {@code e_ij} and {@link PhaseEquilData#cG} is exactly Sundman's
-     * {@code c_iG} at fixed T, P -- {@code c_iA} is then recovered
-     * directly from that same {@code eMat} and {@code work.dMdY} (Eq. 44),
-     * not re-derived via a separate matrix build.
-     */
-    private PhaseResponse calculatePhaseResponse(
-            PhaseWork work,
-            CefGibbs phase) {
-
-        int nc =
-                targetAmounts.length;
-
-        PhaseEquilData data =
-                PhaseMatrixAssembler.compute(
-                        phase, T, P, work.y, 0.0, 0.0, new double[nc]);
-
-        int nip =
-                phase.numSiteVars();
-
-        /*
-         * cA[A][i] = c_iA = sum_j e_ij * dM_A/dY_j (Sundman Eq. 44).
-         */
-        double[][] cA =
-                new double[nc][nip];
-
-        for (int A = 0; A < nc; A++) {
-
-            for (int i = 0; i < nip; i++) {
-
-                double sum = 0.0;
-
-                for (int j = 0; j < nip; j++) {
-
-                    sum +=
-                            data.eMat[i][j]
-                            * work.dMdY[A][j];
-                }
-
-                cA[A][i] = sum;
-            }
-        }
-
-        return new PhaseResponse(
-                data.eMat,
-                data.cG,
-                cA);
-    }
-
     /*
      * Obtain an initial chemical-potential estimate for the starting
      * state. This is initialization only.
@@ -2660,45 +2577,22 @@ public class EquilibriumSolverV2 {
                     "Phase-work state is not initialized.");
         }
 
+        int nc =
+                targetAmounts.length;
+
         for (PhaseWork work : phaseWorks) {
 
-            work.response =
-                    calculatePhaseResponse(
-                            work,
-                            work.model);
-
-            int nc =
-                    targetAmounts.length;
-
-            int nip =
-                    work.model
-                            .numSiteVars();
-
-            work.massResponse =
-                    new double[nc][nc];
-
-            work.massGResponse =
-                    new double[nc];
-
-            for (int A = 0; A < nc; A++) {
-
-                for (int i = 0; i < nip; i++) {
-
-                    double dM =
-                            work.dMdY[A][i];
-
-                    work.massGResponse[A] +=
-                            dM
-                            * work.response.cG[i];
-
-                    for (int B = 0; B < nc; B++) {
-
-                        work.massResponse[A][B] +=
-                                dM
-                                * work.response.cA[B][i];
-                    }
-                }
-            }
+            /*
+             * eMatNC (R_AB) and deln (q_A, at this mu=0 evaluation point --
+             * see PhaseMatrixAssembler.compute()'s class javadoc) come
+             * directly from one call, replacing the manual
+             * sum_i dM_A/dy_i * c_iB / c_iG projection this method used to
+             * recompute from a separately-derived cA.
+             */
+            work.equilData =
+                    PhaseMatrixAssembler.compute(
+                            work.model, T, P, work.y, 0.0, 0.0,
+                            new double[nc]);
         }
 
         /*
@@ -2736,7 +2630,7 @@ public class EquilibriumSolverV2 {
 
             if (work.y == null
                     || work.mA == null
-                    || work.response == null) {
+                    || work.equilData == null) {
 
                 throw new IllegalStateException(
                         "Incomplete PhaseWork at index "
@@ -2775,90 +2669,19 @@ public class EquilibriumSolverV2 {
 
             System.out.printf(
                     "  cG norm = %.15e%n",
-                    vectorNorm(work.response.cG));
+                    vectorNorm(work.equilData.cG));
 
-            if (work.response.cA.length
+            if (work.equilData.eMatNC.length
                     != targetAmounts.length) {
 
                 throw new IllegalStateException(
-                        "Wrong cA dimension at phase "
+                        "Wrong eMatNC dimension at phase "
                         + p);
             }
         }
 
         System.out.println(
                 "Phase-indexed state validation: PASS");
-    }
-
-    /**
-     * Element response matrix for Sundman's mass-balance equation:
-     *
-     *     R[A][B] = sum_i dM_A/dy_i * c_iB
-     */
-    private double[][] calculateMassResponseMatrix() {
-
-        int nc =
-                targetAmounts.length;
-
-        int nip =
-                phaseWork.model
-                        .numSiteVars();
-
-        double[][] R =
-                new double[nc][nc];
-
-        for (int a = 0; a < nc; a++) {
-
-            for (int b = 0; b < nc; b++) {
-
-                double sum = 0.0;
-
-                for (int i = 0; i < nip; i++) {
-
-                    sum +=
-                            phaseWork.dMdY[a][i]
-                            * phaseWork.response.cA[b][i];
-                }
-
-                R[a][b] = sum;
-            }
-        }
-
-        return R;
-    }
-
-    /**
-     * Element response vector for Sundman's mass-balance equation:
-     *
-     *     r[A] = sum_i dM_A/dy_i * c_iG
-     */
-    private double[] calculateMassGResponse() {
-
-        int nc =
-                targetAmounts.length;
-
-        int nip =
-                phaseWork.model
-                        .numSiteVars();
-
-        double[] r =
-                new double[nc];
-
-        for (int a = 0; a < nc; a++) {
-
-            double sum = 0.0;
-
-            for (int i = 0; i < nip; i++) {
-
-                sum +=
-                        phaseWork.dMdY[a][i]
-                        * phaseWork.response.cG[i];
-            }
-
-            r[a] = sum;
-        }
-
-        return r;
     }
 
     /**
@@ -2983,7 +2806,7 @@ public class EquilibriumSolverV2 {
                         + phaseIndex);
             }
 
-            if (work.response == null) {
+            if (work.equilData == null) {
 
                 throw new IllegalStateException(
                         "Missing Sundman response for stable phase "
@@ -3024,11 +2847,10 @@ public class EquilibriumSolverV2 {
         // ------------------------------------------------------------
         // Assemble via GlobalEquilibriumMatrixAssembler (STEP 3-4;
         // see its javadoc and PhaseMatrixAssemblerContractTest's
-        // sibling test for STEP 1-2). Adapts each stable phase's
-        // PhaseWork into the minimal PhaseEquilData the assembler
-        // reads (mA, G, eMatNC=R_AB, deln=q_A); this avoids
-        // re-implementing the same (A, b) assembly inline a second
-        // time, as this method used to.
+        // sibling test for STEP 1-2). Each stable phase's
+        // PhaseWork.equilData (computed by buildPhaseResponses(), mu=0)
+        // already IS the PhaseEquilData the assembler reads
+        // (G, mA, eMatNC=R_AB, deln=q_A) -- no adapter needed.
         // ------------------------------------------------------------
 
         PhaseEquilData[] phaseData =
@@ -3043,18 +2865,7 @@ public class EquilibriumSolverV2 {
                     phaseWorks.get(stablePhases[k]);
 
             phaseData[k] =
-                    new PhaseEquilData(
-                            work.G,
-                            null,
-                            work.massGResponse,
-                            null,
-                            work.mA,
-                            null,
-                            work.massResponse,
-                            null,
-                            null,
-                            null,
-                            null);
+                    work.equilData;
 
             stablePhaseAmounts[k] =
                     phaseAmounts[k];
@@ -3592,7 +3403,7 @@ public class EquilibriumSolverV2 {
                                 + phaseIndex);
             }
 
-            if (work.response == null) {
+            if (work.equilData == null) {
 
                 throw new IllegalStateException(
                         "Missing Sundman phase response for "
@@ -3603,60 +3414,23 @@ public class EquilibriumSolverV2 {
                     work.model
                             .numSiteVars();
 
-            if (work.response.cG == null
-                    || work.response.cG.length != nip) {
-
-                throw new IllegalStateException(
-                        "cG dimension mismatch for phase "
-                                + work.model.phaseName());
-            }
-
-            if (work.response.cA == null
-                    || work.response.cA.length != nc) {
-
-                throw new IllegalStateException(
-                        "cA element dimension mismatch for phase "
-                                + work.model.phaseName());
-            }
-
+            /*
+             * Sundman Eq. (43): DeltaY_i = c_iG + sum_A c_iA * lambda_A.
+             * PhaseMatrixAssembler.compute()'s dely IS exactly this
+             * expression when called with mu=newLambda (see its class
+             * javadoc's derivation: delyN[i] = cG[i] + sum_j eMat[i][j] *
+             * (sum_A dM[A][j] * mu[A]), which is algebraically
+             * c_iG + sum_A mu_A * c_iA) -- so this is a direct call, not a
+             * second manual re-derivation of c_iA from eMat and dMdY.
+             */
             double[] deltaY =
-                    new double[nip];
+                    PhaseMatrixAssembler.compute(
+                            work.model, T, P, work.y, 0.0, 0.0, newLambda)
+                            .dely;
 
-            // ------------------------------------------------------------
-            // Sundman Eq. (43):
-            //
-            //     DeltaY_i =
-            //          c_iG
-            //          + sum_A c_iA * lambda_A
-            // ------------------------------------------------------------
+            for (int i = 0; i < nip; i++) {
 
-            for (int i = 0;
-                 i < nip;
-                 i++) {
-
-                double value =
-                        work.response.cG[i];
-
-                for (int A = 0;
-                     A < nc;
-                     A++) {
-
-                    if (work.response.cA[A] == null
-                            || work.response.cA[A].length != nip) {
-
-                        throw new IllegalStateException(
-                                "cA["
-                                        + A
-                                        + "] dimension mismatch for phase "
-                                        + work.model.phaseName());
-                    }
-
-                    value +=
-                            work.response.cA[A][i]
-                            * newLambda[A];
-                }
-
-                if (!Double.isFinite(value)) {
+                if (!Double.isFinite(deltaY[i])) {
 
                     throw new IllegalStateException(
                             "Non-finite DeltaY["
@@ -3664,11 +3438,8 @@ public class EquilibriumSolverV2 {
                                     + "] for phase "
                                     + work.model.phaseName()
                                     + ": "
-                                    + value);
+                                    + deltaY[i]);
                 }
-
-                deltaY[i] =
-                        value;
             }
 
             /*
@@ -3720,7 +3491,7 @@ public class EquilibriumSolverV2 {
             System.out.println(
                     "cG                = "
                             + Arrays.toString(
-                                    work.response.cG));
+                                    work.equilData.cG));
 
             System.out.println(
                     "DeltaY            = "
@@ -4399,6 +4170,31 @@ public class EquilibriumSolverV2 {
         final int nc =
                 targetAmounts.length;
 
+        /*
+         * Linearized phase composition response per stable phase,
+         * DM_A^k = q_A^k + sum_B R_AB^k lambda_B -- computed once per
+         * phase (not once per (A, k) pair). PhaseMatrixAssembler.compute()
+         * 's deln IS exactly this vector when called with mu=newLambda
+         * (same relation calculateInternalCorrections() uses for
+         * dely/DeltaY), recomputed fresh here rather than assuming
+         * work.equilData (mu=0) is still the current point.
+         */
+        double[][] dMPerPhase =
+                new double[stablePhases.length][];
+
+        for (int k = 0;
+             k < stablePhases.length;
+             k++) {
+
+            PhaseWork work =
+                    phaseWorks.get(stablePhases[k]);
+
+            dMPerPhase[k] =
+                    PhaseMatrixAssembler.compute(
+                            work.model, T, P, work.y, 0.0, 0.0, newLambda)
+                            .deln;
+        }
+
         double maximum =
                 0.0;
 
@@ -4413,12 +4209,6 @@ public class EquilibriumSolverV2 {
                  k < stablePhases.length;
                  k++) {
 
-                int p =
-                        stablePhases[k];
-
-                PhaseWork work =
-                        phaseWorks.get(p);
-
                 /*
                  * ALL quantities below refer to the point at which
                  * buildEquilibriumMatrix() was assembled.
@@ -4430,25 +4220,6 @@ public class EquilibriumSolverV2 {
                         previousPhaseMA[k][A];
 
                 /*
-                 * Linearized phase composition response:
-                 *
-                 *     DM_A =
-                 *         q_A
-                 *         + sum_B R_AB lambda_B
-                 */
-                double dM =
-                        work.massGResponse[A];
-
-                for (int B = 0;
-                     B < nc;
-                     B++) {
-
-                    dM +=
-                            work.massResponse[A][B]
-                            * newLambda[B];
-                }
-
-                /*
                  * Total first-order element change:
                  *
                  *     DN_A =
@@ -4456,7 +4227,7 @@ public class EquilibriumSolverV2 {
                  *         + M_A * DOmega
                  */
                 dN +=
-                        omega * dM
+                        omega * dMPerPhase[k][A]
                         +
                         oldM * deltaPhaseAmounts[k];
             }
