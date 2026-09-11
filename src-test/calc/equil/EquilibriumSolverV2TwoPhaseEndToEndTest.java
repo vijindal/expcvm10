@@ -400,4 +400,251 @@ public class EquilibriumSolverV2TwoPhaseEndToEndTest {
         System.out.println(
                 "mu(final) = " + Arrays.toString(result.getMu()));
     }
+
+    /**
+     * Companion to {@link #testV2ZR_sameCandidateTwice_twoStableSlots_endToEnd},
+     * without the single-iteration cap: now that {@code updateStablePhaseSet()}
+     * is implemented (Sundman Section 5.6 / pycalphad's own add/remove
+     * phase logic, see {@code Solver.solve()}'s post-hoc {@code NP<=0}
+     * removal pass), letting the fixed-phase-set loop run to convergence
+     * from the same coarse two-vertex V2ZR starting guess is expected to
+     * remove the redundant slot once its amount collapses, rather than
+     * throwing (the original failure this test's sibling worked around
+     * by capping at one iteration).
+     */
+    @Test
+    void testV2ZR_sameCandidateTwice_redundantSlotRemoved_endToEnd() throws Exception {
+
+        system.database.TdbParser parser =
+                new system.database.TdbParser();
+
+        parser.load(TDB);
+
+        List<String> elements =
+                Arrays.asList("V", "ZR");
+
+        @SuppressWarnings("unchecked")
+        List<CefGibbs> raw =
+                (List<CefGibbs>)
+                        parser.buildPhaseModels(elements, Arrays.asList(PHASE_A));
+
+        CefGibbs v2zr = raw.get(0);
+
+        List<GibbsEnergyModel> candidates =
+                Arrays.asList((GibbsEnergyModel) v2zr);
+
+        double xZrLow = 0.30;
+        double xZrHigh = 0.36;
+        double targetXZr = 1.0 / 3.0;
+
+        double lambda =
+                (targetXZr - xZrLow) / (xZrHigh - xZrLow);
+
+        double omega0 = 1.0 - lambda;
+        double omega1 = lambda;
+
+        double[] yLow =
+                v2zr.getInitialInternalVars(
+                        new double[] {1.0 - xZrLow, xZrLow});
+
+        double[] yHigh =
+                v2zr.getInitialInternalVars(
+                        new double[] {1.0 - xZrHigh, xZrHigh});
+
+        double[] sameCandidateTarget =
+                {1.0 - targetXZr, targetXZr};
+
+        System.out.println();
+        System.out.println(
+                "=== V2ZR same-candidate-twice, redundant-slot-removal "
+                + "END-TO-END TEST ===");
+
+        EquilibriumSolverV2 solver =
+                new EquilibriumSolverV2();
+
+        solver.setInitialStateForTest(
+                new int[] {0, 0},
+                new double[][] {yLow, yHigh},
+                new double[] {omega0, omega1});
+
+        EquilibriumResult result =
+                solver.solve(
+                        T,
+                        P,
+                        sameCandidateTarget,
+                        candidates);
+
+        assertNotNull(result);
+
+        List<EquilibriumResult.PhaseResult> stableResults =
+                result.getStablePhases();
+
+        assertEquals(
+                1,
+                stableResults.size(),
+                "The redundant V2ZR slot must be removed by "
+                + "updateStablePhaseSet() once the fixed-phase-set "
+                + "update drives its amount to the phase-amount floor "
+                + "-- exactly one V2ZR stable phase should remain.");
+
+        EquilibriumResult.PhaseResult survivor =
+                stableResults.get(0);
+
+        assertEquals(PHASE_A, survivor.phaseName);
+
+        assertTrue(
+                v2zr.isValid(survivor.y),
+                "Surviving slot's constitution must be physically "
+                + "valid: " + Arrays.toString(survivor.y));
+
+        assertNotNull(result.getMu());
+
+        for (double value : result.getMu()) {
+
+            assertTrue(
+                    Double.isFinite(value),
+                    "mu must be finite: " + Arrays.toString(result.getMu()));
+        }
+
+        System.out.println();
+        System.out.println(
+                "Converged = " + result.isConverged()
+                + ", iterations = " + result.getIterations());
+        System.out.println(
+                "survivor: amount=" + survivor.amount
+                + " y=" + Arrays.toString(survivor.y));
+        System.out.println(
+                "mu(final) = " + Arrays.toString(result.getMu()));
+    }
+
+    /**
+     * Verifies the ADD side of {@code updateStablePhaseSet()}: starting
+     * from only BCC_A2 stable (at a composition far from the known
+     * two-phase target, so BCC_A2 alone cannot satisfy mass balance and
+     * V2ZR's driving force at the resulting mu should turn positive),
+     * with both V2ZR and BCC_A2 supplied as candidates, the solver must
+     * add V2ZR to the stable set on its own and converge to the known
+     * two-phase equilibrium (same target/composition this class's first
+     * test already establishes independently via a fixed two-phase
+     * start).
+     */
+    @Test
+    void testBCC_only_V2ZRAddedByDrivingForce_endToEnd() throws Exception {
+
+        system.database.TdbParser parser =
+                new system.database.TdbParser();
+
+        parser.load(TDB);
+
+        List<String> elements =
+                Arrays.asList("V", "ZR");
+
+        List<String> phaseNames =
+                Arrays.asList(PHASE_A, PHASE_B);
+
+        @SuppressWarnings("unchecked")
+        List<CefGibbs> raw =
+                (List<CefGibbs>)
+                        parser.buildPhaseModels(elements, phaseNames);
+
+        CefGibbs v2zr = raw.get(0);
+        CefGibbs bcc  = raw.get(1);
+
+        List<GibbsEnergyModel> candidates =
+                Arrays.asList(v2zr, bcc);
+
+        // Seed BCC_A2 alone at its OWN natural composition from the
+        // known two-phase baseline (XZR_B), but at its OWN baseline
+        // amount (OMEGA_B=1/2, not enough total mass to reach TARGET on
+        // its own) -- so BCC_A2 alone cannot satisfy mass balance at
+        // TARGET (a genuine ~0.5 formula-unit mass deficit remains),
+        // forcing a real chemical-potential shift, under which V2ZR's
+        // driving force is checked empirically below.
+        double[] yBccSeed =
+                bcc.getInitialInternalVars(
+                        new double[] {1.0 - XZR_B, XZR_B});
+
+        System.out.println();
+        System.out.println(
+                "=== BCC_A2-only -> V2ZR added by driving force "
+                + "END-TO-END TEST ===");
+        System.out.println(
+                "Seed BCC_A2 Y = " + Arrays.toString(yBccSeed));
+
+        EquilibriumSolverV2 solver =
+                new EquilibriumSolverV2();
+
+        solver.setInitialStateForTest(
+                new int[] {1},
+                new double[][] {yBccSeed},
+                new double[] {OMEGA_B});
+
+        EquilibriumResult result =
+                solver.solve(
+                        T,
+                        P,
+                        TARGET,
+                        candidates);
+
+        assertNotNull(result);
+
+        List<EquilibriumResult.PhaseResult> stableResults =
+                result.getStablePhases();
+
+        assertEquals(
+                2,
+                stableResults.size(),
+                "V2ZR must be added to the stable set once its driving "
+                + "force at the BCC_A2-only mu turns positive -- if this "
+                + "is still 1, updateStablePhaseSet()'s addition path "
+                + "has regressed.");
+
+        boolean sawV2zr =
+                false;
+
+        boolean sawBcc =
+                false;
+
+        for (EquilibriumResult.PhaseResult pr : stableResults) {
+
+            if (PHASE_A.equals(pr.phaseName)) {
+                sawV2zr = true;
+            }
+
+            if (PHASE_B.equals(pr.phaseName)) {
+                sawBcc = true;
+            }
+
+            assertTrue(
+                    Double.isFinite(pr.amount)
+                    && pr.amount > 0.0,
+                    "Stable phase amount must be positive: "
+                    + pr.phaseName + " amount=" + pr.amount);
+        }
+
+        assertTrue(sawV2zr, "V2ZR must appear among the stable phases.");
+        assertTrue(sawBcc, "BCC_A2 must appear among the stable phases.");
+
+        assertNotNull(result.getMu());
+
+        for (double value : result.getMu()) {
+
+            assertTrue(
+                    Double.isFinite(value),
+                    "mu must be finite: " + Arrays.toString(result.getMu()));
+        }
+
+        System.out.println();
+        System.out.println(
+                "Converged = " + result.isConverged()
+                + ", iterations = " + result.getIterations());
+        for (EquilibriumResult.PhaseResult pr : stableResults) {
+            System.out.println(
+                    "  " + pr.phaseName
+                    + " amount=" + pr.amount
+                    + " x=" + Arrays.toString(pr.x));
+        }
+        System.out.println(
+                "mu(final) = " + Arrays.toString(result.getMu()));
+    }
 }

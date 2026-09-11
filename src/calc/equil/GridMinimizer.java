@@ -268,7 +268,7 @@ public class GridMinimizer {
      * non-linearly-constrained path of pycalphad's
      * {@code _sample_phase_constitution}.
      */
-    private double[][] sampleSiteFractions(GibbsEnergyModel m) {
+    double[][] sampleSiteFractions(GibbsEnergyModel m) {
 
         int ns = m.numSublattices();
         int[] ncSub = m.constituentsPerSublattice();

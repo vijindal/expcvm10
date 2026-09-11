@@ -2,7 +2,9 @@ package calc.equil;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import system.model.GibbsEnergyModel;
 import system.model.PhaseEquilData;
@@ -55,6 +57,35 @@ public class EquilibriumSolverV2 {
 
     /** Indices of phases currently considered stable. */
     private int[] stablePhases;
+
+    /**
+     * Phase-amount floor used both to damp a Newton step (updateState())
+     * and to decide a stable phase is extinct (updateStablePhaseSet()) --
+     * matches pycalphad's own MIN_PHASE_AMOUNT (minimizer.pyx:870).
+     */
+    private static final double MIN_PHASE_AMOUNT = 1.0e-16;
+
+    /**
+     * Minimum driving force (Sundman Eq. 62) required before a metastable
+     * candidate is added to the stable set -- matches pycalphad's
+     * minimum_df argument to add_new_phases() (eqsolver.pyx:247).
+     */
+    private static final double ADD_DRIVING_FORCE_THRESHOLD = 1.0e-4;
+
+    /**
+     * Composition-distinctness tolerance (Chebyshev distance in mole
+     * fraction) used to refuse adding a candidate that is not actually
+     * distinct from an already-stable slot of the same phase -- matches
+     * pycalphad's COMP_DIFFERENCE_TOL (constants.py:11).
+     */
+    private static final double ADD_COMP_DIFFERENCE_TOL = 1.0e-4;
+
+    /**
+     * Initial phase amount given to a newly added stable phase -- matches
+     * pycalphad's MIN_PHASE_FRACTION, used as the seed NP for a phase
+     * added by add_new_phases() (eqsolver.pyx:74-75, constants.py:8).
+     */
+    private static final double NEW_PHASE_SEED_AMOUNT = 1.0e-6;
 
     /** Current global Sundman equilibrium matrix. */
     private double[][] equilibriumMatrix;
@@ -134,6 +165,22 @@ public class EquilibriumSolverV2 {
      * stableSlots below.
      */
     private List<PhaseWork> phaseWorks;
+
+    /**
+     * Per-candidate cache of sampled internal-DOF site fractions (endmembers
+     * + edges + Halton interior points), keyed by candidate index, computed
+     * lazily the first time a candidate's driving force is needed for the
+     * addition pass in updateStablePhaseSet(). A single frozen y (e.g.
+     * phaseWorks.get(p).y, which never relaxes off its initialize()-time
+     * seed for a candidate that has never been stable) can sit at a poor,
+     * disordered constitution whose driving force is misleadingly small or
+     * negative even when the true best-case driving force for that phase
+     * is strongly positive elsewhere in its composition space -- matching
+     * pycalphad's own add_new_phases() (eqsolver.pyx), which scans the
+     * SAME pre-sampled grid used for initial phase selection, not a single
+     * Newton-refined point.
+     */
+    private Map<Integer, double[][]> candidateGridCache;
 
     /**
      * Independent Newton-iteration state for every STABLE SLOT, indexed by
@@ -710,30 +757,7 @@ public class EquilibriumSolverV2 {
              * constitution.
              */
             x =
-                    new double[nc];
-
-            double totalM =
-                    0.0;
-
-            for (double value : mA) {
-                totalM += value;
-            }
-
-            if (!(totalM > 0.0)
-                    || !Double.isFinite(totalM)) {
-
-                throw new IllegalStateException(
-                        "Invalid phase element amount sum: "
-                        + totalM);
-            }
-
-            for (int A = 0;
-                 A < nc;
-                 A++) {
-
-                x[A] =
-                        mA[A] / totalM;
-            }
+                    compositionFromMoles(mA, nc);
 
             /*
              * Sundman Eq. (62), driving force:
@@ -741,22 +765,7 @@ public class EquilibriumSolverV2 {
              *     D^beta = -G^beta + sum_A lambda_A * M_A^beta
              */
             double drivingForce =
-                    -g;
-
-            if (Double.isFinite(g)
-                    && mA != null) {
-
-                for (int A = 0;
-                     A < Math.min(
-                             nc,
-                             mA.length);
-                     A++) {
-
-                    drivingForce +=
-                            muResult[A]
-                            * mA[A];
-                }
-            }
+                    drivingForce(work, muResult);
 
             if (!isStable[i]) {
 
@@ -1443,6 +1452,83 @@ public class EquilibriumSolverV2 {
 
         work.dMdY =
                 work.model.dMoles_dy();
+    }
+
+    /**
+     * Sundman Eq. (62) driving force for phase work to become stable at
+     * the given chemical potentials:
+     *
+     *     D = -G_M + sum_A mu_A * M_A
+     *
+     * Positive D means adding this phase to the stable set would lower
+     * total G. Shared by buildEquilibriumResult() (metastable-phase
+     * reporting) and updateStablePhaseSet() (add decision) so the Eq. 62
+     * formula is not duplicated.
+     */
+    private double drivingForce(
+            PhaseWork work,
+            double[] muVector) {
+
+        if (work == null
+                || !Double.isFinite(work.G)
+                || work.mA == null
+                || muVector == null) {
+
+            return Double.NEGATIVE_INFINITY;
+        }
+
+        double d =
+                -work.G;
+
+        int n =
+                Math.min(
+                        muVector.length,
+                        work.mA.length);
+
+        for (int A = 0; A < n; A++) {
+
+            d +=
+                    muVector[A]
+                    * work.mA[A];
+        }
+
+        return d;
+    }
+
+    /**
+     * Normalizes element amounts M_A into mole fractions x_A = M_A /
+     * sum_A M_A. Shared by buildEquilibriumResult() and
+     * updateStablePhaseSet() so the normalization is not duplicated.
+     */
+    private double[] compositionFromMoles(
+            double[] mA,
+            int nc) {
+
+        double[] x =
+                new double[nc];
+
+        double totalM =
+                0.0;
+
+        for (double value : mA) {
+            totalM += value;
+        }
+
+        if (!(totalM > 0.0)
+                || !Double.isFinite(totalM)) {
+
+            throw new IllegalStateException(
+                    "Invalid phase element amount sum: "
+                    + totalM);
+        }
+
+        for (int A = 0; A < nc; A++) {
+
+            x[A] =
+                    mA[A] / totalM;
+        }
+
+        return x;
     }
 
     /**
@@ -3006,7 +3092,6 @@ public class EquilibriumSolverV2 {
          */
 
         final double MIN_SITE_FRACTION = 1.0e-14;
-        final double MIN_PHASE_AMOUNT = 1.0e-16;
         final double BOUNDS_TOLERANCE = 1.0e-11;
 
         double phaseAmtStepSize =
@@ -3042,6 +3127,27 @@ public class EquilibriumSolverV2 {
                 throw new IllegalStateException(
                         "Non-finite phase amount for stable slot "
                         + k + ": " + trialOmega[k]);
+            }
+
+            /*
+             * pycalphad's advance_state() (minimizer.pyx) computes this
+             * same shared step size but never re-checks the result
+             * afterward -- it trusts the closed-form cap. In floating
+             * point that cap can still leave a slot fractionally at or
+             * just below MIN_PHASE_AMOUNT (rounding, or a second slot's
+             * tighter shared cap). pycalphad's own Solver.solve() (not
+             * advance_state()) is the place that ever compares a phase
+             * amount to zero, and it does so ONLY as a post-hoc cleanup
+             * after the inner Newton loop has fully converged (NP<=0.0
+             * -> remove), never as a mid-iteration hard failure. Mirror
+             * that here: clamp to the floor and let
+             * updateStablePhaseSet() (STEP 8, immediately after this
+             * method returns) remove the phase -- do not throw.
+             */
+            if (trialOmega[k] < MIN_PHASE_AMOUNT) {
+
+                trialOmega[k] =
+                        MIN_PHASE_AMOUNT;
             }
         }
 
@@ -3113,19 +3219,6 @@ public class EquilibriumSolverV2 {
 
             trialY[k] =
                     candidate;
-
-            if (!Double.isFinite(trialOmega[k])
-                    || trialOmega[k] <= 0.0) {
-
-                throw new IllegalStateException(
-                        "Fixed-phase-set Sundman update produced a "
-                        + "non-positive phase amount for phase "
-                        + work.model.phaseName()
-                        + " (stable slot " + k + "): "
-                        + trialOmega[k]
-                        + ". Phase-set changes are "
-                        + "updateStablePhaseSet()'s responsibility.");
-            }
 
             for (double v : trialY[k]) {
 
@@ -3862,27 +3955,326 @@ public class EquilibriumSolverV2 {
     }
 
     /*
-     * Phase-set management is intentionally deferred.
+     * Phase-set management, following Sundman Eq. 62/Section 5.6 and
+     * pycalphad's own implementation of the same idea (pycalphad's
+     * Solver.solve()/add_new_phases(), see the design notes in the
+     * approved plan for this change):
      *
-     * Sundman requires:
-     *   omega_alpha < 0     -> remove stable phase
-     *   drivingForce_w > 0  -> add unstable phase
+     *   omega_k <= MIN_PHASE_AMOUNT  -> remove stable slot k
+     *   drivingForce_w > threshold   -> add candidate w (at most one per
+     *                                   call, largest driving force wins)
      *
-     * where the driving force for an unstable phase w is
-     *
-     *   c^w = sum_A lambda_A * M_A^w - G_M^w
-     *
-     * (already calculated correctly in buildEquilibriumResult() as
-     * drivingForce = -G + sum(mu[A] * mA[A])), but not yet consumed
-     * here to decide phase addition/removal.
-     *
-     * Current V2 scope uses a prescribed fixed stable-phase set:
-     * updateState() rejects an update that would make a stable phase's
-     * amount non-positive, rather than removing that phase, and no
-     * unstable candidate is ever added.
+     * pycalphad removes with no cooldown and no special-casing of the
+     * last remaining phase (an empty stable set is treated as a solver
+     * dead end, not silently prevented) -- this mirrors that exactly.
+     * Its only anti-thrashing guard is a composition-distinctness check
+     * against phases already present, which is what
+     * ADD_COMP_DIFFERENCE_TOL implements below.
      */
     private void updateStablePhaseSet() {
-        // To be implemented.
+
+        if (stablePhases == null
+                || stablePhases.length == 0
+                || phaseAmounts == null
+                || stableSlots == null) {
+            return;
+        }
+
+        // ------------------------------------------------------------
+        // 1. Removal pass: drop every stable slot at/below the phase-
+        //    amount floor.
+        // ------------------------------------------------------------
+
+        List<Integer> toRemove =
+                new ArrayList<>();
+
+        for (int k = 0; k < stablePhases.length; k++) {
+
+            if (phaseAmounts[k] <= MIN_PHASE_AMOUNT) {
+                toRemove.add(k);
+            }
+        }
+
+        for (int idx = toRemove.size() - 1; idx >= 0; idx--) {
+            removeStableSlot(toRemove.get(idx));
+        }
+
+        if (stablePhases.length == 0) {
+
+            throw new IllegalStateException(
+                    "Sundman phase-set update removed every stable "
+                    + "phase -- no thermodynamically consistent stable "
+                    + "set remains.");
+        }
+
+        // ------------------------------------------------------------
+        // 2. Addition pass: among candidates not currently stable, add
+        //    at most one -- the largest driving force above threshold,
+        //    skipping any candidate not distinct in composition from an
+        //    already-stable slot of the same model.
+        //
+        //    The candidate's OWN never-relaxed phaseWorks.get(p).y (frozen
+        //    at whatever initialize() first seeded it to, since nothing
+        //    ever runs a Newton step on a metastable candidate's internal
+        //    DOF) is not a reliable place to evaluate driving force -- a
+        //    disordered/off-optimum y can show a small or negative driving
+        //    force even when the phase's true best-case driving force
+        //    elsewhere in its composition space is strongly positive.
+        //    pycalphad's own add_new_phases() (eqsolver.pyx) avoids this
+        //    by scanning the SAME pre-sampled grid used for initial phase
+        //    selection (calculate()'s Halton/endmember points), not a
+        //    single Newton-refined point -- mirrored here via
+        //    candidateSampledGrid(), which lazily computes and caches
+        //    that same style of grid per candidate.
+        // ------------------------------------------------------------
+
+        int nc =
+                targetAmounts.length;
+
+        boolean[] isStable =
+                new boolean[phaseModels.size()];
+
+        for (int idx : stablePhases) {
+            isStable[idx] = true;
+        }
+
+        int bestCandidate =
+                -1;
+
+        double[] bestY =
+                null;
+
+        double bestDrivingForce =
+                ADD_DRIVING_FORCE_THRESHOLD;
+
+        for (int p = 0; p < phaseModels.size(); p++) {
+
+            if (isStable[p]) {
+                continue;
+            }
+
+            CefGibbs model =
+                    (CefGibbs) phaseModels.get(p);
+
+            double[][] grid =
+                    candidateSampledGrid(p, model);
+
+            for (double[] y : grid) {
+
+                double[] mA =
+                        model.moles(y);
+
+                double g =
+                        model.G(T, P, y);
+
+                double d =
+                        -g;
+
+                int n =
+                        Math.min(nc, mA.length);
+
+                for (int A = 0; A < n; A++) {
+                    d += mu[A] * mA[A];
+                }
+
+                if (!(d > bestDrivingForce)) {
+                    continue;
+                }
+
+                if (isCompositionDuplicate(model, mA, nc)) {
+                    continue;
+                }
+
+                bestDrivingForce = d;
+                bestCandidate = p;
+                bestY = y;
+            }
+        }
+
+        if (bestCandidate >= 0) {
+            addStableSlot(bestCandidate, bestY);
+        }
+    }
+
+    /**
+     * Lazily samples and caches candidate p's internal-DOF site-fraction
+     * grid (endmembers + edges + Halton interior points), reusing
+     * GridMinimizer's own sampler so this matches exactly the same style
+     * of points used for initial phase selection.
+     */
+    private double[][] candidateSampledGrid(
+            int p,
+            GibbsEnergyModel model) {
+
+        if (candidateGridCache == null) {
+            candidateGridCache = new HashMap<>();
+        }
+
+        double[][] cached =
+                candidateGridCache.get(p);
+
+        if (cached != null) {
+            return cached;
+        }
+
+        double[][] sampled =
+                new GridMinimizer()
+                        .sampleSiteFractions(model);
+
+        candidateGridCache.put(p, sampled);
+
+        return sampled;
+    }
+
+    /**
+     * True if a candidate composition (candidateModel, candidateMA) is
+     * within ADD_COMP_DIFFERENCE_TOL (Chebyshev distance) of an
+     * already-stable slot of the SAME candidate model -- pycalphad's
+     * anti-thrashing guard against re-adding a phase indistinguishable
+     * from one already present (eqsolver.pyx add_new_phases()).
+     */
+    private boolean isCompositionDuplicate(
+            GibbsEnergyModel candidateModel,
+            double[] candidateMA,
+            int nc) {
+
+        double[] candidateX =
+                compositionFromMoles(
+                        candidateMA,
+                        nc);
+
+        for (int k = 0; k < stablePhases.length; k++) {
+
+            PhaseWork stableWork =
+                    stableSlots.get(k);
+
+            if (stableWork.model != candidateModel) {
+                continue;
+            }
+
+            double[] stableX =
+                    compositionFromMoles(
+                            stableWork.mA,
+                            nc);
+
+            double maxDiff =
+                    0.0;
+
+            for (int A = 0; A < nc; A++) {
+
+                maxDiff =
+                        Math.max(
+                                maxDiff,
+                                Math.abs(
+                                        candidateX[A]
+                                        - stableX[A]));
+            }
+
+            if (maxDiff <= ADD_COMP_DIFFERENCE_TOL) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Removes stable slot k by compacting stablePhases/phaseAmounts/
+     * stableSlots -- deltaPhaseAmounts/deltaPhaseInternalVars need no
+     * handling here since both are freshly reallocated from
+     * stablePhases.length every iteration (buildEquilibriumMatrix(),
+     * calculateInternalCorrections()). phaseInternalVars for the removed
+     * candidate is left untouched (stale but harmless, same as the
+     * existing miscibility-gap caveat on that array).
+     */
+    private void removeStableSlot(int k) {
+
+        int n =
+                stablePhases.length;
+
+        int[] newStablePhases =
+                new int[n - 1];
+
+        double[] newPhaseAmounts =
+                new double[n - 1];
+
+        List<PhaseWork> newStableSlots =
+                new ArrayList<>(n - 1);
+
+        int w =
+                0;
+
+        for (int j = 0; j < n; j++) {
+
+            if (j == k) {
+                continue;
+            }
+
+            newStablePhases[w] = stablePhases[j];
+            newPhaseAmounts[w] = phaseAmounts[j];
+            newStableSlots.add(stableSlots.get(j));
+            w++;
+        }
+
+        stablePhases = newStablePhases;
+        phaseAmounts = newPhaseAmounts;
+        stableSlots = newStableSlots;
+    }
+
+    /**
+     * Adds candidate p as a new stable slot, seeded from its current
+     * metastable constitution phaseWorks.get(p).y (kept current every
+     * iteration by evaluateAllPhases(), never mutated except by
+     * initialize()/updateState()'s own commit for already-stable slots),
+     * with a small positive initial amount -- modeled directly on
+     * initialize()'s GridMinimizer-branch loop.
+     */
+    private void addStableSlot(int p, double[] seedY) {
+
+        int n =
+                stablePhases.length;
+
+        int[] newStablePhases =
+                Arrays.copyOf(stablePhases, n + 1);
+
+        double[] newPhaseAmounts =
+                Arrays.copyOf(phaseAmounts, n + 1);
+
+        newStablePhases[n] = p;
+        newPhaseAmounts[n] = NEW_PHASE_SEED_AMOUNT;
+
+        CefGibbs cef =
+                (CefGibbs) phaseModels.get(p);
+
+        PhaseWork work =
+                new PhaseWork(cef);
+
+        work.y =
+                seedY.clone();
+
+        evaluatePhaseWork(work);
+
+        /*
+         * pycalphad's CompositionSet has no per-phase mu/gamma at all --
+         * mu is purely system-level state (SystemState.chemical_
+         * potentials), never duplicated per phase. This codebase instead
+         * caches a copy of the single global mu on every PhaseWork
+         * (updateState()'s commit loop sets work.mu = newLambdaChecked
+         * identically for every stable slot -- never phase-specific).
+         * A newly added slot must follow that same existing convention
+         * so it is not missing the field checkConvergence() reads.
+         */
+        work.mu =
+                mu.clone();
+
+        recomputeSublatticeMultipliers(work);
+
+        stableSlots.add(work);
+        stablePhases = newStablePhases;
+        phaseAmounts = newPhaseAmounts;
+
+        phaseInternalVars[p] =
+                work.y.clone();
     }
 
     /**
