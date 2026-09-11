@@ -1175,15 +1175,7 @@ public class EquilibriumSolverV2 {
     private double totalSiteRatio(
             CefGibbs phase) {
 
-        double sum = 0.0;
-
-        for (double a :
-             phase.siteRatios()) {
-
-            sum += a;
-        }
-
-        return sum;
+        return phase.nfu();
     }
 
     /**

@@ -211,22 +211,23 @@ public abstract class GibbsEnergyModel {
      */
     public abstract double[][] dMoles_dy();
 
-    // The four accessors below expose how y is partitioned into weighted
-    // blocks -- CEF's sublattices, each with a site ratio a[s] and a
-    // contiguous run of constituents -- so a solver can build M_A =
-    // Sum_s a[s]*y[offset[s]+j] (Sundman 2015 Eq. 58) without knowing the
-    // model's internals. Named after CEF's own vocabulary today since it is
-    // the only implementation; a future non-sublattice model (e.g. CVM,
-    // whose internal variables are cluster/point probabilities) should map
-    // its own block structure onto these same four methods rather than
-    // adding a parallel set -- revisit the naming once that mapping exists
-    // to show what generalization actually fits both models.
-
-    /**
-     * Site ratios a[s] for each sublattice (moles of sites per formula
-     * unit, per sublattice).
-     */
-    public abstract double[] siteRatios();
+    // The three accessors below expose how y is partitioned into blocks --
+    // CEF's sublattices, each a contiguous run of constituents that must
+    // sum to 1 -- so a solver can border the phase-matrix Hessian with one
+    // Lagrange row/column per block (Sundman 2015 Eq. 40) without knowing
+    // the model's internals. Named after CEF's own vocabulary today since
+    // it is the only implementation; a future non-sublattice model (e.g.
+    // CVM, whose internal variables are cluster/point probabilities)
+    // should map its own block structure onto these same methods rather
+    // than adding a parallel set -- revisit the naming once that mapping
+    // exists to show what generalization actually fits both models.
+    //
+    // (Per-sublattice site ratios a[s] are NOT part of this contract: the
+    // only quantity a solver needs from them is their sum, already exposed
+    // as nfu(), and the per-block weighting a solver needs for M_A is
+    // already carried by dMoles_dy() above. A model that needs a[s]
+    // individually for its own G(T,P,y) evaluation is free to keep it as
+    // a concrete, non-abstract accessor, as CefGibbs does.)
 
     /** Number of sublattices ns. */
     public abstract int numSublattices();
