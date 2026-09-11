@@ -1,9 +1,8 @@
 package session;
 
 import calc.diagram.AxisConfig;
-import calc.diagram.DiagramTracer;
 import calc.diagram.PhaseDiagram;
-import calc.equil.EquilibriumSolver;
+import calc.equil.EquilibriumSolverV2;
 import system.ThermodynamicSystem;
 import system.database.TdbParser;
 import system.model.PhaseModelKind;
@@ -256,15 +255,17 @@ public final class CalculationSession {
      * system and stores the result; does not return it directly -- read it
      * back via {@link #currentEquilibriumResult()}.
      *
-     * <p>Internally, {@link EquilibriumSolver#solve} calls back into the
+     * <p>Internally, {@link EquilibriumSolverV2#solve} calls back into the
      * held {@code GibbsEnergyModel} instances once per Newton iteration
-     * before this method returns once.
+     * before this method returns once. This is Sundman's Algorithm A
+     * (site-fraction / y-facing formulation); the legacy mole-fraction
+     * (x-facing) {@code EquilibriumSolver} is no longer used here.
      *
      * @throws IllegalStateException if {@link #setModel} hasn't been called yet
      */
     public void calculateEquilibrium(double T, double P, double[] compOverAll) {
         this.currentEquilibriumResult =
-                new EquilibriumSolver().solve(T, P, compOverAll, currentSystem().phaseModels());
+                new EquilibriumSolverV2().solve(T, P, compOverAll, currentSystem().phaseModels());
     }
 
     /**
@@ -272,15 +273,23 @@ public final class CalculationSession {
      * stores the result; read it back via {@link #currentPhaseDiagram()}.
      *
      * <p>Distinct from {@link #calculateStep}/{@link #calculateMap}: a phase
-     * diagram traces phase boundaries (Sundman's Algorithms B/C1/C2 -- see
-     * {@link DiagramTracer}), not just a property sampled over an axis grid.
+     * diagram traces phase boundaries (Sundman's Algorithms B/C1/C2).
+     *
+     * <p>Not yet implemented: the previous tracing engine
+     * ({@code DiagramTracer}/{@code LineStepper}/{@code PhaseChangeHandler})
+     * was built on the retired mole-fraction (x-facing)
+     * {@code GibbsEnergyModel} surface and was removed when the codebase
+     * standardized on Sundman's site-fraction (y-facing) formulation
+     * ({@code EquilibriumSolverV2}). A y-facing tracer does not exist yet.
      *
      * @throws IllegalStateException if {@link #setModel} hasn't been called yet
+     * @throws UnsupportedOperationException always, until a y-facing tracer exists
      */
     public void calculatePhaseDiagram(AxisConfig[] axes, double[] startAxes,
                                        double fixedT, double fixedP, double[] comp) {
-        this.currentPhaseDiagram = new DiagramTracer().calculate(
-                currentSystem().phaseModels(), axes, startAxes, fixedT, fixedP, comp);
+        currentSystem();   // still enforce the usual precondition
+        throw new UnsupportedOperationException(
+                "Phase-diagram tracing not yet implemented (pending a y-facing tracer)");
     }
 
     /**

@@ -684,12 +684,9 @@ public class EquilibriumSolverV2 {
              * Every candidate phase (stable or not) has its own
              * PhaseWork, evaluated by evaluateAllPhases() every
              * iteration -- do not assume candidate 0 is the only
-             * active phase, and do not fall back to the legacy
-             * GibbsEnergyModel composition-facing interface
-             * (getComposition()/getInternalVars()/evaluateG()/getM()),
-             * which can silently diverge from the actual state the
-             * Sundman iteration solved. Use the PhaseWork keyed by
-             * candidate index i directly.
+             * active phase; use the PhaseWork keyed by candidate
+             * index i directly rather than re-deriving state from
+             * the model.
              */
             if (phaseWorks == null
                     || i >= phaseWorks.size()

@@ -417,9 +417,9 @@ public class CefLiteratureBaselineTest {
 
         CefGibbs liquid = buildCef(D_TDB, Arrays.asList("V", "ZR"), D_PHASE);
 
-        // Absolute enthalpy H = G - T dG/dT, via the model's own
-        // evaluateG / evaluateGT (mole-fraction-facing surface: for a
-        // one-sublattice phase the "internal vars" ARE the mole fractions).
+        // Absolute enthalpy H = G - T dG/dT, via the model's own G / dG_dT
+        // (site-fraction surface: for a one-sublattice phase the site
+        // fractions ARE the mole fractions).
         double hV  = pureEnthalpy(liquid, 1.0 - D_EPS, D_EPS);
         double hZr = pureEnthalpy(liquid, D_EPS, 1.0 - D_EPS);
         System.out.printf("  H_V(liquid,  %.0fK) = %.4f J/mol%n", D_T, hV);
@@ -451,15 +451,13 @@ public class CefLiteratureBaselineTest {
 
     /**
      * Absolute molar enthalpy at {@link #D_T}: H = G - T dG/dT, computed
-     * through the model's {@code evaluateG}/{@code evaluateGT} surface.
+     * through the model's site-fraction {@code G}/{@code dG_dT} surface.
      * {@code (xV, xZr)} are the LIQUID's site fractions == mole fractions.
      */
     private static double pureEnthalpy(CefGibbs gm, double xV, double xZr) {
-        double[] x = { xV, xZr };
-        gm.setTemperature(D_T);
-        gm.setInternalVars(x);
-        double g = gm.evaluateG(x, D_T);
-        double dgdt = gm.evaluateGT();
+        double[] y = { xV, xZr };
+        double g = gm.G(D_T, y);
+        double dgdt = gm.dG_dT(D_T, y);
         return g - D_T * dgdt;
     }
 

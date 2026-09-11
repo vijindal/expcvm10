@@ -105,7 +105,7 @@ public class GridMinimizer {
 
                 double G;
                 try {
-                    G = m.evaluateG(y, T) / nfu;
+                    G = m.G(T, y) / nfu;
                 } catch (Exception e) {
                     continue;
                 }
@@ -198,16 +198,11 @@ public class GridMinimizer {
         double   nfu  = Math.max(m.nfu(), 1.0);
 
         for (int iter = 0; iter < INNER_ITER; iter++) {
-            double[] grad;
-            try {
-                grad = m.gradient(x, T);
-            } catch (Exception e) {
-                break;
-            }
 
-            // Try small step in gradient direction on each component
-            // within site-fraction space via getInitialInternalVars
-            // using a perturbed composition
+            // Try a small perturbed-composition step on each component,
+            // re-deriving y via getInitialInternalVars and keeping
+            // whichever perturbation lowers G (direct search, not a true
+            // gradient step -- see class javadoc).
             boolean improved = false;
             int nc = x.length;
             for (int k = 0; k < nc && !improved; k++) {
@@ -239,7 +234,7 @@ public class GridMinimizer {
     private double safeEval(GibbsEnergyModel m, double[] y, double T) {
         try {
             double nfu = Math.max(m.nfu(), 1.0);
-            return m.evaluateG(y, T) / nfu;
+            return m.G(T, y) / nfu;
         } catch (Exception e) {
             return Double.MAX_VALUE;
         }

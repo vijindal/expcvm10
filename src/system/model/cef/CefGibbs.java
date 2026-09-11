@@ -29,9 +29,8 @@ import java.util.logging.Logger;
  * zeroth-order end-member parameters, and Redlich-Kister interaction
  * parameters from the database. All CEF math (site-fraction-space
  * {@code G}, {@code dG_dy}, {@code d2G_dy2}, {@code dG_dT},
- * {@code d2G_dydT}) and the composition-facing {@link GibbsEnergyModel}
- * contract (mole-fraction {@code evaluateG(x,T)} / {@code gradient(x,T)},
- * {@code compute(...)}, {@code getInitialInternalVars(...)}) live here.</p>
+ * {@code d2G_dydT}) and the rest of the {@link GibbsEnergyModel} contract
+ * ({@code compute(...)}, {@code getInitialInternalVars(...)}) live here.</p>
  *
  * <p>The Gibbs energy is written as</p>
  *
@@ -314,9 +313,6 @@ public class CefGibbs extends GibbsEnergyModel {
      */
     private final int[][] elementIndexOnSublattice;
 
-    /** True once y has been set to a valid non-zero state. */
-    private boolean yInitialized = false;
-
 
     // ══════════════════════════════════════════════════════════════════
     // Constructors
@@ -492,17 +488,6 @@ public class CefGibbs extends GibbsEnergyModel {
         this.elementIndexOnSublattice =
                 buildElementIndexMap(ncSub, this.elementNames_value, constituentNames);
 
-        int nc = this.elementNames_value.size();
-        this.x = new double[nc];
-        this.g0List = new double[nc];
-        this.g0TList = new double[nc];
-        this.g0PList = new double[nc];
-        int nSiteVars = numSiteVars();
-        this.cachedGx = new double[nSiteVars];
-        this.cachedGTx = new double[nSiteVars];
-        this.cachedGPx = new double[nSiteVars];
-        this.cachedGxx = new double[nSiteVars][nSiteVars];
-        // For CEF, G0 is carried by the end-member energies, not these lists.
     }
 
 
@@ -1645,20 +1630,17 @@ public class CefGibbs extends GibbsEnergyModel {
     }
 
     // ══════════════════════════════════════════════════════════════════
-    // Stateless accessors for the fresh Sundman Algorithm A solver (M3)
+    // Stateless accessors
     // ══════════════════════════════════════════════════════════════════
     //
-    // The abstract GibbsEnergyModel contract only exposes G/gradient/hessian
-    // through a stateful, mole-fraction-facing surface (evaluateG(x,T) etc.
-    // silently reinterpret their first argument via the yInitialized flag).
-    // The new calc.equil.sundman package needs direct, unambiguous, stateless
-    // access to the underlying CefGibbs site-fraction evaluator and the
-    // constituent-to-element map, without going through PhaseEquilData/
-    // compute() (explicitly discarded plumbing per the M3 design report).
-    // These three accessors are read-only passthroughs; they add no new
-    // behavior or state to this class.
+    // G/dG_dy/d2G_dy2 (GibbsEnergyModel's y-facing contract) are already
+    // stateless, direct site-fraction-space methods on this class -- no
+    // separate evaluator object exists. getGibbs() is kept as a
+    // self-identity accessor for callers migrated from the earlier
+    // CefGibbs+CefPhaseModelAdapter split.
 
-    /** The underlying site-fraction-level CEF Gibbs energy evaluator. */
+    /** Self-identity accessor; kept for callers written against the
+     *  earlier CefGibbs+CefPhaseModelAdapter split. */
     public CefGibbs getGibbs() { return this; }
 
     /**
@@ -1720,16 +1702,6 @@ public class CefGibbs extends GibbsEnergyModel {
 
         return dM;
     }
-    @Override
-    public void setInternalVars(double[] y) {
-        super.setInternalVars(y);
-        // Mark as initialized only if y contains non-zero values
-        if (y != null) {
-            for (double v : y) {
-                if (v > 1e-15) { yInitialized = true; break; }
-            }
-        }
-    }
 
     // ══════════════════════════════════════════════════════════════════
     // Phase Identity (Concrete Implementation)
@@ -1751,78 +1723,6 @@ public class CefGibbs extends GibbsEnergyModel {
         double sum = 0.0;
         for (double a : siteRatios()) sum += a;
         return sum;
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    // CEF G Evaluation (Delegates to CefGibbs)
-    // ══════════════════════════════════════════════════════════════════
-
-    @Override
-    public double evaluateG() {
-        // this.G(T, y) already includes the magnetic contribution.
-        return this.G(T, y);
-    }
-
-    @Override
-    public double evaluateG(double[] x, double T) {
-        double[] yLocal = (yInitialized && y != null && y.length == numSiteVars())
-                        ? y : getInitialInternalVars(x);
-        return this.G(T, yLocal);
-    }
-
-    @Override
-    public double[] gradient(double[] x, double T) {
-        double[] yLocal = (yInitialized && y != null && y.length == numSiteVars())
-                        ? y : getInitialInternalVars(x);
-        double[] gxSite = this.dG_dy(T, yLocal);
-        return projectToMoleFractions(gxSite);
-    }
-
-    @Override
-    public double[][] hessian(double[] x, double T) {
-        double[] yLocal = (yInitialized && y != null && y.length == numSiteVars())
-                        ? y : getInitialInternalVars(x);
-        return this.d2G_dy2(T, yLocal);
-    }
-
-    @Override
-    public double evaluateGT() {
-        double[] yLocal = yInitialized && y != null ? y : getInitialInternalVars(
-            x != null ? x : new double[elementNames_value.size()]);
-        return this.dG_dT(T, yLocal);
-    }
-
-    @Override
-    public double evaluateGP() {
-        return 0.0;  // CEF has no P-dependence
-    }
-
-    @Override
-    public double[] evaluateGx() {
-        double[] yLocal = yInitialized && y != null ? y : getInitialInternalVars(
-            x != null ? x : new double[elementNames_value.size()]);
-        double[] gxSite = this.dG_dy(T, yLocal);
-        return projectToMoleFractions(gxSite);
-    }
-
-    @Override
-    public double[] evaluateGTx() {
-        double[] yLocal = yInitialized && y != null ? y : getInitialInternalVars(
-            x != null ? x : new double[elementNames_value.size()]);
-        double[] gxtSite = this.d2G_dydT(T, yLocal);
-        return projectToMoleFractions(gxtSite);
-    }
-
-    @Override
-    public double[] evaluateGPx() {
-        return new double[numSiteVars()];
-    }
-
-    @Override
-    public double[][] evaluateGxx() {
-        double[] yLocal = yInitialized && y != null ? y : getInitialInternalVars(
-            x != null ? x : new double[elementNames_value.size()]);
-        return this.d2G_dy2(T, yLocal);
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -2337,9 +2237,13 @@ public class CefGibbs extends GibbsEnergyModel {
 
     @Override
     public void printDerivatives() {
-        LOG.fine("G=" + cachedG);
-        LOG.fine("dG/dT=" + cachedGT + ", dG/dP=" + cachedGP);
-        LOG.fine("dG/dy=" + java.util.Arrays.toString(cachedGx));
+        if (y == null) {
+            LOG.fine("(no site fractions set)");
+            return;
+        }
+        LOG.fine("G=" + G(T, y));
+        LOG.fine("dG/dT=" + dG_dT(T, y));
+        LOG.fine("dG/dy=" + java.util.Arrays.toString(dG_dy(T, y)));
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -2537,40 +2441,6 @@ public class CefGibbs extends GibbsEnergyModel {
             }
         }
         return eMatNC;
-    }
-
-    /**
-     * Projects site-fraction gradient (length nip) to
-     * mole-fraction gradient (length nc) using the chain rule:
-     *   dG/dx_k = Σ_s a[s] * dG/dy_{s,k}  for k < nc[s]
-     * normalized by nfu = Σ a[s].
-     *
-     * This is the dominant-sublattice approximation:
-     * element k on sublattice s contributes a[s] * gxSite[offset[s]+k].
-     * VA sites (constituent index >= nc) do not contribute.
-     */
-    private double[] projectToMoleFractions(double[] gxSite) {
-        int nc   = elementNames_value.size();
-        double[] gxMole = new double[nc];
-        double[] a    = siteRatios();
-        int[]    offs = offsets();
-        int[]    ncSL = constituentsPerSublattice();
-        double   nfu  = nfu();
-
-        for (int s = 0; s < numSublattices(); s++) {
-            for (int i = 0; i < ncSL[s]; i++) {
-                int elementIdx = elementIndexOnSublattice[s][i];
-                if (elementIdx >= 0) {
-                    gxMole[elementIdx] += a[s] * gxSite[offs[s] + i];
-                }
-            }
-        }
-        // Normalize by nfu so gradient is per mole of atoms
-        if (nfu > 0)
-            for (int k = 0; k < nc; k++)
-                gxMole[k] /= nfu;
-
-        return gxMole;
     }
 
     /* ------------------------------------------------------------------

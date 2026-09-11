@@ -167,8 +167,8 @@ public class CefBuildTest {
                 system.model.PhaseModelFactory.toGibbsModel(m, elements);
             for (double xV : xVals) {
                 double[] x = {xV, 1.0 - xV};
-                double G = gm.evaluateG(x, 1000.0);
                 double[] y = gm.getInitialInternalVars(x);
+                double G = gm.G(1000.0, y);
                 double[] xBack = gm.compositionFromInternal(y);
                 System.out.printf("  x_V=%.2f -> G=%.2f  y=%s  xBack=[%.3f,%.3f]%n",
                     xV, G,
@@ -219,7 +219,8 @@ public class CefBuildTest {
             StringBuilder sb = new StringBuilder();
             sb.append(String.format("%.2f", xV));
             for (var gm : gibbsModels) {
-                double G   = gm.evaluateG(xc, 1000.0);
+                double[] y = gm.getInitialInternalVars(xc);
+                double G   = gm.G(1000.0, y);
                 double nfu = Math.max(gm.nfu(), 1.0);
                 sb.append(String.format(",%.2f", G / nfu));
             }
@@ -227,8 +228,8 @@ public class CefBuildTest {
         }
         System.out.println("=== CSV_END ===");
 
-        calc.equil.EquilibriumSolver solver =
-            new calc.equil.EquilibriumSolver();
+        calc.equil.EquilibriumSolverV2 solver =
+            new calc.equil.EquilibriumSolverV2();
 
         double[][] tests = {
             {2000.0, 0.5, 0.5},

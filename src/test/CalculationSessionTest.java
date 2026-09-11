@@ -74,7 +74,7 @@ public class CalculationSessionTest {
     }
 
     private static void testEndToEndReuseAcrossCalculationKinds() throws Exception {
-        System.out.println("=== end-to-end: single-point then phase-diagram, one held system ===");
+        System.out.println("=== end-to-end: single-point equilibrium, held system ===");
         CalculationSession session = new CalculationSession();
         session.setModel("data/VZR-re2.TDB", List.of("V", "ZR"), List.of("LIQUID", "BCC_A2"));
         ThermodynamicSystem systemBefore = session.currentSystem();
@@ -84,22 +84,10 @@ public class CalculationSessionTest {
                 "calculateEquilibrium() stores a non-null EquilibriumResult");
         check(session.currentSystem() == systemBefore,
                 "system unchanged after calculateEquilibrium()");
-
-        calc.diagram.AxisConfig axis =
-                new calc.diagram.AxisConfig("T / K", calc.diagram.AxisConfig.Type.TEMPERATURE,
-                        1800, 2200, 50);
-        session.calculatePhaseDiagram(new calc.diagram.AxisConfig[]{axis},
-                new double[]{2000.0}, 2000.0, 101325.0, new double[]{0.5, 0.5});
-        check(session.currentPhaseDiagram() != null,
-                "calculatePhaseDiagram() stores a non-null PhaseDiagram");
-        check(session.currentSystem() == systemBefore,
-                "system still unchanged after calculatePhaseDiagram() -- no re-parse of the TDB");
-        check(session.currentEquilibriumResult() != null,
-                "earlier equilibrium result is still available after running a different calculation kind");
     }
 
     private static void testStepAndMapAreUnimplementedStubs() throws Exception {
-        System.out.println("=== calculateStep/calculateMap: unimplemented stubs ===");
+        System.out.println("=== calculateStep/calculateMap/calculatePhaseDiagram: unimplemented stubs ===");
         CalculationSession session = new CalculationSession();
         session.setModel("data/VZR-re2.TDB", List.of("V", "ZR"), List.of("LIQUID", "BCC_A2"));
 
@@ -125,7 +113,17 @@ public class CalculationSessionTest {
         }
         check(mapThrew, "calculateMap() throws UnsupportedOperationException (not yet implemented)");
 
-        // Both must still enforce the setModel() precondition even though unimplemented.
+        boolean diagramThrew = false;
+        try {
+            session.calculatePhaseDiagram(new calc.diagram.AxisConfig[]{axis0},
+                    new double[]{2000.0}, 2000.0, 101325.0, new double[]{0.5, 0.5});
+        } catch (UnsupportedOperationException expected) {
+            diagramThrew = true;
+        }
+        check(diagramThrew, "calculatePhaseDiagram() throws UnsupportedOperationException "
+                + "(x-facing tracer removed; no y-facing tracer yet)");
+
+        // All three must still enforce the setModel() precondition even though unimplemented.
         CalculationSession freshSession = new CalculationSession();
         boolean stepStateThrew = false;
         try {
