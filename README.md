@@ -181,13 +181,13 @@ clone.
 ```
 ./gradlew build          # compile + fat jar (dist/expcvm10.jar)
 ./gradlew run --args="--gui"
-./gradlew test           # JUnit (currently one test in src-test/)
+./gradlew test           # JUnit tests in src-test/
 ```
 
 Most validation is still standalone diagnostic `main()` programs under
 `src/test/` run directly, not through the Gradle test task.
 
-## Current state (as of the CEF model-layer hardening pass)
+## Current state (as of the multiphase equilibrium solver pass)
 
 The codebase is organized into the layers described above. The legacy
 assessment code is quarantined under `legacy/`.
@@ -241,15 +241,41 @@ assessment code is quarantined under `legacy/`.
   gradient double-counted a term for any RK order > 0, silently wrong
   for essentially any phase with a binary/ternary interaction parameter,
   fixed and now regression-tested.
-- A Sundman-style (CALPHAD 75, 2021) single-phase equilibrium path in
-  `calc/equil/EquilibriumSolverV2`: given a fixed T, P, and overall
-  composition, it builds the correct site-fraction state, converges the
-  chemical potentials via the tangent-plane/Euler relation, and reports a
-  self-consistent Gibbs energy, mole fractions, and zero driving force.
-  This has been validated against the V–Zr TDB (`data/VZR-re2.TDB`) for
-  both an ordinary substitutional-like sublattice phase (BCC_A2, with a
-  vacancy sublattice) and a stoichiometric two-sublattice ordered phase
-  (V2ZR), including composition round-tripping and Hessian evaluation.
+- A Sundman-style (2015 ComMatSci) multiphase equilibrium solver in
+  `calc/equil/EquilibriumSolverV2`, implementing the full flowchart
+  (`docs/solver_flowchart_target.png`) rather than a single-phase-only
+  path:
+  - **Initialization** (`GridMinimizer`): a pycalphad-verified port of
+    `calculate()`'s grid sampling (scrambled Halton sequence, endmembers,
+    edges, interior points — `Halton.java`) and `lower_convex_hull()`'s
+    N-dimensional tangent-hyperplane pivot search (`Hyperplane.java`),
+    used to find the initial stable-phase set and per-phase site
+    fractions directly, including correctly representing a miscibility
+    gap as two independent stable slots of the same candidate phase.
+  - **Newton iteration** (STEP 1-9): per-phase Newton-response
+    coefficients (`PhaseMatrixAssembler`, Sundman Eq. 40) and the global
+    multiphase equilibrium matrix (`GlobalEquilibriumMatrixAssembler`,
+    Eq. 58) are extracted into stateless, independently-tested
+    assemblers; the Newton step is damped at bounds (phase-amount and
+    site-fraction step-size capping) rather than hard-failing, matching
+    pycalphad's own `advance_state()`.
+  - **Phase-set management** (STEP 8, `updateStablePhaseSet()`): removes
+    a stable phase once its amount reaches the phase-amount floor and
+    adds a metastable candidate once its driving force (Eq. 62) turns
+    positive — evaluated over the same style of sampled grid
+    `GridMinimizer` uses, not a single frozen constitution, following
+    pycalphad's `Solver.solve()`/`add_new_phases()` design
+    (`eqsolver.pyx`) including its composition-distinctness
+    anti-thrashing guard.
+  - Every stage above has a pycalphad-referenced regression test
+    (`PhaseMatrixAssemblerContractTest`, `GlobalEquilibriumMatrixAssemblerContractTest`,
+    `SiteFractionCorrectionContractTest`, `GridMinimizerPycalphadTest`
+    in `src/test/`, plus JUnit end-to-end tests in
+    `src-test/calc/equil/`), validated against the V–Zr TDB
+    (`data/VZR-re2.TDB`) for both an ordinary substitutional-like
+    sublattice phase (BCC_A2, with a vacancy sublattice) and a
+    stoichiometric two-sublattice ordered phase (V2ZR), including a
+    genuine two-phase (V2ZR + BCC_A2) equilibrium that converges.
 - `ThermodynamicSystem` and `CalculationSession`: a single build-once/
   reuse coordinator that parses a TDB and builds phase models one time,
   then serves multiple calculations (and database/element/phase browsing)
@@ -276,21 +302,18 @@ assessment code is quarantined under `legacy/`.
 
 ### Current limitations
 
-- **Multiphase equilibrium is not yet validated.** The Newton iteration in
-  `EquilibriumSolverV2` for 2+ stable phases does not yet converge to
-  physically correct results; the multi-phase JUnit case
-  (`src-test/calc/equil/EquilibriumSolverV2TwoPhaseEndToEndTest.java`)
-  deliberately asserts only that the iteration runs, not its output.
-  This is the natural next target now that the model layer underneath
-  it has been hardened and regression-tested.
-- **Single-phase solver misses the ordered minimum at stoichiometric
-  points.** For V2ZR at its ideal stoichiometry, `EquilibriumSolverV2` /
-  `GridMinimizer` converge to a *disordered* constitution ~13 kJ/mol
-  above the true ordered end-member minimum (see
-  `src/test/CalculationSessionCalGTest.java`). The grid minimizer's
-  coarse scan does not land near the narrow, deep ordered minimum, and a
-  single Newton step from a nearby disordered guess does not reach it.
-  Flagged for a dedicated solver/`GridMinimizer` pass.
+- **`updateStablePhaseSet()`'s add/remove tolerances are engineering
+  defaults, not derived from Sundman's paper.** The paper only says
+  "allow a few iterations after a change... before another change is
+  allowed" with no numbers; the current thresholds mirror pycalphad's
+  own constants (`minimum_df=1e-4`, `COMP_DIFFERENCE_TOL=1e-4`,
+  `MIN_PHASE_FRACTION=1e-6`) rather than anything independently derived
+  for this solver's own unit/normalization conventions.
+- **Multiphase convergence has been validated on the V-Zr binary only**
+  (V2ZR + BCC_A2), including phase-set changes (a redundant
+  miscibility-gap slot being removed, and a missing phase being added
+  from a single-phase start). Ternary+ systems and larger phase counts
+  are untested.
 - `calculateStep`/`calculateMap` on `CalculationSession` are explicit
   unimplemented stubs — there is no plain property-sampling engine (as
   opposed to full phase-boundary tracing) in the codebase yet.
@@ -308,9 +331,12 @@ assessment code is quarantined under `legacy/`.
   (CVM) implementation exists to validate what generalization actually
   fits both.
 - The test suite is mostly standalone diagnostic `main()` programs under
-  `src/test/` rather than the Gradle/JUnit setup `build.gradle` declares;
-  only one true JUnit test exists so far (`src-test/`). There is no
-  single command that runs everything as a pass/fail regression gate.
+  `src/test/` (pycalphad-referenced contract tests among them — run
+  individually via `java -cp build/classes/java/main test.<ClassName>`)
+  rather than the Gradle/JUnit setup `build.gradle` declares; only one
+  JUnit test class exists so far (`src-test/calc/equil/`, several
+  end-to-end methods). There is no single command that runs everything
+  as a pass/fail regression gate.
 - Phase-diagram tracing has only been exercised for binary systems; the
   underlying grid-minimizer's convex-hull step is binary-only (ternary+
   falls back to a non-hull heuristic).
