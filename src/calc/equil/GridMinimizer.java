@@ -408,6 +408,8 @@ public class GridMinimizer {
         // composition-matching mixture and returns a phase at the WRONG
         // composition entirely for cases like a ternary phase's own
         // internal ordering (see GridMinimizerChiA12PycalphadTest).
+        List<PhaseRecord> stableRecords = new ArrayList<>();
+
         for (int k = 0; k < facet.phaseIdx.length; k++) {
             int    ip  = facet.phaseIdx[k];
             double amt = facet.amount[k];
@@ -419,13 +421,27 @@ public class GridMinimizer {
             PhaseRecord pr = new PhaseRecord(m, x, amt, true);
             pr.y = y;
             pr.G = m.G(T, P, y);
-            allPhases.add(pr);
+            stableRecords.add(pr);
             used[ip] = true;
 
             LOG.fine(String.format(
                 "GridMin stable [%s] amt=%.4f x=%s",
                 m.phaseName(), amt, java.util.Arrays.toString(x)));
         }
+
+        // Merge stable slots of the SAME candidate model whose overall
+        // compositions are within OpenCalphad's own same_composition()
+        // tolerance (matsmin.F90, xdiff=0.01 mole fraction per
+        // component) -- the hull search can legitimately return two
+        // simplex vertices for one candidate at nearly the same
+        // composition (not a genuine miscibility gap, which OC's own
+        // check correctly leaves alone since its two compositions differ
+        // by more than this tolerance), producing two near-duplicate
+        // rows in the downstream global equilibrium matrix and a
+        // singular/ill-conditioned solve. Combine such slots into one,
+        // amount-weighting the composition/constitution the same way the
+        // lever rule already implies, rather than keeping both.
+        allPhases.addAll(mergeDuplicateCompositions(stableRecords));
 
         // Metastable phases: no sampled point of these phases is on the
         // hull facet enclosing xOverall, so there is no energy-minimizing
@@ -443,6 +459,95 @@ public class GridMinimizer {
         }
 
         return new EquilibriumState(T, P, xOverall, allPhases);
+    }
+
+    /**
+     * Composition-difference tolerance (mole fraction, per component)
+     * below which two stable slots of the SAME candidate model are
+     * considered duplicates rather than a genuine miscibility gap --
+     * OpenCalphad's own {@code same_composition()} (matsmin.F90,
+     * {@code xdiff=0.01D0}). OC's own comment there notes the tradeoff
+     * directly: "a large value... may mean you miss a miscibility gap; a
+     * small value may create bad convergence" -- 0.01 is their own
+     * settled value after tuning against Au-Cu, adopted verbatim here
+     * rather than re-deriving a project-specific number.
+     */
+    private static final double SAME_COMPOSITION_TOLERANCE = 0.01;
+
+    /**
+     * Merges stable slots of the same candidate model whose overall
+     * compositions ({@code x}, not site fractions {@code y}) are within
+     * {@link #SAME_COMPOSITION_TOLERANCE} on every component -- see the
+     * call site's own comment for why this is needed and why it is safe
+     * (a genuine miscibility gap's two vertices differ by more than this
+     * tolerance in at least one component, so it is never merged).
+     * Merged slots combine amounts (lever rule) and keep the
+     * lower-index slot's constitution.
+     */
+    private List<PhaseRecord> mergeDuplicateCompositions(
+            List<PhaseRecord> stableRecords) {
+
+        boolean[] merged = new boolean[stableRecords.size()];
+        List<PhaseRecord> result = new ArrayList<>();
+
+        for (int i = 0; i < stableRecords.size(); i++) {
+
+            if (merged[i]) {
+                continue;
+            }
+
+            PhaseRecord keep = stableRecords.get(i);
+
+            for (int j = i + 1; j < stableRecords.size(); j++) {
+
+                if (merged[j]) {
+                    continue;
+                }
+
+                PhaseRecord candidate = stableRecords.get(j);
+
+                if (keep.model != candidate.model) {
+                    continue;
+                }
+
+                if (!withinTolerance(keep.x, candidate.x)) {
+                    continue;
+                }
+
+                LOG.fine(String.format(
+                        "GridMin merging duplicate-composition stable "
+                        + "slot [%s] x=%s into x=%s (amounts %.4f + %.4f)",
+                        keep.model.phaseName(),
+                        java.util.Arrays.toString(candidate.x),
+                        java.util.Arrays.toString(keep.x),
+                        keep.amount, candidate.amount));
+
+                keep.amount += candidate.amount;
+                merged[j] = true;
+            }
+
+            result.add(keep);
+        }
+
+        return result;
+    }
+
+    /**
+     * True if every component of {@code x1}/{@code x2} differs by no
+     * more than {@link #SAME_COMPOSITION_TOLERANCE}.
+     */
+    private boolean withinTolerance(double[] x1, double[] x2) {
+
+        int n = Math.min(x1.length, x2.length);
+
+        for (int i = 0; i < n; i++) {
+
+            if (Math.abs(x1[i] - x2[i]) > SAME_COMPOSITION_TOLERANCE) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     // ─────────────────────────────────────────────────────────────────

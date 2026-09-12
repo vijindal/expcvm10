@@ -1803,6 +1803,62 @@ public class tdb {
     }
 
     /**
+     * Splits {@code str} on every occurrence of {@code funcName} that is a
+     * genuine identifier match -- i.e. immediately preceded and followed
+     * by {@code +}, {@code -}, {@code *}, or the start/end of the string
+     * -- unlike {@code String.split(funcName)}, which matches ANY
+     * substring occurrence and so incorrectly fires inside a longer
+     * function name that happens to contain this one, e.g. splitting on
+     * {@code "A2NIVA"} inside {@code "+A2NIVA+LA2NIVA"} must find only the
+     * standalone occurrence at index 1, not the one embedded in
+     * {@code LA2NIVA} at index 9. Mirrors {@link #isContained}'s own
+     * boundary rule, generalized to every occurrence rather than just the
+     * first.
+     */
+    private String[] splitOnFunctionName(String str, String funcName) {
+
+        ArrayList<String> parts = new ArrayList<>();
+        int searchFrom = 0;
+        int lastSplitEnd = 0;
+
+        while (searchFrom <= str.length()) {
+
+            int idx = str.indexOf(funcName, searchFrom);
+
+            if (idx == -1) {
+                break;
+            }
+
+            int endIdx = idx + funcName.length() - 1;
+
+            boolean leftOk = (idx == 0)
+                    || (str.charAt(idx - 1) == '+')
+                    || (str.charAt(idx - 1) == '-')
+                    || (str.charAt(idx - 1) == '*');
+
+            boolean rightOk = (endIdx == str.length() - 1)
+                    || (str.charAt(endIdx + 1) == '+')
+                    || (str.charAt(endIdx + 1) == '-')
+                    || (str.charAt(endIdx + 1) == '*');
+
+            if (leftOk && rightOk) {
+                parts.add(str.substring(lastSplitEnd, idx));
+                lastSplitEnd = endIdx + 1;
+                searchFrom = endIdx + 1;
+            } else {
+                // Not a genuine boundary match (embedded in a longer
+                // identifier) -- skip past this occurrence and keep
+                // searching for a later, valid one.
+                searchFrom = idx + 1;
+            }
+        }
+
+        parts.add(str.substring(lastSplitEnd));
+
+        return parts.toArray(new String[0]);
+    }
+
+    /**
      * @param
      *
      */
@@ -1857,7 +1913,7 @@ public class tdb {
             tempSum = 0.0;
             if (isContained(tempStr, f.funcName)) {
                 //System.out.println("found the the function:" + f.funcName + ", inputExp before process: " + tempStr);//split inputExp based on function name
-                tempList = tempStr.trim().split(f.funcName, -1); // -1 preserves trailing empty strings
+                tempList = splitOnFunctionName(tempStr.trim(), f.funcName); // boundary-aware split (see splitOnFunctionName's own doc)
                 //System.out.println("tempList.length: " + tempList.length);
                 switch (tempList.length) {
                     case 0://input string is function name itself
@@ -1943,7 +1999,20 @@ public class tdb {
                 String numStr = temStrList[0].substring(k).trim();
                 //System.out.println("numStr: " + numStr);
                 if (numStr.length() > 0) {
-                    coeffArr[i] = Double.parseDouble(numStr);
+                    // A coefficient may itself be a product of literals,
+                    // e.g. "-.2*8.3144598" from a TDB term like
+                    // "-.2*R#*T" once R# has been substituted with its
+                    // numeric value (sympifyString/readTerms do not fold
+                    // that multiplication -- they only substitute the
+                    // symbol) -- take the leading factor and multiply in
+                    // the rest, mirroring readCoeff's own handling of
+                    // the same situation just below.
+                    String[] factors = numStr.split("\\*");
+                    double product = Double.parseDouble(factors[0]);
+                    for (int f = 1; f < factors.length; f++) {
+                        product *= Double.parseDouble(factors[f]);
+                    }
+                    coeffArr[i] = product;
                 } else {
                     coeffArr[i] = 1.0;
                 }
