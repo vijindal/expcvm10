@@ -298,4 +298,83 @@ public final class GlobalEquilibriumMatrixAssembler {
 
         return new Result(A, b, null, null);
     }
+
+    /**
+     * As {@link #convertToFixedPhaseAmountSystem}, but releases
+     * TEMPERATURE instead of a composition component -- needed to
+     * locate an invariant node (Sundman Algorithm C2 applied along the
+     * temperature axis, e.g. a eutectic/peritectic) rather than an
+     * ordinary two-phase boundary.
+     *
+     * <p>Unlike the composition-release case (a single {@code -1} entry
+     * in ONE mass-balance row), releasing T touches potentially every
+     * row, since temperature is a GLOBAL condition every stable phase
+     * responds to, not a per-component target:
+     * <ul>
+     *   <li>Phase-equilibrium row {@code k}: {@code M_A^k*lambda_A -
+     *       dG_dT^k*DeltaT = G^k} -- only phase {@code k}'s own row
+     *       gets a nonzero entry, {@code -phaseData[k].dG_dT}, in the
+     *       freed column.</li>
+     *   <li>Mass-balance row {@code A}: the T-dependent part of
+     *       {@code q_A = sum_k omega_k*deln_k[A]} is {@code
+     *       sum_k omega_k*phaseData[k].dM_dT[A]*DeltaT} (every stable
+     *       phase's own composition response to T, weighted by its
+     *       amount) -- moving this to the LHS gives coefficient {@code
+     *       +sum_k omega_k*phaseData[k].dM_dT[A]} in the freed column.</li>
+     * </ul>
+     * Solving the SAME-SIZE system yields, in the freed column, {@code
+     * DeltaT} directly (an increment, exactly like {@code DeltaOmega} --
+     * NOT an absolute value like {@code lambda}); the caller applies it
+     * as {@code T += solution[nc + fixedSlotIndex]}.
+     *
+     * <p>The RHS is unchanged from {@link #buildRhs} for the same reason
+     * as the composition-release case: {@code deln}/{@code G} are still
+     * evaluated at {@code deltaT=0} by {@link
+     * calc.equil.PhaseMatrixAssembler#compute}, so the existing RHS
+     * already reflects the current (pre-step) state; only the LHS
+     * column's meaning changes.
+     *
+     * @param phaseData      same array used to build {@code matrix}/{@code rhs}
+     *                       (needed here for {@code dG_dT}/{@code dM_dT},
+     *                       which {@code buildMatrix}/{@code buildRhs} don't
+     *                       themselves consume)
+     * @param phaseAmounts   same array used to build {@code matrix}/{@code rhs}
+     * @param fixedSlotIndex index of the phase whose amount is fixed
+     * @return a NEW (matrix, rhs) pair -- the inputs are not mutated
+     */
+    public static Result convertToFixedPhaseAmountSystemReleasingT(
+            double[][] matrix,
+            double[] rhs,
+            PhaseEquilData[] phaseData,
+            double[] phaseAmounts,
+            int nc,
+            int np,
+            int fixedSlotIndex) {
+
+        int n = nc + np;
+
+        double[][] A = new double[n][];
+        for (int row = 0; row < n; row++) {
+            A[row] = matrix[row].clone();
+        }
+        double[] b = rhs.clone();
+
+        int fixedColumn = nc + fixedSlotIndex;
+
+        for (int row = 0; row < n; row++) {
+            A[row][fixedColumn] = 0.0;
+        }
+
+        A[fixedSlotIndex][fixedColumn] = -phaseData[fixedSlotIndex].dG_dT;
+
+        for (int Aidx = 0; Aidx < nc; Aidx++) {
+            double coeff = 0.0;
+            for (int k = 0; k < np; k++) {
+                coeff += phaseAmounts[k] * phaseData[k].dM_dT[Aidx];
+            }
+            A[np + Aidx][fixedColumn] = coeff;
+        }
+
+        return new Result(A, b, null, null);
+    }
 }

@@ -155,6 +155,18 @@ public final class PhaseMatrixAssembler {
             delnN[A] = sum;
         }
 
+        // dM_A/dT = Sigma_m dM_A/dy[m] * cT[m] -- the deln-analogue using
+        // ONLY the pure T-sensitivity cT, independent of deltaT/mu, needed
+        // to release T as a Newton unknown (see PhaseEquilData.dM_dT).
+        double[] dM_dT = new double[nc];
+        for (int A = 0; A < nc; A++) {
+            double sum = 0.0;
+            for (int m = 0; m < nip; m++) {
+                sum += dM[A][m] * cT[m];
+            }
+            dM_dT[A] = sum;
+        }
+
         // mA = M_A^phase (Sundman Eq. 2): moles of component A per formula
         // unit, unnormalized.
         double[] mA = model.moles(y);
@@ -183,6 +195,8 @@ public final class PhaseMatrixAssembler {
             }
         }
 
-        return new PhaseEquilData(G, delyN, delnN, x, mA, eMat, eMatNC, cG, cT, cP, null);
+        double dGdT = model.dG_dT(T, P, y);
+
+        return new PhaseEquilData(G, delyN, delnN, x, mA, eMat, eMatNC, cG, cT, cP, dM_dT, dGdT, null);
     }
 }

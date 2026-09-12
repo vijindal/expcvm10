@@ -7,58 +7,76 @@ import java.util.List;
 
 /**
  * Sundman 2021 CALPHAD 75's Algorithm D: at an invariant node (a point
- * where {@code ncomp+2} phases coexist, one more than an adjacent
+ * where {@code ncomp+1} phases coexist -- one more than an adjacent
  * two-phase-region-boundary line's stable-phase count for a binary
- * system), enumerate every subset of {@code ncomp+1} phases and check
- * whether the mass-balance conditions can be satisfied with strictly
- * positive amounts of just that subset -- a valid subset identifies a
- * distinct exit line leaving the node, with the two EXCLUDED phases
- * being that exit's zero-amount pair.
+ * system, matching the classical Gibbs-phase-rule invariant, e.g. a
+ * binary eutectic/peritectic with exactly 3 phases), enumerate every
+ * subset of {@code ncomp} phases (excluding exactly ONE of the {@code
+ * ncomp+1} node phases) and check whether the mass-balance conditions
+ * can be satisfied with strictly positive amounts of just that subset
+ * -- a valid subset identifies a distinct exit line leaving the node,
+ * with the ONE excluded phase being the phase that goes to zero amount
+ * along that exit.
  *
- * <p>Ported from OpenCalphad's {@code find_inv_exits}
- * (C:\Users\admin\codes\opencalphad\src\stepmapplot\smp2A.F90,
- * lines 5952-6248), verified directly against that source this session.
- * Its own design comment states the approach directly:
- * <pre>
- * 1. extract the composition of all stable phases at invariant (N+1)
- * 2. set up a system of linear equations M_j x_ij = c_i
- *    where x_ij is composition of component i in phase j, c_i is the
- *    condition for component i, (N-1 conditions), M_j amount of phase j
- * 3. The cases when this system has a solution represent exits
- * </pre>
- * A subset's amounts are found by solving {@code test*N = rhs} (LAPACK
- * {@code dgetrf}/{@code dgetrs} in OpenCalphad; {@link Matrix#solve} here
- * -- the same linear-solve machinery {@code GlobalEquilibriumMatrixAssembler}
- * already uses); a subset is a valid exit iff every solved amount is
- * strictly positive (OpenCalphad: {@code if(rhs(kk).le.zero) goto 100}).
+ * <p><b>Combinatorics verified against two independent references</b>
+ * (both cross-checked this session after an earlier, incorrect
+ * {@code exclude-2-phases} version of this class was found to always
+ * return an empty list for the exact binary case {@link MapTracer}
+ * exercises):
+ * <ul>
+ *   <li>pycalphad's {@code isopleth_strategy.py}
+ *       ({@code _invariant_exits}, C:\Users\admin\codes\pycalphad):
+ *       at a node with {@code p} phases, "a ZPF surface coming out of a
+ *       node has at most {@code p-1} phases" -- i.e. exactly ONE phase
+ *       is excluded per exit, not two.</li>
+ *   <li>pycalphad's {@code binary_strategy.py}/{@code ternary_strategy.py}
+ *       {@code _find_exits_from_node}: a binary/ternary invariant always
+ *       has exactly 3 stable phases, and exits are {@code
+ *       itertools.combinations(node.stable_composition_sets, 2)} --
+ *       {@code C(3,2)=3} candidate exits, each KEEPING 2 phases
+ *       (equivalently excluding the 1 remaining phase).</li>
+ * </ul>
+ * Both agree: for a binary ({@code ncomp=2}) invariant with 3 phases,
+ * there are exactly 3 candidate exits, each a 2-phase pair excluding
+ * exactly 1 phase -- matching the classical eutectic/peritectic
+ * picture (three two-phase regions meeting at one point) and this
+ * class's corrected formula below.
+ *
+ * <p>A subset's amounts are found by solving a linear mass-balance +
+ * sum-to-one system ({@link Matrix#solve}, the same linear-solve
+ * machinery {@code GlobalEquilibriumMatrixAssembler} already uses,
+ * mirroring OpenCalphad's own {@code dgetrf}/{@code dgetrs} positivity
+ * test in {@code find_inv_exits}, smp2A.F90); a subset is a valid exit
+ * iff every solved amount is strictly positive.
  *
  * <p>Cost is combinatorial in the number of phases present at the node
- * ({@code C(phasesAtNode, ncomp+1)} linear solves) -- OpenCalphad's own
- * comment notes "limit to 8" phases at a node in practice; this class is
- * written generally (any component count) but is verified in this
- * codebase only against binary systems ({@code ncomp=2}, where an
- * invariant has exactly 3 coexisting phases and {@code C(3,3)=1}
- * subset to check), matching {@link MapTracer}'s own scope.
+ * ({@code C(ncomp+1, ncomp) = ncomp+1} linear solves for the base
+ * invariant case). This class is written generally (any component
+ * count) but is verified in this codebase only against binary systems
+ * ({@code ncomp=2}, 3 node phases, 3 candidate exits), matching {@link
+ * MapTracer}'s own scope.
  */
 public final class InvariantExitFinder {
 
     private InvariantExitFinder() {
     }
 
-    /** One candidate exit: the two phases with zero amount along that boundary line. */
+    /** One candidate exit: the single phase that goes to zero amount along that boundary line. */
     public static final class ExitCandidate {
 
-        public final String phaseA;
-        public final String phaseB;
+        public final String excludedPhase;
 
-        public ExitCandidate(String phaseA, String phaseB) {
-            this.phaseA = phaseA;
-            this.phaseB = phaseB;
+        /** The phases that remain stable along this exit's boundary line. */
+        public final List<String> stablePhases;
+
+        public ExitCandidate(String excludedPhase, List<String> stablePhases) {
+            this.excludedPhase = excludedPhase;
+            this.stablePhases = stablePhases;
         }
 
         @Override
         public String toString() {
-            return "ExitCandidate[" + phaseA + ", " + phaseB + "]";
+            return "ExitCandidate[excluded=" + excludedPhase + ", stable=" + stablePhases + "]";
         }
     }
 
@@ -66,26 +84,25 @@ public final class InvariantExitFinder {
      * Finds every valid exit from an invariant node.
      *
      * @param candidatePhaseNames   names of every phase present at the node,
-     *                              length {@code ncomp+2}
+     *                              length {@code ncomp+1}
      * @param candidateCompositions each phase's mole fractions,
      *                              {@code [phase][component]}, same order/length
      *                              as {@code candidatePhaseNames}
      * @param targetComposition     the node's overall mole fractions, length {@code ncomp}
-     * @param arrivedViaPhaseA      one of the two phases with zero amount on the line
-     *                              the algorithm arrived by (excluded from the result)
-     * @param arrivedViaPhaseB      the other phase with zero amount on the arrival line
-     * @return every OTHER valid exit (excludes the arrival pair)
+     * @param arrivedViaExcludedPhase the single phase that was excluded (zero amount)
+     *                              on the line the algorithm arrived by; excluded
+     *                              from the result since that exit already exists
+     * @return every OTHER valid exit (excludes the arrival exit)
      */
     public static List<ExitCandidate> findExits(
             List<String> candidatePhaseNames,
             double[][] candidateCompositions,
             double[] targetComposition,
-            String arrivedViaPhaseA,
-            String arrivedViaPhaseB) {
+            String arrivedViaExcludedPhase) {
 
         int nPhasesAtNode = candidatePhaseNames.size();
         int ncomp = targetComposition.length;
-        int subsetSize = ncomp + 1;
+        int subsetSize = ncomp;
 
         List<ExitCandidate> exits = new ArrayList<>();
 
@@ -112,22 +129,24 @@ public final class InvariantExitFinder {
                 }
             }
 
-            if (excluded.size() != 2) {
-                // Should not happen: nPhasesAtNode - subsetSize == 2
-                // whenever nPhasesAtNode == ncomp+2, subsetSize == ncomp+1.
+            if (excluded.size() != 1) {
+                // Should not happen: nPhasesAtNode - subsetSize == 1
+                // whenever nPhasesAtNode == ncomp+1, subsetSize == ncomp.
                 return;
             }
 
-            String phaseA = candidatePhaseNames.get(excluded.get(0));
-            String phaseB = candidatePhaseNames.get(excluded.get(1));
+            String excludedPhase = candidatePhaseNames.get(excluded.get(0));
 
-            boolean isArrivalPair =
-                    (phaseA.equals(arrivedViaPhaseA) && phaseB.equals(arrivedViaPhaseB))
-                    || (phaseA.equals(arrivedViaPhaseB) && phaseB.equals(arrivedViaPhaseA));
-
-            if (!isArrivalPair) {
-                exits.add(new ExitCandidate(phaseA, phaseB));
+            if (excludedPhase.equals(arrivedViaExcludedPhase)) {
+                return;
             }
+
+            List<String> stablePhases = new ArrayList<>();
+            for (int idx : subset) {
+                stablePhases.add(candidatePhaseNames.get(idx));
+            }
+
+            exits.add(new ExitCandidate(excludedPhase, stablePhases));
         });
 
         return exits;
@@ -137,9 +156,7 @@ public final class InvariantExitFinder {
      * Solves {@code amounts} such that
      * {@code sum_j amounts[j] * candidateCompositions[subset[j]][i] == targetComposition[i]}
      * for every component {@code i}, plus the sum-to-one row
-     * {@code sum_j amounts[j] == 1}, mirroring OpenCalphad's own
-     * {@code find_inv_exits} system (N-1 composition conditions + the
-     * implicit total-amount-normalization row, for N unknowns).
+     * {@code sum_j amounts[j] == 1}.
      *
      * @return the solved amounts, or {@code null} if the subset's
      *         composition matrix is singular (no solution -- not a

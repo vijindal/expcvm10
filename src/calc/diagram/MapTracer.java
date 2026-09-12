@@ -24,17 +24,40 @@ import java.util.Set;
  * When three phases coexist at a node, Algorithm D ({@link
  * InvariantExitFinder}) confirms whether it is a genuine invariant.
  *
- * <p><b>Scope constraint (v1): composition-release only.</b>
- * {@code EquilibriumSolverV2}'s matrix has no {@code dG/dT}/{@code dG/dP}
- * terms today (T and P are not Newton unknowns anywhere in the current
- * matrix), so {@code releaseAxis} MUST be {@link AxisConfig.Type#COMPOSITION}
- * -- {@code walkAxis} is stepped in ordinary fixed increments exactly
- * like {@link StepTracer} (typically TEMPERATURE), while the boundary
- * composition along {@code releaseAxis} is solved for exactly at each
- * crossing. This is fully sufficient for a binary T-x map (this
- * project's own validated systems, e.g. Ag-Cu's eutectic). Releasing T
- * or P as the map's axis is a distinct, larger follow-up requiring new
- * derivative plumbing in {@code PhaseMatrixAssembler}/{@code PhaseEquilData}.
+ * <p><b>Scope constraint (v1): {@code releaseAxis} is composition-only.</b>
+ * The ordinary two-phase boundary crossings this tracer finds always
+ * release a composition component ({@code releaseAxis} MUST be {@link
+ * AxisConfig.Type#COMPOSITION}) -- {@code walkAxis} is stepped in
+ * ordinary fixed increments exactly like {@link StepTracer} (typically
+ * TEMPERATURE). This is fully sufficient for a binary T-x map (this
+ * project's own validated systems, e.g. Ag-Cu's eutectic).
+ *
+ * <p><b>Invariant nodes (eutectics/peritectics) release T instead.</b>
+ * A genuine invariant is a single POINT where the stable set jumps by
+ * MORE than one phase at once (confirmed by direct testing against
+ * V-Zr's documented 1586K peritectic: no adjacent sub-interval exists
+ * where only one phase differs, so a composition-release C2 call cannot
+ * locate it). Sundman/pycalphad/OpenCalphad all locate it the same way
+ * as an ordinary boundary: fix the newly-appearing phase at zero amount
+ * and release the WALK axis instead, solving for T and composition
+ * together ({@link EquilibriumSolverV2#solveBoundaryReleasingT}, enabled
+ * by {@code dG_dT}/{@code dM_dT} on {@link
+ * system.model.PhaseEquilData}). This only applies when {@code
+ * walkAxis.type == TEMPERATURE} -- releasing P at an invariant, or a
+ * fully general any-axis-releasable map, is a distinct, smaller
+ * follow-up (the same {@code dG_dP}/pressure-response machinery already
+ * exists per-phase, per {@code PhaseMatrixAssembler}, but is not yet
+ * threaded through the global matrix the way T now is).
+ *
+ * <p><b>Known gap: {@code solveBoundaryReleasingT} converges slowly when
+ * seeding a genuinely new phase</b> (see that method's own javadoc) --
+ * confirmed against V-Zr's own 1586K peritectic to converge too slowly
+ * to finish within its default iteration budget. Until that is fixed,
+ * a multi-phase-change walk step commonly falls through to the "could
+ * not be located" fallback below (an ordinary approximate {@code
+ * CROSSING} at the raw walk point, {@code isComplete()==false}) rather
+ * than actually landing on {@code INVARIANT} -- this is a real,
+ * documented limitation, not a silent one.
  *
  * <p>Unlike {@link StepTracer}, every ordinary (non-crossing) walk point
  * is solved with the CURRENT tracked boundary composition (updated after
@@ -148,53 +171,107 @@ public final class MapTracer {
 
             } else {
 
-                // Phase set changed between (previousWalkValue, v) --
-                // solve the exact boundary via Algorithm C2.
+                // Phase set changed between (previousWalkValue, v).
+                // A genuine invariant (eutectic/peritectic) is a single
+                // POINT where the stable set jumps by MORE than one
+                // phase at once (e.g. V2ZR disappears and LIQUID appears
+                // at the exact same T) -- confirmed by direct testing
+                // this session against V-Zr's own documented 1586K
+                // peritectic. Sundman/pycalphad/OpenCalphad all locate
+                // this the SAME way as an ordinary boundary (Algorithm
+                // C2): fix the newly-appearing phase's amount at zero
+                // and release the WALK axis (not the composition axis)
+                // instead, so T and composition are solved together.
                 String appearingOrDisappearing =
                         findChangedPhase(runNames, currentNames);
 
-                EquilibriumSolverV2.BoundarySolveResult boundary =
-                        appearingOrDisappearing != null
-                                ? EquilibriumSolveHelper.solveBoundaryOrNull(
-                                        t, p, comp, candidates, previousResult,
-                                        appearingOrDisappearing, 0.0,
-                                        releaseAxis.componentIndex)
-                                : null;
+                EquilibriumSolverV2.BoundarySolveResult invariantBoundary = null;
+                String invariantFixedPhase = null;
 
-                double boundaryWalkValue = v;
-                double boundaryReleaseValue = comp[releaseAxis.componentIndex];
-                Set<String> nodeNames = new LinkedHashSet<>(runNames);
-                nodeNames.addAll(currentNames);
+                if (appearingOrDisappearing == null
+                        && walkAxis.type == AxisConfig.Type.TEMPERATURE) {
 
-                if (boundary != null) {
-                    boundaryReleaseValue = boundary.releasedComponentValue;
-                    comp[releaseAxis.componentIndex] = boundaryReleaseValue;
-                }
+                    invariantFixedPhase = findAppearingPhase(runNames, currentNames);
 
-                runCoords.add(new double[] { boundaryWalkValue, boundaryReleaseValue });
-
-                result.addLine(buildSegment(runCoords, runNames, runFixedPhase));
-
-                NodePoint.Type nodeType = NodePoint.Type.CROSSING;
-
-                if (nodeNames.size() >= 3) {
-
-                    List<InvariantExitFinder.ExitCandidate> exits =
-                            checkInvariant(nodeNames, candidates, t, p, comp);
-
-                    if (!exits.isEmpty()) {
-                        nodeType = NodePoint.Type.INVARIANT;
+                    if (invariantFixedPhase != null) {
+                        invariantBoundary = EquilibriumSolveHelper.solveBoundaryReleasingTOrNull(
+                                t, p, comp, candidates, previousResult,
+                                invariantFixedPhase, 0.0);
                     }
                 }
 
+                double crossingWalkValue = v;
+                double crossingReleaseValue = comp[releaseAxis.componentIndex];
+                Set<String> nodeNames = new LinkedHashSet<>(runNames);
+                nodeNames.addAll(currentNames);
+                NodePoint.Type nodeType = NodePoint.Type.CROSSING;
+
+                if (invariantBoundary != null) {
+
+                    // The T-release solve converged with the appearing
+                    // phase fixed at zero -- the original two phases
+                    // plus the new one are all simultaneously stable at
+                    // this exact (T, comp): this IS the invariant node.
+                    crossingWalkValue = invariantBoundary.releasedComponentValue;
+                    nodeNames = EquilibriumSolveHelper.stablePhaseNames(
+                            invariantBoundary.equilibrium);
+                    nodeNames.add(invariantFixedPhase);
+                    nodeType = NodePoint.Type.INVARIANT;
+                    appearingOrDisappearing = null;
+
+                } else if (appearingOrDisappearing != null) {
+
+                    // Ordinary single-phase crossing -- solve the exact
+                    // boundary via Algorithm C2 (composition release).
+                    EquilibriumSolverV2.BoundarySolveResult boundary =
+                            EquilibriumSolveHelper.solveBoundaryOrNull(
+                                    t, p, comp, candidates, previousResult,
+                                    appearingOrDisappearing, 0.0,
+                                    releaseAxis.componentIndex);
+
+                    if (boundary != null) {
+                        crossingReleaseValue = boundary.releasedComponentValue;
+                        comp[releaseAxis.componentIndex] = crossingReleaseValue;
+                    }
+
+                    if (nodeNames.size() >= 3) {
+
+                        List<InvariantExitFinder.ExitCandidate> exits =
+                                checkInvariant(nodeNames, candidates, t, p, comp,
+                                        appearingOrDisappearing);
+
+                        if (!exits.isEmpty()) {
+                            nodeType = NodePoint.Type.INVARIANT;
+                        }
+                    }
+
+                } else {
+
+                    // More than one phase changed and either the walk
+                    // axis isn't TEMPERATURE (T-release not applicable)
+                    // or the T-release solve failed to converge --
+                    // record the jump as an ordinary (approximate)
+                    // CROSSING at the walk point v, matching
+                    // StepTracer's own non-resolvable-crossing fallback,
+                    // and flag the result as incomplete.
+                    result.setComplete(false);
+                    result.setMessage("More than one phase changed at "
+                            + walkAxis.name + "=" + v
+                            + " and the invariant point could not be located.");
+                }
+
+                runCoords.add(new double[] { crossingWalkValue, crossingReleaseValue });
+
+                result.addLine(buildSegment(runCoords, runNames, runFixedPhase));
+
                 result.addNode(
                         new NodePoint(
-                                new double[] { boundaryWalkValue, boundaryReleaseValue },
+                                new double[] { crossingWalkValue, crossingReleaseValue },
                                 new ArrayList<>(nodeNames),
                                 nodeType));
 
                 runCoords = new ArrayList<>();
-                runCoords.add(new double[] { boundaryWalkValue, boundaryReleaseValue });
+                runCoords.add(new double[] { crossingWalkValue, crossingReleaseValue });
                 runCoords.add(new double[] { v, comp[releaseAxis.componentIndex] });
                 runNames = currentNames;
                 runFixedPhase = appearingOrDisappearing;
@@ -216,6 +293,27 @@ public final class MapTracer {
         }
 
         return result;
+    }
+
+    /**
+     * Returns a phase present in {@code after} but not {@code before}
+     * (a genuinely NEW phase appearing), preferring this over a
+     * disappearing one since {@link EquilibriumSolverV2#solveBoundaryReleasingT}
+     * needs the newly-appearing phase (fixed at zero amount, about to
+     * become stable) to seed the invariant search from the {@code
+     * before} side's converged 2-phase equilibrium. Returns {@code null}
+     * if no phase was added (i.e. only phases were removed, or the sets
+     * are otherwise not resolvable this way).
+     */
+    private String findAppearingPhase(Set<String> before, Set<String> after) {
+
+        for (String name : after) {
+            if (!before.contains(name)) {
+                return name;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -243,16 +341,27 @@ public final class MapTracer {
     }
 
     /**
-     * Algorithm D check: with 3 phases at a candidate node, ask {@link
-     * InvariantExitFinder} whether any valid exit exists distinct from
-     * the arrival pair -- if so, this node is a genuine invariant
-     * (multiple regions meet here), not just an ordinary crossing that
-     * happens to touch a third phase transiently.
+     * Algorithm D check: with {@code ncomp+1} phases at a candidate
+     * node, ask {@link InvariantExitFinder} whether any valid exit
+     * exists distinct from the arrival exit -- if so, this node is a
+     * genuine invariant (multiple regions meet here), not just an
+     * ordinary crossing that happens to touch a third phase
+     * transiently.
+     *
+     * @param arrivedViaExcludedPhase the phase that was just fixed at
+     *                                zero amount to solve the boundary
+     *                                the algorithm arrived at this node
+     *                                by (the TRUE arrival exit, not a
+     *                                guess) -- may be {@code null} if
+     *                                the crossing changed more than one
+     *                                phase at once, in which case no
+     *                                exit is excluded as "already known"
      */
     private List<InvariantExitFinder.ExitCandidate> checkInvariant(
             Set<String> nodeNames,
             List<GibbsEnergyModel> candidates,
-            double t, double p, double[] comp) {
+            double t, double p, double[] comp,
+            String arrivedViaExcludedPhase) {
 
         List<String> names = new ArrayList<>(nodeNames);
         double[][] compositions = new double[names.size()][];
@@ -283,7 +392,7 @@ public final class MapTracer {
         }
 
         return InvariantExitFinder.findExits(
-                names, compositions, comp, names.get(0), names.get(1));
+                names, compositions, comp, arrivedViaExcludedPhase);
     }
 
     private LineSegment buildSegment(

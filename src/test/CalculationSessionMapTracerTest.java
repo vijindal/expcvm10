@@ -33,6 +33,24 @@ import java.util.Arrays;
  *       Section A already validates, as a second negative control for
  *       Algorithm D: asserts line segments have {@code fixedPhase}
  *       populated but zero INVARIANT nodes.</li>
+ *   <li><b>Section C</b> -- V-Zr's own documented 1586K peritectic
+ *       (LIQUID+BCC_A2-&gt;V2ZR, per {@code EquilibriumSolverV2BaselineTest}'s
+ *       Table 2 reference), with all 3 phases (LIQUID, BCC_A2, V2ZR) as
+ *       candidates, walking TEMPERATURE through the transition. This is
+ *       a genuine 3-phase invariant, unlike Sections A/B's negative
+ *       controls. Documents a KNOWN, currently-unresolved gap: locating
+ *       it requires {@link calc.equil.EquilibriumSolverV2#solveBoundaryReleasingT}
+ *       to converge after seeding a brand-new (not previously stable)
+ *       phase, which converges too slowly to finish within its default
+ *       iteration budget (confirmed by direct testing this session --
+ *       mass-balance/stationarity converge quickly, but the
+ *       phase-equilibrium residual decays only linearly, ~0.87x per
+ *       iteration, after the new phase's crude initial-guess
+ *       constitution causes an overshoot). This section asserts the
+ *       tracer degrades GRACEFULLY (no exception, {@code
+ *       isComplete()==false} with an explanatory message) rather than
+ *       silently mislabeling the node or crashing -- not that the
+ *       invariant is actually found yet.</li>
  * </ul>
  */
 public class CalculationSessionMapTracerTest {
@@ -43,6 +61,7 @@ public class CalculationSessionMapTracerTest {
 
         runSectionA();
         runSectionB();
+        runSectionC();
 
         System.out.println();
         if (failures == 0) {
@@ -152,6 +171,73 @@ public class CalculationSessionMapTracerTest {
         require("at least 1 segment has a non-null fixedPhase",
                 segmentsWithFixedPhase >= 1,
                 "found " + segmentsWithFixedPhase);
+    }
+
+    // ------------------------------------------------------------------
+    // Section C -- V-Zr's real 1586K peritectic (LIQUID+BCC_A2->V2ZR):
+    // documents the known solveBoundaryReleasingT convergence-speed gap
+    // -- asserts graceful degradation, not that the invariant is found.
+    // ------------------------------------------------------------------
+
+    private static void runSectionC() throws Exception {
+
+        System.out.println();
+        System.out.println("============================================================");
+        System.out.println("Section C: V-Zr 1586K peritectic -- known convergence-speed gap");
+        System.out.println("============================================================");
+
+        CalculationSession session = new CalculationSession();
+        session.setModel("data/VZR-re2.TDB", Arrays.asList("V", "ZR"),
+                Arrays.asList("LIQUID", "BCC_A2", "V2ZR"));
+
+        AxisConfig walkAxis = new AxisConfig("T / K", AxisConfig.Type.TEMPERATURE,
+                1560.0, 1610.0, 2.0);
+        AxisConfig releaseAxis = new AxisConfig("x(Zr)", 1, 0.0, 1.0, 0.01);
+
+        // Inside the BCC_A2+V2ZR two-phase field just below the peritectic
+        // (per EquilibriumSolverV2BaselineTest's Table 2 reference row).
+        double[] comp = { 1.0 - 0.2070, 0.2070 };
+
+        session.calculateMap(walkAxis, releaseAxis, 0.0, 101325.0, comp);
+
+        PhaseDiagramResult result = session.currentMapResult();
+
+        printResult(result);
+
+        require("currentMapResult() is not null (no exception propagated)",
+                result != null, "was null");
+
+        require("the two known two-phase regions (BCC_A2+V2ZR, BCC_A2+LIQUID) "
+                        + "were both found on either side of the peritectic",
+                hasSegmentContaining(result, "BCC_A2", "V2ZR")
+                        && hasSegmentContaining(result, "BCC_A2", "LIQUID"),
+                "lines=" + result.getLines());
+
+        // NOT currently asserting INVARIANT is found here -- see class
+        // Javadoc's documented convergence-speed gap. Once
+        // solveBoundaryReleasingT's iteration budget/seeding is fixed,
+        // this section should be strengthened to require
+        // countInvariants(result) >= 1 near T=1586K.
+        require("result reports incomplete (known solveBoundaryReleasingT "
+                        + "convergence-speed gap, documented in MapTracer/"
+                        + "EquilibriumSolverV2#solveBoundaryReleasingT's javadoc)",
+                !result.isComplete(),
+                "expected isComplete()==false given the known gap, got true "
+                        + "-- if this now passes, the gap may be fixed; "
+                        + "strengthen this section's assertions");
+    }
+
+    private static boolean hasSegmentContaining(PhaseDiagramResult result, String... phaseNames) {
+
+        java.util.List<String> expected = Arrays.asList(phaseNames);
+
+        for (LineSegment line : result.getLines()) {
+            if (line.stablePhases.containsAll(expected)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // ------------------------------------------------------------------

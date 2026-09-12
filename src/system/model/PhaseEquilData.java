@@ -53,6 +53,28 @@ public final class PhaseEquilData {
     /** cP[m] = -Σ_j eMat[m][j]*GxP[j], length nip (zero if no P dependence). */
     public final double[] cP;
 
+    /**
+     * dM_dT[A] = Σ_m dM_A/dy[m] * cT[m], length nc -- the phase's pure
+     * temperature sensitivity of M_A (moles of component A per formula
+     * unit), independent of {@code deltaT}/chemical potentials. This is
+     * {@code deln}'s T-only analogue: {@code deln} uses the FULL {@code
+     * dely} (which folds in {@code deltaT} and {@code mu}), whereas
+     * {@code dM_dT} isolates just the {@code cT} contribution, needed to
+     * release T as a Newton unknown in the global equilibrium matrix
+     * (Sundman Algorithm C2's invariant-node search, {@link
+     * calc.equil.EquilibriumSolverV2#solveBoundary}) -- see {@code
+     * GlobalEquilibriumMatrixAssembler.convertToFixedPhaseAmountSystemReleasingT}.
+     */
+    public final double[] dM_dT;
+
+    /**
+     * dG/dT at fixed y -- the phase's own Gibbs-energy T-sensitivity
+     * (from {@link system.model.GibbsEnergyModel#dG_dT}), needed as the
+     * ΔT coefficient in this phase's OWN phase-equilibrium row when T is
+     * released as a Newton unknown: {@code M_A*lambda_A - dG_dT*deltaT = G}.
+     */
+    public final double dG_dT;
+
     /** Diagnostic energy list. */
     public final double[] eList;
 
@@ -66,6 +88,8 @@ public final class PhaseEquilData {
                           double[] cG,
                           double[] cT,
                           double[] cP,
+                          double[] dM_dT,
+                          double dG_dT,
                           double[] eList) {
         this.G      = G;
         this.dely   = dely;
@@ -77,6 +101,8 @@ public final class PhaseEquilData {
         this.cG     = cG;
         this.cT     = cT;
         this.cP     = cP;
+        this.dM_dT  = dM_dT;
+        this.dG_dT  = dG_dT;
         this.eList  = eList;
     }
 }

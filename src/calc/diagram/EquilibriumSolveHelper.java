@@ -170,4 +170,31 @@ final class EquilibriumSolveHelper {
             return null;
         }
     }
+
+    /**
+     * Calls {@link EquilibriumSolverV2#solveBoundaryReleasingT} (the
+     * temperature-release variant of Algorithm C2, used to locate a
+     * genuine invariant node where the stable set jumps by more than one
+     * phase at a single point -- see that method's javadoc), returning
+     * {@code null} instead of throwing if the solve fails to converge.
+     */
+    static EquilibriumSolverV2.BoundarySolveResult solveBoundaryReleasingTOrNull(
+            double t,
+            double p,
+            double[] comp,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult seed,
+            String fixedPhaseName,
+            double fixedAmount) {
+
+        try {
+
+            return new EquilibriumSolverV2().solveBoundaryReleasingT(
+                    t, p, comp, candidates, seed, fixedPhaseName, fixedAmount);
+
+        } catch (RuntimeException e) {
+
+            return null;
+        }
+    }
 }

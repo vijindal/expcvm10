@@ -811,6 +811,153 @@ public class EquilibriumSolverV2 {
     }
 
     /**
+     * As {@link #solveBoundary}, but releases TEMPERATURE instead of a
+     * composition component -- used to locate an INVARIANT node
+     * (eutectic/peritectic), where a genuine walk-axis (T) release is
+     * needed because the invariant is a single point where the stable
+     * set jumps by more than one phase at once (no adjacent
+     * single-phase-change sub-interval exists to solve a composition-
+     * release boundary against).
+     *
+     * <p>Enabled by {@link system.model.PhaseEquilData#dG_dT}/{@code
+     * dM_dT} (this session's addition) and {@link
+     * GlobalEquilibriumMatrixAssembler#convertToFixedPhaseAmountSystemReleasingT}.
+     * The underlying matrix/RHS derivation was independently verified
+     * numerically against a known-converged V2ZR+BCC_A2 reference point
+     * (DeltaT solved to ~2.5e-4 K at an already-converged T) before this
+     * method was written.
+     *
+     * <p><b>Known gap: slow convergence when the fixed phase is newly
+     * added (not already stable in {@code seed}).</b> Since {@code
+     * fixedPhaseName} is typically a phase not present in {@code seed}
+     * at all (the invariant's third, newly-appearing phase), this method
+     * must first ADD it as a new stable slot, seeded only with a generic
+     * initial-guess constitution ({@link #initializeSinglePhaseState},
+     * the same crude single-phase guess {@link #initialize} uses as its
+     * OWN starting point before any refinement) rather than a
+     * warm-started one. Confirmed by direct testing against V-Zr's
+     * documented 1586K peritectic: the Newton loop does converge
+     * (mass-balance and stationarity residuals reach ~1e-10 quickly),
+     * but the phase-equilibrium/DeltaMu residuals overshoot after the
+     * new phase is added and then decay only slowly (linear, ~0.87x per
+     * iteration in the case tested) -- exceeding {@link #maxIterations}
+     * (100) before reaching {@link #SOLVER_TOL}. Increasing the
+     * iteration budget for this path specifically, or seeding the new
+     * phase's constitution more carefully (e.g. from a nearby
+     * equilibrium sample rather than the generic single-phase guess),
+     * are the most likely fixes -- not yet implemented.
+     *
+     * @param T                temperature to seed the search from (the walk's
+     *                         current point, at/near the overshoot)
+     * @param P                pressure (Pa)
+     * @param compOverAll      the FIXED overall composition at which the
+     *                         invariant is sought (not released)
+     * @param candidates       candidate phase models
+     * @param seed             the prior converged equilibrium (2 phases) to
+     *                         warm-start from
+     * @param fixedPhaseName   name of the (3rd, newly-appearing) phase to
+     *                         fix at {@code fixedAmount}
+     * @param fixedAmount      the phase's fixed amount (0 for a genuine invariant)
+     * @return the boundary equilibrium and the released (solved) temperature
+     * @throws IllegalStateException if the boundary solve does not converge
+     *                                within {@link #maxIterations} -- see the
+     *                                known convergence-speed gap documented above
+     */
+    public BoundarySolveResult solveBoundaryReleasingT(
+            double T,
+            double P,
+            double[] compOverAll,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult seed,
+            String fixedPhaseName,
+            double fixedAmount) {
+
+        if (candidates == null || candidates.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "At least one phase model is required.");
+        }
+
+        this.T = T;
+        this.P = P;
+        this.phaseModels = candidates;
+        this.targetAmounts = compOverAll.clone();
+
+        seedFromEquilibriumResult(seed, candidates);
+
+        int fixedSlotIndex = -1;
+        for (int k = 0; k < stablePhases.length; k++) {
+            if (candidates.get(stablePhases[k]).phaseName().equals(fixedPhaseName)) {
+                fixedSlotIndex = k;
+                break;
+            }
+        }
+
+        double internalFixedAmount = Math.max(fixedAmount, MIN_PHASE_AMOUNT);
+
+        if (fixedSlotIndex < 0) {
+
+            /*
+             * Unlike solveBoundary() (which fixes an already-stable
+             * phase as it LEAVES the stable set), an invariant node's
+             * fixed phase is a NEWLY-APPEARING one -- not present in
+             * the seed's converged 2-phase equilibrium at all. Add it
+             * as a new stable slot, seeded the same way initialize()
+             * seeds a fresh phase's constitution: an initial guess
+             * constitution matching the current overall composition.
+             * Its amount is then immediately pinned to
+             * internalFixedAmount, exactly as for the ordinary
+             * already-stable case.
+             */
+            int candidateIndex = -1;
+            for (int i = 0; i < candidates.size(); i++) {
+                if (candidates.get(i).phaseName().equals(fixedPhaseName)) {
+                    candidateIndex = i;
+                    break;
+                }
+            }
+
+            if (candidateIndex < 0) {
+                throw new IllegalStateException(
+                        "Phase to fix (" + fixedPhaseName + ") is not among the "
+                        + "given candidate phases.");
+            }
+
+            if (!(candidates.get(candidateIndex) instanceof CefGibbs)) {
+                throw new UnsupportedOperationException(
+                        "EquilibriumSolverV2 currently requires CEF candidate phases.");
+            }
+
+            CefGibbs cef = (CefGibbs) candidates.get(candidateIndex);
+            PhaseWork newWork = new PhaseWork(cef);
+            newWork.y = initializeSinglePhaseState(cef, targetComposition());
+            evaluatePhaseWork(newWork);
+
+            int newSlotCount = stablePhases.length + 1;
+            int[] newStablePhases = Arrays.copyOf(stablePhases, newSlotCount);
+            double[] newPhaseAmounts = Arrays.copyOf(phaseAmounts, newSlotCount);
+            newStablePhases[newSlotCount - 1] = candidateIndex;
+            newPhaseAmounts[newSlotCount - 1] = internalFixedAmount;
+
+            stablePhases = newStablePhases;
+            phaseAmounts = newPhaseAmounts;
+            stableSlots.add(newWork);
+
+            fixedSlotIndex = newSlotCount - 1;
+
+        } else {
+
+            phaseAmounts[fixedSlotIndex] = internalFixedAmount;
+        }
+
+        double releasedT =
+                solveBoundaryInternalReleasingT(fixedSlotIndex, internalFixedAmount);
+
+        EquilibriumResult eq = buildEquilibriumResult(true, 0);
+
+        return new BoundarySolveResult(eq, releasedT);
+    }
+
+    /**
      * Seeds {@link #stablePhases}/{@link #phaseAmounts}/{@link
      * #stableSlots}/{@link #phaseWorks}/{@link #phaseInternalVars}/
      * {@link #mu} directly from a prior converged {@link
@@ -1007,6 +1154,119 @@ public class EquilibriumSolverV2 {
 
         throw new IllegalStateException(
                 "Boundary solve did not converge within " + maxIterations + " iterations.");
+    }
+
+    /**
+     * As {@link #solveBoundaryInternal}, but the freed column solves for
+     * {@code DeltaT} (applied to {@code this.T}, re-evaluating every
+     * phase at the new temperature each iteration via {@link
+     * #evaluateAllPhases}/{@link #buildPhaseResponses}) instead of a
+     * released composition component's target amount.
+     *
+     * @return the final converged temperature
+     */
+    private double solveBoundaryInternalReleasingT(
+            int fixedSlotIndex,
+            double fixedAmount) {
+
+        final int nc = targetAmounts.length;
+        final int np = stablePhases.length;
+
+        for (int iteration = 0; iteration < maxIterations; iteration++) {
+
+            evaluateAllPhases();
+            buildPhaseResponses();
+
+            PhaseEquilData[] phaseData = new PhaseEquilData[np];
+            double[] stablePhaseAmounts = new double[np];
+            for (int k = 0; k < np; k++) {
+                stablePhaseAmounts[k] = phaseAmounts[k];
+                phaseData[k] = stableSlots.get(k).equilData;
+            }
+
+            double[][] ordinaryMatrix =
+                    GlobalEquilibriumMatrixAssembler.buildMatrix(
+                            phaseData, stablePhaseAmounts, targetAmounts);
+            double[] ordinaryRhs =
+                    GlobalEquilibriumMatrixAssembler.buildRhs(
+                            phaseData, stablePhaseAmounts, targetAmounts);
+
+            GlobalEquilibriumMatrixAssembler.Result converted =
+                    GlobalEquilibriumMatrixAssembler.convertToFixedPhaseAmountSystemReleasingT(
+                            ordinaryMatrix, ordinaryRhs, phaseData, stablePhaseAmounts,
+                            nc, np, fixedSlotIndex);
+
+            equilibriumMatrix = converted.matrix;
+            equilibriumRhs = converted.rhs;
+
+            solveEquilibriumMatrix();
+
+            double deltaT = deltaPhaseAmounts[fixedSlotIndex];
+            deltaPhaseAmounts[fixedSlotIndex] = 0.0;
+
+            calculateInternalCorrections();
+
+            previousMu = (mu != null) ? mu.clone() : new double[nc];
+            previousTotalG = 0.0;
+
+            double[] newLambdaChecked = newLambda.clone();
+            for (int A = 0; A < nc; A++) {
+                if (!Double.isFinite(newLambdaChecked[A])) {
+                    throw new IllegalStateException(
+                            "Non-finite newLambda[" + A + "]: " + newLambdaChecked[A]);
+                }
+            }
+
+            for (int k = 0; k < np; k++) {
+
+                PhaseWork work = stableSlots.get(k);
+
+                if (k == fixedSlotIndex) {
+                    phaseAmounts[k] = fixedAmount;
+                } else {
+                    double trial = phaseAmounts[k] + deltaPhaseAmounts[k];
+                    phaseAmounts[k] = Math.max(trial, MIN_PHASE_AMOUNT);
+                }
+
+                double[] dy = deltaPhaseInternalVars[k];
+                double[] newY = new double[work.y.length];
+                for (int i = 0; i < newY.length; i++) {
+                    double v = work.y[i] + dy[i];
+                    if (v < 1.0e-14) v = 1.0e-14;
+                    if (v > 1.0) v = 1.0;
+                    newY[i] = v;
+                }
+                work.y = newY;
+
+                if (!Double.isFinite(phaseAmounts[k])) {
+                    throw new IllegalStateException(
+                            "Non-finite phase amount for stable slot " + k);
+                }
+
+                int phaseIndex = stablePhases[k];
+                phaseInternalVars[phaseIndex] = work.y.clone();
+
+                evaluatePhaseWork(work);
+                work.mu = newLambdaChecked.clone();
+                recomputeSublatticeMultipliers(work);
+            }
+
+            mu = newLambdaChecked.clone();
+
+            if (!Double.isFinite(deltaT)) {
+                throw new IllegalStateException("Non-finite DeltaT: " + deltaT);
+            }
+
+            this.T += deltaT;
+
+            if (checkConvergence() && Math.abs(deltaT) < tolerance * Math.max(1.0, Math.abs(this.T))) {
+                return this.T;
+            }
+        }
+
+        throw new IllegalStateException(
+                "Boundary solve (releasing T) did not converge within "
+                + maxIterations + " iterations.");
     }
 
     // ================================================================
