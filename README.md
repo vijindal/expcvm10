@@ -243,7 +243,12 @@ assessment code is quarantined under `legacy/`.
     phase's amount at exactly zero via variable elimination (ported
     from and verified against OpenCalphad's `matsmin.F90`/
     `map_calcnode`) and solves for the exact boundary composition —
-    the numerical basis for `MapTracer`.
+    the numerical basis for `MapTracer`. A sibling, `solveBoundaryReleasingT`,
+    releases temperature instead (needed to locate an invariant node,
+    where the stable set jumps by more than one phase at a single
+    point) — enabled by `dG_dT`/`dM_dT` on `PhaseEquilData`, composed
+    from per-phase T-derivative machinery `PhaseMatrixAssembler`
+    already computed but never wired into the global matrix before.
   - Validated against the V–Zr TDB (`data/VZR-re2.TDB`) for BCC_A2
     (vacancy sublattice), HCP_A3, LIQUID, and the ordered V2ZR,
     including converging two-phase equilibria, via pycalphad-referenced
@@ -257,12 +262,20 @@ assessment code is quarantined under `legacy/`.
   - `StepTracer` (step branch): walks one axis, detects stable-phase-set
     changes, locates crossings by black-box bisection.
   - `MapTracer` (map branch): walks one axis in fixed increments (C1),
-    solves each boundary crossing exactly via `solveBoundary` (C2), and
-    checks three-phase nodes for genuine invariants via
-    `InvariantExitFinder` (D, combinatorial exit enumeration ported from
-    OpenCalphad's `find_inv_exits`). Currently traces one line per call —
-    the release axis must be a composition axis (no T/P release yet);
-    multi-line auto-discovery of a full diagram is not yet implemented.
+    solves each ordinary boundary crossing exactly via `solveBoundary`
+    (C2, composition release), and locates a genuine invariant node
+    (eutectic/peritectic, where the stable set jumps by more than one
+    phase at once) via `solveBoundaryReleasingT` instead, confirming it
+    with `InvariantExitFinder` (D, combinatorial exit enumeration
+    verified against pycalphad's binary-mapper combinatorics — an
+    earlier version of this class had an exit-count bug that made it
+    never fire). Currently traces one line per call and only releases T
+    at an invariant when the walk axis is TEMPERATURE; multi-line
+    auto-discovery of a full diagram is not yet implemented. Known,
+    documented gap: `solveBoundaryReleasingT` converges too slowly when
+    seeding a genuinely new phase from a generic initial guess (confirmed
+    against V-Zr's own 1586K peritectic) — `MapTracer` degrades
+    gracefully (`isComplete()==false`) rather than mislabeling the node.
   - `CoarseDiagramTracer`: samples a binary/ternary T-x grid via
     `GridMinimizer` only (no Newton solve per point) and reports the
     stable phase set at each point, for scatter/dot rendering — distinct
@@ -297,10 +310,16 @@ assessment code is quarantined under `legacy/`.
   *during* Newton iteration (not just at `GridMinimizer` init) and
   intermittently cause a singular global matrix — most visible on
   quaternary systems and near-symmetric compositions.
-- `MapTracer` traces one line per call and requires the release axis
-  to be a composition axis (no T/P release — `PhaseMatrixAssembler`
-  has no `dG/dT`/`dG/dP` terms yet); it does not yet auto-discover and
-  stitch together every line/invariant a full diagram needs.
+- `MapTracer` traces one line per call and does not yet auto-discover
+  and stitch together every line/invariant a full diagram needs.
+  Ordinary boundary crossings release a composition axis only; T-release
+  (needed for invariant nodes) works for TEMPERATURE walk axes but
+  converges too slowly when seeding a genuinely new phase to reliably
+  locate an invariant yet (`CalculationSessionMapTracerTest` Section C
+  documents this against a real peritectic). P-release is not
+  implemented (`PhaseMatrixAssembler` computes `dG/dP`-based
+  coefficients per phase, but they are not yet threaded through the
+  global matrix the way T now is).
 - Two-state/Einstein and ordering/disordering (B2/L1₂-style)
   contributions are not implemented in `CefGibbs`. `VK` (isothermal
   compressibility) is detected and rejected explicitly rather than
