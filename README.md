@@ -155,9 +155,8 @@ calls; the Calculation Layer holds no thermodynamic knowledge.
    `CalculationSession` to the UI, which renders it as tables, graphs, or
    logs.
 
-See [docs/plan-3layer-core-dataflow.md](docs/plan-3layer-core-dataflow.md)
-and [docs/dataflow_target.png](docs/dataflow_target.png) for the full
-data-flow figure and the implementation record.
+See [docs/dataflow_target.png](docs/dataflow_target.png) for the full
+data-flow figure.
 
 ## Entry points
 
@@ -310,5 +309,4 @@ assessment code is quarantined under `legacy/`.
   model/equilibrium architecture (not only the legacy pathway).
 
 See [Structure](#structure) above for the architecture and layer
-boundaries, and [docs/plan-3layer-core-dataflow.md](docs/plan-3layer-core-dataflow.md)
-for the implementation record.
+boundaries.
