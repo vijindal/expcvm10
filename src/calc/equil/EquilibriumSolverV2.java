@@ -825,10 +825,9 @@ public class EquilibriumSolverV2 {
      * (DeltaT solved to ~2.5e-4 K at an already-converged T) before this
      * method was written.
      *
-     * <p><b>Scope limit, now precisely understood (not merely a
-     * convergence-speed gap): this method only works while {@code np <=
-     * nc} after the fixed phase is added.</b> Fixing ONE phase at zero
-     * and releasing ONE scalar (T here) assembles a square {@code
+     * <p><b>Scope limit: this method only works while {@code np <= nc}
+     * after the fixed phase is added.</b> Fixing ONE phase at zero and
+     * releasing ONE scalar (T here) assembles a square {@code
      * (nc+np)x(nc+np)} system, but {@link
      * GlobalEquilibriumMatrixAssembler#buildMatrix} never places a
      * DeltaOmega coefficient in any phase-equilibrium row -- those
@@ -841,10 +840,25 @@ public class EquilibriumSolverV2 {
      * phase's composition or how carefully it is seeded (confirmed
      * directly: even a Halton-sampled, driving-force-optimal seed for
      * the new phase still produces "Matrix is singular" on iteration 0
-     * here). Locating a genuine 3-phase binary invariant requires fixing
-     * TWO phases at zero and releasing TWO conditions together -- see
-     * {@link #solveInvariantNode}, which implements Eq. 9's actual
-     * mechanism instead of calling this method a second way.
+     * here).
+     *
+     * <p>This is NOT solved by fixing a second phase and releasing a
+     * second condition simultaneously -- neither the Sundman 2021 paper
+     * nor OpenCalphad's own implementation ({@code map_calcnode}/{@code
+     * meq_sameset}, traced directly this session,
+     * {@code src\stepmapplot\smp2A.F90}) ever do that; both always keep
+     * Algorithm C2 to exactly one fixed phase and one released
+     * condition. When a second phase's driving force also crosses zero
+     * during a node solve, OpenCalphad's {@code map_calcnode} treats it
+     * as a node-solve FAILURE and {@code map_halfstep} retries from the
+     * last converged point with a much smaller walk-axis sub-step (10%
+     * of the normal increment, up to 3 attempts) until the jump narrows
+     * to a single resolvable phase change -- see {@link
+     * calc.diagram.MapTracer#retryWithHalvedSteps}, which implements
+     * that retry and is the paper/OpenCalphad-faithful mechanism for
+     * locating a genuine invariant, calling this single-fix method (or
+     * {@link #solveBoundary}) only once the jump has been narrowed to
+     * one phase.
      *
      * @param T                temperature to seed the search from (the walk's
      *                         current point, at/near the overshoot)
@@ -905,273 +919,6 @@ public class EquilibriumSolverV2 {
         EquilibriumResult eq = buildEquilibriumResult(true, 0);
 
         return new BoundarySolveResult(eq, releasedT);
-    }
-
-    /**
-     * Locates a genuine invariant node (Sundman 2021 CALPHAD 75, Eq.
-     * 8/9) for a binary (nc=2) system: fixes TWO phases at zero amount
-     * simultaneously and releases TWO conditions together (temperature
-     * AND one composition component), rather than {@link
-     * #solveBoundary}/{@link #solveBoundaryReleasingT}'s single-phase/
-     * single-condition release.
-     *
-     * <p>This is the mechanism {@link #solveBoundaryReleasingT}'s own
-     * javadoc explains cannot work once a third phase becomes stable at
-     * a binary node: with {@code np=3} stable phases but only {@code
-     * nc=2} chemical potentials, the 3 phase-equilibrium rows are
-     * confined to 2 nonzero columns (no phase-equilibrium row ever gets
-     * a DeltaOmega coefficient, per {@link
-     * GlobalEquilibriumMatrixAssembler#buildMatrix}) and are therefore
-     * linearly dependent by construction -- exactly singular regardless
-     * of seeding. Fixing a SECOND phase at zero and releasing a SECOND
-     * condition (T) breaks that degeneracy: both fixed phases' own rows
-     * now carry a nonzero {@code -dG_dT} entry in the newly-freed T
-     * column (see {@link
-     * GlobalEquilibriumMatrixAssembler#convertToInvariantNodeSystem}),
-     * so the phase-equilibrium block is no longer confined to the
-     * lambda columns alone.
-     *
-     * <p>Per Eq. 9's own wording ("Two of the n+1 phases stable at the
-     * invariant must have zero amount... We can use the remaining n-1
-     * phases and the n-1 conditions"): for binary n=2, of the 3 stable
-     * phases, 2 are fixed at zero ({@code fixedPhaseNameA}, {@code
-     * fixedPhaseNameB} -- typically the newly-appearing phase and
-     * whichever of the two original phases is about to disappear on the
-     * far side of the node) and the remaining 1 phase's amount is the
-     * only DeltaOmega left as a genuine Newton unknown.
-     *
-     * <p>Which of the seed's original 2 phases plays "the one about to
-     * disappear" vs. "the one that survives" is not known in advance --
-     * both are tried (first {@code seed}'s phase 0 fixed alongside the
-     * new phase, then phase 1) and whichever converges is returned, so
-     * the caller does not need to guess.
-     *
-     * @param T               temperature to seed the search from (the walk's
-     *                        current point, at/near the overshoot)
-     * @param P               pressure (Pa)
-     * @param compOverAll     the overall composition to seed the target
-     *                        amounts (the released component's entry is
-     *                        overwritten as the solve proceeds)
-     * @param candidates      candidate phase models
-     * @param seed            the prior converged equilibrium (2 phases) to
-     *                        warm-start from
-     * @param newPhaseName    name of the 3rd, newly-appearing phase
-     * @param releasedComponentIndex index of the composition component
-     *                        released alongside T
-     * @return the invariant-node equilibrium (3 phases, one at zero
-     *         amount alongside {@code newPhaseName}) and the released
-     *         temperature/composition
-     * @throws IllegalStateException if neither choice of the seed's
-     *                                phase-to-also-fix converges
-     */
-    public BoundarySolveResult solveInvariantNode(
-            double T,
-            double P,
-            double[] compOverAll,
-            List<GibbsEnergyModel> candidates,
-            EquilibriumResult seed,
-            String newPhaseName,
-            int releasedComponentIndex) {
-
-        if (candidates == null || candidates.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "At least one phase model is required.");
-        }
-
-        List<EquilibriumResult.PhaseResult> seedStable = seed.getStablePhases();
-        if (seedStable.size() != 2) {
-            throw new IllegalArgumentException(
-                    "solveInvariantNode requires a 2-phase seed (binary "
-                    + "invariant has exactly 3 stable phases: the seed's "
-                    + "2 plus the newly-appearing phase); got "
-                    + seedStable.size() + ".");
-        }
-
-        IllegalStateException lastFailure = null;
-
-        for (String alsoFixedName : new String[] {
-                seedStable.get(0).phaseName, seedStable.get(1).phaseName }) {
-
-            try {
-                return solveInvariantNodeFixing(
-                        T, P, compOverAll, candidates, seed,
-                        newPhaseName, alsoFixedName, releasedComponentIndex);
-            } catch (IllegalStateException e) {
-                lastFailure = e;
-            }
-        }
-
-        throw new IllegalStateException(
-                "solveInvariantNode failed for both choices of the "
-                + "seed phase fixed alongside " + newPhaseName + ".",
-                lastFailure);
-    }
-
-    private BoundarySolveResult solveInvariantNodeFixing(
-            double T,
-            double P,
-            double[] compOverAll,
-            List<GibbsEnergyModel> candidates,
-            EquilibriumResult seed,
-            String newPhaseName,
-            String alsoFixedName,
-            int releasedComponentIndex) {
-
-        this.T = T;
-        this.P = P;
-        this.phaseModels = candidates;
-        this.targetAmounts = compOverAll.clone();
-
-        seedFromEquilibriumResult(seed, candidates);
-
-        int alsoFixedSlotIndex = -1;
-        for (int k = 0; k < stablePhases.length; k++) {
-            if (candidates.get(stablePhases[k]).phaseName().equals(alsoFixedName)) {
-                alsoFixedSlotIndex = k;
-                break;
-            }
-        }
-        if (alsoFixedSlotIndex < 0) {
-            throw new IllegalStateException(
-                    "Phase to fix (" + alsoFixedName + ") is not among the "
-                    + "seed's stable phases.");
-        }
-        phaseAmounts[alsoFixedSlotIndex] = MIN_PHASE_AMOUNT;
-
-        int newSlotIndex = addNewStableSlot(candidates, newPhaseName, MIN_PHASE_AMOUNT);
-
-        double[] released = solveInvariantNodeInternal(
-                alsoFixedSlotIndex, newSlotIndex, releasedComponentIndex);
-
-        EquilibriumResult eq = buildEquilibriumResult(true, 0);
-
-        return new BoundarySolveResult(eq, released[1]);
-    }
-
-    /**
-     * The invariant-node Newton loop: fixes {@code fixedSlotA}/{@code
-     * fixedSlotB} at {@link #MIN_PHASE_AMOUNT} and releases T (applied
-     * directly to {@code this.T}) and {@code
-     * targetAmounts[releasedComponentIndex]} together each iteration,
-     * via {@link
-     * GlobalEquilibriumMatrixAssembler#convertToInvariantNodeSystem}.
-     * Structurally mirrors {@link #solveBoundaryInternalReleasingT},
-     * generalized to two simultaneously-fixed phases and two
-     * simultaneously-released conditions.
-     *
-     * @return {@code [finalT, finalReleasedComponentValue]}
-     */
-    private double[] solveInvariantNodeInternal(
-            int fixedSlotA,
-            int fixedSlotB,
-            int releasedComponentIndex) {
-
-        final int nc = targetAmounts.length;
-        final int np = stablePhases.length;
-
-        double releasedValue = targetAmounts[releasedComponentIndex];
-
-        for (int iteration = 0; iteration < maxIterations; iteration++) {
-
-            evaluateAllPhases();
-            buildPhaseResponses();
-
-            PhaseEquilData[] phaseData = new PhaseEquilData[np];
-            double[] stablePhaseAmounts = new double[np];
-            for (int k = 0; k < np; k++) {
-                stablePhaseAmounts[k] = phaseAmounts[k];
-                phaseData[k] = stableSlots.get(k).equilData;
-            }
-
-            double[][] ordinaryMatrix =
-                    GlobalEquilibriumMatrixAssembler.buildMatrix(
-                            phaseData, stablePhaseAmounts, targetAmounts);
-            double[] ordinaryRhs =
-                    GlobalEquilibriumMatrixAssembler.buildRhs(
-                            phaseData, stablePhaseAmounts, targetAmounts);
-
-            GlobalEquilibriumMatrixAssembler.Result converted =
-                    GlobalEquilibriumMatrixAssembler.convertToInvariantNodeSystem(
-                            ordinaryMatrix, ordinaryRhs, phaseData, stablePhaseAmounts,
-                            nc, np, fixedSlotA, fixedSlotB, releasedComponentIndex);
-
-            equilibriumMatrix = converted.matrix;
-            equilibriumRhs = converted.rhs;
-
-            solveEquilibriumMatrix();
-
-            double deltaT = deltaPhaseAmounts[fixedSlotA];
-            double deltaReleased = deltaPhaseAmounts[fixedSlotB];
-            deltaPhaseAmounts[fixedSlotA] = 0.0;
-            deltaPhaseAmounts[fixedSlotB] = 0.0;
-
-            calculateInternalCorrections();
-
-            previousMu = (mu != null) ? mu.clone() : new double[nc];
-
-            double[] newLambdaChecked = newLambda.clone();
-            for (int A = 0; A < nc; A++) {
-                if (!Double.isFinite(newLambdaChecked[A])) {
-                    throw new IllegalStateException(
-                            "Non-finite newLambda[" + A + "]: " + newLambdaChecked[A]);
-                }
-            }
-
-            for (int k = 0; k < np; k++) {
-
-                PhaseWork work = stableSlots.get(k);
-
-                if (k == fixedSlotA || k == fixedSlotB) {
-                    phaseAmounts[k] = MIN_PHASE_AMOUNT;
-                } else {
-                    double trial = phaseAmounts[k] + deltaPhaseAmounts[k];
-                    phaseAmounts[k] = Math.max(trial, MIN_PHASE_AMOUNT);
-                }
-
-                double[] dy = deltaPhaseInternalVars[k];
-                double[] newY = new double[work.y.length];
-                for (int i = 0; i < newY.length; i++) {
-                    double v = work.y[i] + dy[i];
-                    if (v < 1.0e-14) v = 1.0e-14;
-                    if (v > 1.0) v = 1.0;
-                    newY[i] = v;
-                }
-                work.y = newY;
-
-                if (!Double.isFinite(phaseAmounts[k])) {
-                    throw new IllegalStateException(
-                            "Non-finite phase amount for stable slot " + k);
-                }
-
-                int phaseIndex = stablePhases[k];
-                phaseInternalVars[phaseIndex] = work.y.clone();
-
-                evaluatePhaseWork(work);
-                work.mu = newLambdaChecked.clone();
-                recomputeSublatticeMultipliers(work);
-            }
-
-            mu = newLambdaChecked.clone();
-
-            if (!Double.isFinite(deltaT)) {
-                throw new IllegalStateException("Non-finite DeltaT: " + deltaT);
-            }
-
-            this.T += deltaT;
-            releasedValue += deltaReleased;
-            targetAmounts[releasedComponentIndex] = releasedValue;
-
-            boolean small = Math.abs(deltaT) < tolerance * Math.max(1.0, Math.abs(this.T))
-                    && Math.abs(deltaReleased) < tolerance;
-
-            if (checkConvergence() && small) {
-                return new double[] { this.T, releasedValue };
-            }
-        }
-
-        throw new IllegalStateException(
-                "Invariant-node solve did not converge within "
-                + maxIterations + " iterations.");
     }
 
     /**

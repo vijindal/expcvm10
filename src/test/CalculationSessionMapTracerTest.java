@@ -38,18 +38,31 @@ import java.util.Arrays;
  *       Table 2 reference), with all 3 phases (LIQUID, BCC_A2, V2ZR) as
  *       candidates, walking TEMPERATURE through the transition. This is
  *       a genuine 3-phase invariant, unlike Sections A/B's negative
- *       controls. Located via {@link
- *       calc.equil.EquilibriumSolverV2#solveInvariantNode} (Sundman Eq.
- *       8/9: fixes TWO of the three phases at zero amount and releases
- *       T and composition TOGETHER -- a single-phase/single-condition
- *       release, as used for an ordinary crossing, is mathematically
- *       singular once a third phase is stable at a binary node, since
- *       {@code GlobalEquilibriumMatrixAssembler.buildMatrix} never puts
- *       a phase-amount coefficient in a phase-equilibrium row, making 3
- *       such rows confined to 2 lambda columns linearly dependent by
- *       construction, confirmed directly this session). Asserts the
- *       invariant is found within 1K of the literature 1586K reference
- *       and that {@code isComplete()} is true.</li>
+ *       controls, and documents a real, paper-consistent limit of the
+ *       single-axis walk: {@link calc.diagram.MapTracer#retryWithHalvedSteps}
+ *       implements OpenCalphad's own {@code map_calcnode}/{@code
+ *       map_halfstep} retry (back up to the last converged point and
+ *       retry with a much smaller walk-axis sub-step, up to 3 times,
+ *       when a single-phase-fix Algorithm C2 solve cannot apply because
+ *       more than one phase's driving force crosses zero at once) --
+ *       traced directly against OpenCalphad's Fortran source this
+ *       session. For THIS system, even 0.2K sub-steps never land on an
+ *       intermediate state where only one phase differs (confirmed by
+ *       direct testing: {V2ZR}+{LIQUID} both change together at every
+ *       sampled sub-step), exactly the "two phases competing to
+ *       appear/disappear" case OpenCalphad's own {@code map_halfstep}
+ *       names and gives up on after 3 attempts. This is a genuine
+ *       limitation of single-axis (one axis walked, one released)
+ *       mapping for this particular peritectic, not a bug -- OpenCalphad
+ *       itself would need true 2-axis mapping (both T and composition as
+ *       simultaneous axes with a global grid-minimizer check) to locate
+ *       it directly. An earlier version of this method fixed two phases
+ *       and released two conditions simultaneously to force a numeric
+ *       answer; that mechanism is not in the paper or in OpenCalphad and
+ *       has been removed. This section asserts the tracer degrades
+ *       GRACEFULLY (no exception, {@code isComplete()==false} with an
+ *       explanatory message) rather than silently mislabeling the node
+ *       or crashing -- not that the invariant is found.</li>
  * </ul>
  */
 public class CalculationSessionMapTracerTest {
@@ -173,15 +186,17 @@ public class CalculationSessionMapTracerTest {
     }
 
     // ------------------------------------------------------------------
-    // Section C -- V-Zr's real 1586K peritectic (LIQUID+BCC_A2->V2ZR),
-    // located via EquilibriumSolverV2#solveInvariantNode.
+    // Section C -- V-Zr's real 1586K peritectic (LIQUID+BCC_A2->V2ZR):
+    // a genuine limit of single-axis mapping, not a bug -- see class
+    // javadoc. Asserts graceful degradation, not that the invariant is
+    // found.
     // ------------------------------------------------------------------
 
     private static void runSectionC() throws Exception {
 
         System.out.println();
         System.out.println("============================================================");
-        System.out.println("Section C: V-Zr 1586K peritectic");
+        System.out.println("Section C: V-Zr 1586K peritectic -- single-axis mapping limit");
         System.out.println("============================================================");
 
         CalculationSession session = new CalculationSession();
@@ -211,22 +226,21 @@ public class CalculationSessionMapTracerTest {
                         && hasSegmentContaining(result, "BCC_A2", "LIQUID"),
                 "lines=" + result.getLines());
 
-        require("result reports complete (solveInvariantNode converged)",
-                result.isComplete(),
-                "message=" + result.getMessage());
-
-        double bestInvariantT = Double.NaN;
-        for (NodePoint node : result.getNodes()) {
-            if (node.type == NodePoint.Type.INVARIANT) {
-                bestInvariantT = node.axisValues[0];
-            }
-        }
-
-        require("an INVARIANT node was found within 1K of the literature "
-                        + "1586K peritectic (Cui et al., CALPHAD 53 (2016) 122-129, "
-                        + "Table 2)",
-                !Double.isNaN(bestInvariantT) && Math.abs(bestInvariantT - 1586.0) < 1.0,
-                "invariant T=" + bestInvariantT);
+        // NOT asserting INVARIANT is found -- confirmed directly this
+        // session that even OpenCalphad's own retry strategy
+        // (map_halfstep: sub-step down to 10% of the increment, up to 3
+        // attempts) cannot resolve this particular jump, because
+        // {V2ZR}+{LIQUID} change together at every sampled sub-step down
+        // to 0.2K resolution (no intermediate single-phase-change state
+        // exists). This is OpenCalphad's own documented "two phases
+        // competing to appear/disappear" give-up case, not a defect in
+        // this port.
+        require("result reports incomplete (single-axis mapping cannot "
+                        + "resolve this invariant, matching OpenCalphad's own "
+                        + "map_halfstep give-up case -- see MapTracer#retryWithHalvedSteps)",
+                !result.isComplete(),
+                "expected isComplete()==false, got true -- if this now passes, "
+                        + "double check no ad-hoc mechanism was reintroduced");
     }
 
     private static boolean hasSegmentContaining(PhaseDiagramResult result, String... phaseNames) {

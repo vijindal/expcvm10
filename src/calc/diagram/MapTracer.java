@@ -32,29 +32,41 @@ import java.util.Set;
  * TEMPERATURE). This is fully sufficient for a binary T-x map (this
  * project's own validated systems, e.g. Ag-Cu's eutectic).
  *
- * <p><b>Invariant nodes (eutectics/peritectics) fix TWO phases and
- * release TWO conditions (T and composition) together.</b> A genuine
- * binary invariant is a single POINT where the stable set jumps by MORE
- * than one phase at once (confirmed by direct testing against V-Zr's
- * documented 1586K peritectic: no adjacent sub-interval exists where
- * only one phase differs). Per Sundman Eq. 8 (an isobaric binary
- * invariant has exactly {@code p=n+1=3} stable phases) and Eq. 9 ("two
- * of the n+1 phases... must have zero amount... use the remaining n-1
- * phases and the n-1 conditions"), a SINGLE-phase-fix/single-condition
- * release (Algorithm C2, as used for an ordinary crossing above) is
- * mathematically singular here by construction: with 3 stable phases
- * but only 2 chemical potentials, the 3 phase-equilibrium rows are
- * confined to 2 nonzero columns and are linearly dependent regardless
- * of seeding (confirmed directly this session -- even an optimally
- * seeded new phase still produced an exactly-singular matrix on
- * iteration 0). {@link EquilibriumSolverV2#solveInvariantNode} fixes
- * TWO of the three phases at zero and releases T and one composition
- * component TOGETHER, breaking that degeneracy -- verified against
- * V-Zr's 1586K peritectic: converges to T=1586.45K (matching the
- * literature reference to ~0.5K) with the correct 3-phase composition
- * set. Only applies when {@code walkAxis.type == TEMPERATURE} --
- * releasing P at an invariant, or a fully general any-axis-releasable
- * map, is a distinct, smaller follow-up.
+ * <p><b>Invariant nodes (eutectics/peritectics)</b> are a single POINT
+ * where the stable set jumps by MORE than one phase at once (confirmed
+ * by direct testing against V-Zr's documented 1586K peritectic: no
+ * adjacent sub-interval exists where only one phase differs). Per
+ * Sundman Eq. 8, an isobaric binary invariant has exactly {@code
+ * p=n+1=3} stable phases, so a single-phase-fix/single-condition
+ * Algorithm C2 solve (used for an ordinary crossing above) is
+ * mathematically singular there by construction: with 3 stable phases
+ * but only 2 chemical potentials, the 3 phase-equilibrium rows ({@link
+ * GlobalEquilibriumMatrixAssembler#buildMatrix} never puts a
+ * DeltaOmega coefficient in a phase-equilibrium row) are confined to 2
+ * nonzero columns and are linearly dependent regardless of seeding
+ * (confirmed directly this session -- even an optimally seeded new
+ * phase still produced an exactly-singular matrix on iteration 0).
+ *
+ * <p>The fix is NOT to fix two phases and release two conditions at
+ * once -- that was tried and found to work numerically but is not
+ * grounded in the paper or in OpenCalphad's implementation, both of
+ * which always keep Algorithm C2 to exactly one fixed phase and one
+ * released condition. OpenCalphad's own {@code map_calcnode}/{@code
+ * map_halfstep} (traced directly this session, {@code
+ * C:\Users\admin\codes\opencalphad\src\stepmapplot\smp2A.F90}) instead
+ * treats a second phase's driving force crossing zero mid-solve as a
+ * node-solve FAILURE and retries from the last converged point with a
+ * much smaller walk-axis sub-step (10% of the normal increment, up to
+ * 3 attempts, giving up with "two phases competing to appear/disappear"
+ * if the jump still cannot be narrowed to one phase). {@link
+ * #retryWithHalvedSteps} implements exactly this retry; once it narrows
+ * the jump to a single resolvable phase change, the ordinary Algorithm
+ * C2 path above (composition release) locates the exact crossing, and
+ * {@link InvariantExitFinder} (Algorithm D) confirms whether the
+ * resulting >=3-phase node is a genuine invariant. Only applies when
+ * {@code walkAxis.type == TEMPERATURE} -- releasing P at an invariant,
+ * or a fully general any-axis-releasable map, is a distinct, smaller
+ * follow-up.
  *
  * <p>Unlike {@link StepTracer}, every ordinary (non-crossing) walk point
  * is solved with the CURRENT tracked boundary composition (updated after
@@ -168,81 +180,89 @@ public final class MapTracer {
 
             } else {
 
-                // Phase set changed between (previousWalkValue, v).
-                // A genuine invariant (eutectic/peritectic) is a single
+                // Phase set changed between (previousWalkValue, v). A
+                // genuine invariant (eutectic/peritectic) is a single
                 // POINT where the stable set jumps by MORE than one
                 // phase at once (e.g. V2ZR disappears and LIQUID appears
                 // at the exact same T) -- confirmed by direct testing
                 // this session against V-Zr's own documented 1586K
-                // peritectic. A single-phase-fix/single-condition
-                // release (Algorithm C2, used for the ordinary crossing
-                // below) is mathematically singular for a genuine
-                // 3-phase binary invariant (see class javadoc); the
-                // well-posed mechanism fixes TWO phases at zero and
-                // releases T and composition TOGETHER (Sundman Eq. 9,
-                // see EquilibriumSolverV2#solveInvariantNode).
+                // peritectic.
+                //
+                // OpenCalphad's own map_calcnode/map_halfstep (traced
+                // directly this session, C:\Users\admin\codes\opencalphad
+                // \src\stepmapplot\smp2A.F90) handles this the SAME way
+                // as an ordinary crossing -- Algorithm C2 always fixes
+                // exactly ONE phase and releases exactly ONE condition,
+                // never two. When a second phase's driving force also
+                // crosses zero during that solve (meq_sameset returning
+                // irem/iadd nonzero), map_calcnode treats it as node
+                // failure (bmperr=4222/4223) and map_halfstep retries
+                // with a SMALLER walk-axis step from the last converged
+                // point (a 10% sub-step, up to 3 attempts, giving up with
+                // "two phases competing to appear/disappear" if the
+                // second phase still triggers -- see map_halfstep's own
+                // comment at that exact error code). There is no
+                // OpenCalphad code path that fixes two phases and
+                // releases two conditions simultaneously; an earlier
+                // version of this method did that (Eq. 9 mis-applied to
+                // node-FINDING rather than the post-node exit-amount
+                // bookkeeping it actually describes) and has been
+                // reverted in favor of this OpenCalphad-faithful retry.
                 String appearingOrDisappearing =
                         findChangedPhase(runNames, currentNames);
 
-                EquilibriumSolverV2.BoundarySolveResult invariantBoundary = null;
-                String invariantFixedPhase = null;
+                // The walk point/temperature/composition actually used
+                // to solve the single-phase-fix boundary below -- either
+                // the raw grid point v, or (if a retry narrowed the
+                // multi-phase jump down to a resolvable single-phase
+                // sub-interval) the finer point found by the retry.
+                double effectiveWalkValue = v;
+                double effectiveT = t;
+                double[] effectiveComp = comp;
+                Set<String> effectiveCurrentNames = currentNames;
 
                 if (appearingOrDisappearing == null
-                        && walkAxis.type == AxisConfig.Type.TEMPERATURE) {
+                        && walkAxis.type == AxisConfig.Type.TEMPERATURE
+                        && !Double.isNaN(previousWalkValue)) {
 
-                    invariantFixedPhase = findAppearingPhase(runNames, currentNames);
+                    RetriedCrossing retried = retryWithHalvedSteps(
+                            previousWalkValue, v, walkAxis,
+                            fixedP, comp, candidates, runNames);
 
-                    if (invariantFixedPhase != null) {
-                        invariantBoundary = EquilibriumSolveHelper.solveInvariantNodeOrNull(
-                                t, p, comp, candidates, previousResult,
-                                invariantFixedPhase, releaseAxis.componentIndex);
+                    if (retried != null) {
+                        appearingOrDisappearing = retried.appearingOrDisappearing;
+                        effectiveCurrentNames = retried.currentNames;
+                        effectiveWalkValue = retried.walkValue;
+                        effectiveT = retried.walkValue;
+                        effectiveComp = retried.comp;
                     }
                 }
 
-                double crossingWalkValue = v;
-                double crossingReleaseValue = comp[releaseAxis.componentIndex];
+                double crossingWalkValue = effectiveWalkValue;
+                double crossingReleaseValue = effectiveComp[releaseAxis.componentIndex];
                 Set<String> nodeNames = new LinkedHashSet<>(runNames);
-                nodeNames.addAll(currentNames);
+                nodeNames.addAll(effectiveCurrentNames);
                 NodePoint.Type nodeType = NodePoint.Type.CROSSING;
 
-                if (invariantBoundary != null) {
-
-                    // The two-phase-fixed, T-and-composition-released
-                    // solve converged: the original two phases plus the
-                    // newly-appearing one are all simultaneously stable
-                    // at this exact (T, comp) -- this IS the invariant
-                    // node.
-                    crossingWalkValue = invariantBoundary.equilibrium.getT();
-                    crossingReleaseValue = invariantBoundary.releasedComponentValue;
-                    comp[releaseAxis.componentIndex] = crossingReleaseValue;
-                    if (walkAxis.type == AxisConfig.Type.TEMPERATURE) {
-                        t = crossingWalkValue;
-                    }
-                    nodeNames = EquilibriumSolveHelper.stablePhaseNames(
-                            invariantBoundary.equilibrium);
-                    nodeNames.add(invariantFixedPhase);
-                    nodeType = NodePoint.Type.INVARIANT;
-                    appearingOrDisappearing = null;
-
-                } else if (appearingOrDisappearing != null) {
+                if (appearingOrDisappearing != null) {
 
                     // Ordinary single-phase crossing -- solve the exact
                     // boundary via Algorithm C2 (composition release).
                     EquilibriumSolverV2.BoundarySolveResult boundary =
                             EquilibriumSolveHelper.solveBoundaryOrNull(
-                                    t, p, comp, candidates, previousResult,
+                                    effectiveT, p, effectiveComp, candidates, previousResult,
                                     appearingOrDisappearing, 0.0,
                                     releaseAxis.componentIndex);
 
                     if (boundary != null) {
                         crossingReleaseValue = boundary.releasedComponentValue;
-                        comp[releaseAxis.componentIndex] = crossingReleaseValue;
+                        effectiveComp[releaseAxis.componentIndex] = crossingReleaseValue;
                     }
 
                     if (nodeNames.size() >= 3) {
 
                         List<InvariantExitFinder.ExitCandidate> exits =
-                                checkInvariant(nodeNames, candidates, t, p, comp,
+                                checkInvariant(nodeNames, candidates, effectiveT, p, effectiveComp,
                                         appearingOrDisappearing);
 
                         if (!exits.isEmpty()) {
@@ -254,17 +274,21 @@ public final class MapTracer {
 
                     // More than one phase changed and either the walk
                     // axis isn't TEMPERATURE (T-release not applicable)
-                    // or the T-release solve failed to converge --
-                    // record the jump as an ordinary (approximate)
-                    // CROSSING at the walk point v, matching
-                    // StepTracer's own non-resolvable-crossing fallback,
-                    // and flag the result as incomplete.
+                    // or the OpenCalphad-style halved-step retry could
+                    // not resolve it to a single-phase sub-interval
+                    // within 3 attempts (matching map_halfstep's own
+                    // "two phases competing to appear/disappear" give-up
+                    // condition) -- record the jump as an ordinary
+                    // (approximate) CROSSING at the walk point v,
+                    // matching StepTracer's own non-resolvable-crossing
+                    // fallback, and flag the result as incomplete.
                     result.setComplete(false);
                     result.setMessage("More than one phase changed at "
                             + walkAxis.name + "=" + v
                             + " and the invariant point could not be located.");
                 }
 
+                comp = effectiveComp;
                 runCoords.add(new double[] { crossingWalkValue, crossingReleaseValue });
 
                 result.addLine(buildSegment(runCoords, runNames, runFixedPhase));
@@ -278,7 +302,7 @@ public final class MapTracer {
                 runCoords = new ArrayList<>();
                 runCoords.add(new double[] { crossingWalkValue, crossingReleaseValue });
                 runCoords.add(new double[] { v, comp[releaseAxis.componentIndex] });
-                runNames = currentNames;
+                runNames = effectiveCurrentNames;
                 runFixedPhase = appearingOrDisappearing;
             }
 
@@ -300,21 +324,88 @@ public final class MapTracer {
         return result;
     }
 
-    /**
-     * Returns a phase present in {@code after} but not {@code before}
-     * (a genuinely NEW phase appearing), preferring this over a
-     * disappearing one since {@link EquilibriumSolverV2#solveInvariantNode}
-     * needs the newly-appearing phase (fixed at zero amount, about to
-     * become stable) to seed the invariant search from the {@code
-     * before} side's converged 2-phase equilibrium. Returns {@code null}
-     * if no phase was added (i.e. only phases were removed, or the sets
-     * are otherwise not resolvable this way).
-     */
-    private String findAppearingPhase(Set<String> before, Set<String> after) {
+    /** Result of a successful {@link #retryWithHalvedSteps} attempt. */
+    private static final class RetriedCrossing {
+        final double walkValue;
+        final double[] comp;
+        final Set<String> currentNames;
+        final String appearingOrDisappearing;
 
-        for (String name : after) {
-            if (!before.contains(name)) {
-                return name;
+        RetriedCrossing(double walkValue, double[] comp,
+                Set<String> currentNames, String appearingOrDisappearing) {
+            this.walkValue = walkValue;
+            this.comp = comp;
+            this.currentNames = currentNames;
+            this.appearingOrDisappearing = appearingOrDisappearing;
+        }
+    }
+
+    /**
+     * OpenCalphad's {@code map_halfstep} (traced directly this session,
+     * {@code smp2A.F90}): when the ordinary single-phase-fix Algorithm
+     * C2 solve cannot be applied because MORE than one phase's stable
+     * set differs across the last walk increment (a second phase's
+     * driving force also crossed zero inside that increment -- exactly
+     * the signature of a genuine invariant), back up to the last
+     * successfully converged point and re-walk with a much smaller
+     * sub-step (OpenCalphad uses {@code 1.0D-1 * axfact * axinc}, a 10%
+     * sub-step of the normal increment), re-checking after each sub-step
+     * whether the phase-set difference has narrowed to exactly one
+     * phase. Up to 3 sub-step attempts are made (matching {@code
+     * map_halfstep}'s {@code halfstep.ge.3} give-up condition, whose own
+     * comment names this exact situation "two phases competing to
+     * appear/disappear"); if still unresolved, returns {@code null} so
+     * the caller falls back to recording an approximate, incomplete
+     * crossing.
+     *
+     * <p>This is deliberately NOT a bigger simultaneous solve (fixing
+     * two phases and releasing two conditions at once) -- neither the
+     * Sundman 2021 paper nor OpenCalphad's implementation do that
+     * anywhere; both always keep Algorithm C2 to a single fixed phase
+     * and a single released condition, resolving a multi-phase jump by
+     * finding a finer walk point where only one phase's set differs,
+     * not by enlarging the linear system.
+     *
+     * @return the finer point's result, or {@code null} if 3 sub-step
+     *         attempts still could not narrow the jump to a single
+     *         resolvable phase change
+     */
+    private RetriedCrossing retryWithHalvedSteps(
+            double lastGoodWalkValue,
+            double overshotWalkValue,
+            AxisConfig walkAxis,
+            double fixedP,
+            double[] compAtOvershoot,
+            List<GibbsEnergyModel> candidates,
+            Set<String> lastGoodNames) {
+
+        if (walkAxis.type != AxisConfig.Type.TEMPERATURE) {
+            throw new IllegalArgumentException(
+                    "retryWithHalvedSteps only supports a TEMPERATURE walk axis; got "
+                    + walkAxis.type);
+        }
+
+        double subStep = 0.1 * (overshotWalkValue - lastGoodWalkValue);
+        double[] comp = compAtOvershoot.clone();
+
+        for (int attempt = 1; attempt <= 3; attempt++) {
+
+            double candidateWalkValue = lastGoodWalkValue + attempt * subStep;
+
+            EquilibriumResult candidateResult =
+                    EquilibriumSolveHelper.solveOrSentinel(
+                            candidateWalkValue, fixedP, comp, candidates);
+
+            if (!candidateResult.isConverged()) {
+                continue;
+            }
+
+            Set<String> candidateNames = stablePhaseNames(candidateResult);
+            String changed = findChangedPhase(lastGoodNames, candidateNames);
+
+            if (changed != null) {
+                return new RetriedCrossing(
+                        candidateWalkValue, comp, candidateNames, changed);
             }
         }
 
