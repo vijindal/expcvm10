@@ -1266,54 +1266,6 @@ public class EquilibriumSolverV2 {
         return y;
     }
 
-    /**
-     * Returns the total number of sites per formula unit.
-     */
-    private double totalSiteRatio(
-            CefGibbs phase) {
-
-        return phase.nfu();
-    }
-
-    /**
-     * Constructs the target M_A values corresponding to the requested
-     * normalized overall composition for a single phase.
-     *
-     * The normalization is chosen so that the total element amount
-     * corresponds to one mole of lattice sites.
-     */
-    private double[] initializeSinglePhaseTargetM(
-            CefGibbs phase,
-            double[] xOverall) {
-
-        double[] x =
-                xOverall.clone();
-
-        double xSum = 0.0;
-
-        for (double xi : x)
-            xSum += xi;
-
-        for (int i = 0; i < x.length; i++)
-            x[i] /= xSum;
-
-        double nSites =
-                totalSiteRatio(phase);
-
-        double[] targetM =
-                new double[x.length];
-
-        for (int a = 0; a < x.length; a++) {
-
-            targetM[a] =
-                    nSites * x[a];
-        }
-
-        return targetM;
-    }
-
-
-
     /*
      * Obtain an initial chemical-potential estimate for the starting
      * state. This is initialization only.

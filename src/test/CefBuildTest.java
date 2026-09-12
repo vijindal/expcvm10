@@ -221,8 +221,8 @@ public class CefBuildTest {
             for (var gm : gibbsModels) {
                 double[] y = gm.getInitialInternalVars(xc);
                 double G   = gm.G(1000.0, 101325.0, y);
-                double nfu = Math.max(gm.nfu(), 1.0);
-                sb.append(String.format(",%.2f", G / nfu));
+                double totalAtoms = Math.max(gm.totalMoles(y), 1.0e-12);
+                sb.append(String.format(",%.2f", G / totalAtoms));
             }
             System.out.println(sb);
         }

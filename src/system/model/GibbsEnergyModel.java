@@ -84,7 +84,19 @@ public abstract class GibbsEnergyModel {
     /** Number of total parameters (internal + constraints). */
     public abstract int numTotalParams();
 
-    /** Number of formula units per mole of atoms. CEF: e.g. 3 for A₂B. */
+    /**
+     * Nominal formula-unit size: the raw sum of site ratios, CONSTITUTION-
+     * INDEPENDENT (fixed for a given phase model, computed without any
+     * y). For a phase with a vacancy sublattice (e.g. BCC_A2's
+     * (V,Zr)1(Va)3) this counts the vacancy sites too (nfu()=4), even
+     * though they hold no atoms.
+     *
+     * <p><b>Never use this for per-atom G normalization</b> -- use
+     * {@link #totalMoles(double[])} instead, which is the constitution-
+     * dependent REAL atom count (Sundman's M^alpha, Eq. 6) and excludes
+     * vacancies. This distinction has caused real bugs when the two were
+     * confused; see {@link #totalMoles(double[])}'s javadoc.
+     */
     public abstract double nfu();
 
     // ══════════════════════════════════════════════════════════════════
@@ -202,6 +214,46 @@ public abstract class GibbsEnergyModel {
      *         components
      */
     public abstract double[] moles(double[] y);
+
+    /**
+     * Total moles of REAL elements per formula unit at constitution y --
+     * Sundman's M^alpha, {@code M = sum_A M_A} (2015 Comput. Mater. Sci.
+     * 101, Eq. (3)/(6)): "Provided we have only the elements as
+     * constituents we can use M^alpha = sum_s a_s^alpha (1 - y_Va,s^alpha)"
+     * -- i.e. vacancy fractions are excluded because Va has no
+     * stoichiometric coefficient for any real element A in Eq. (3), so
+     * summing {@link #moles(double[])} over every component already
+     * excludes them automatically. This is algebraically identical to
+     * pycalphad's own {@code _site_ratio_normalization} (model.py), used
+     * there for exactly the same purpose (per-atom energy normalization).
+     *
+     * <p><b>This is NOT {@link #nfu()}.</b> {@code nfu()} is a
+     * constitution-INDEPENDENT nominal formula-unit size (the raw sum of
+     * site ratios, including any all-vacancy sublattice); this method is
+     * the constitution-DEPENDENT real atom count at a SPECIFIC y, which
+     * can be smaller than {@code nfu()} whenever any sublattice is
+     * partially or fully vacant (e.g. BCC_A2's (V,Zr)1(Va)3 has
+     * {@code nfu()=4} always, but {@code totalMoles(y)=1} at every
+     * physically valid y, since the 3-site Va sublattice holds no atoms).
+     * Using {@code nfu()} where this method is needed silently divides a
+     * per-formula-unit G by the wrong constant for any phase with a
+     * vacancy sublattice -- this has caused real, hard-to-diagnose bugs
+     * (see {@code GridMinimizer}'s hull-search G/atom normalization) and
+     * every per-atom normalization in this codebase must use this method,
+     * never {@code nfu()}.
+     *
+     * @param y site-fraction vector
+     * @return total real moles of elements per formula unit at y (never
+     *         larger than {@link #nfu()}, and strictly less whenever any
+     *         sublattice is partially vacant at y)
+     */
+    public double totalMoles(double[] y) {
+        double total = 0.0;
+        for (double m : moles(y)) {
+            total += m;
+        }
+        return total;
+    }
 
     /**
      * Jacobian dM_A/dY_i. M_A is linear in Y, so this is constant for a

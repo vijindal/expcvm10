@@ -85,14 +85,12 @@ public class GridMinimizer {
         // every sampled point, and build the combined lower envelope
         // (minimum G/atom per point, tagged with which phase achieved it).
         List<double[]> envX     = new ArrayList<>();  // overall composition x at each point
-        List<Double>   envG     = new ArrayList<>();  // G per mole atom (nfu-normalized)
+        List<Double>   envG     = new ArrayList<>();  // G per mole real atom (Sundman's M^alpha)
         List<Integer>  envPhase = new ArrayList<>();  // candidate index
         List<double[]> envY     = new ArrayList<>();  // site fractions y at each point
 
         for (int ip = 0; ip < np; ip++) {
             GibbsEnergyModel m = candidates.get(ip);
-            double nfu = m.nfu();
-            if (nfu <= 0) nfu = 1.0;
 
             double[][] points = sampleSiteFractions(m);
 
@@ -101,7 +99,25 @@ public class GridMinimizer {
                 double G;
                 double[] x;
                 try {
-                    G = m.G(T, P, y) / nfu;
+                    /*
+                     * Normalize by totalMoles(y) (Sundman's M^alpha, Eq.
+                     * 6), the REAL atom count at this constitution -- NOT
+                     * m.nfu() (the constitution-independent nominal sum
+                     * of site ratios). For a phase with a vacancy
+                     * sublattice (e.g. BCC_A2's (V,Zr)1(Va)3), nfu()
+                     * counts the vacancy sites too (nfu=4) even though
+                     * they hold no atoms (real count=1); dividing by
+                     * nfu() here previously produced a badly wrong G/atom
+                     * for every BCC_A2 sample point, silently biasing the
+                     * hull search away from BCC_A2 entirely. This matches
+                     * pycalphad's own per-mole-atom GM convention exactly
+                     * (GM = G / total real atoms, never / raw site-ratio
+                     * sum) -- see GibbsEnergyModel.totalMoles()'s javadoc.
+                     */
+                    double totalAtoms = m.totalMoles(y);
+                    if (!(totalAtoms > 0.0)) continue;
+
+                    G = m.G(T, P, y) / totalAtoms;
                     x = m.compositionFromInternal(y);
                 } catch (Exception e) {
                     continue;
