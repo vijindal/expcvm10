@@ -1,0 +1,365 @@
+package calc.diagram;
+
+import calc.equil.EquilibriumSolverV2;
+import system.model.GibbsEnergyModel;
+import system.ports.EquilibriumResult;
+import ui.result.PhaseDiagramResult;
+import ui.result.PhaseDiagramResult.LineSegment;
+import ui.result.PhaseDiagramResult.NodePoint;
+
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * Sundman Algorithm B's STEP branch (2021 Calphad 75, Section 3.2): walk a
+ * single axis condition in fixed increments, calling Algorithm A
+ * ({@link EquilibriumSolverV2#solve}) at every point, and record where the
+ * stable phase set changes.
+ *
+ * <p>Unlike full ZPF mapping (Algorithm C1+C2+D, not implemented here),
+ * a step calculation never fixes a phase at zero amount and never branches
+ * into multiple exits -- each phase-set change simply continues the walk
+ * in the same direction with the new stable set. Locating the crossing
+ * point is done by black-box bisection on {@link EquilibriumSolverV2#solve}
+ * (calling it repeatedly at bracketing axis values) rather than Sundman's
+ * own exact method (fixing the changed phase's amount at zero as a Lagrange
+ * condition), since {@code EquilibriumSolverV2} has no such condition today
+ * and adding one is a separate, larger piece of work. This is adequate for
+ * step's own purpose -- Sundman's own step diagrams (e.g. Fig. 14) are
+ * about how a property varies, not pinpointing a transition to high
+ * precision.
+ *
+ * <p>Every call to {@link EquilibriumSolverV2#solve} starts from scratch
+ * (no warm start) -- accepted as a performance cost for this first version.
+ */
+public final class StepTracer {
+
+    private static final int MAX_BISECTION_ITERATIONS = 20;
+    private static final double BISECTION_RELATIVE_TOLERANCE = 1.0e-4;
+
+    public StepTracer() {
+    }
+
+    /**
+     * Walks {@code axis} from {@code axis.min} to {@code axis.max} in
+     * increments of {@code axis.step}, at the given fixed condition,
+     * recording each maximal run of constant stable-phase-set as one
+     * {@link LineSegment} and each detected phase-set change as one
+     * {@link NodePoint}.
+     *
+     * @param axis        the axis to walk (its {@code type} selects which
+     *                    of {@code fixedT}/{@code fixedP}/{@code compOverall}
+     *                    is overridden by the swept value)
+     * @param fixedT      temperature to use when {@code axis.type != TEMPERATURE}
+     * @param fixedP      pressure to use when {@code axis.type != PRESSURE}
+     * @param compOverall overall composition to use when
+     *                    {@code axis.type != COMPOSITION}
+     * @param candidates  candidate phase models
+     * @return the sampled step result
+     */
+    public PhaseDiagramResult trace(
+            AxisConfig axis,
+            double fixedT,
+            double fixedP,
+            double[] compOverall,
+            List<GibbsEnergyModel> candidates) {
+
+        PhaseDiagramResult result =
+                new PhaseDiagramResult(
+                        new String[] { axis.name },
+                        new double[] { axis.min },
+                        new double[] { axis.max });
+
+        List<Double> runAxisValues =
+                new ArrayList<>();
+
+        Set<String> runNames =
+                null;
+
+        double previousAxisValue =
+                Double.NaN;
+
+        for (double v = axis.min;
+             v <= axis.max;
+             v += axis.step) {
+
+            EquilibriumResult current =
+                    solveAt(axis, v, fixedT, fixedP, compOverall, candidates);
+
+            if (!current.isConverged()) {
+
+                result.setComplete(false);
+                result.setMessage(
+                        "Non-convergent point at " + axis.name + "=" + v);
+
+                // Treat as a continuation of the current run rather than a
+                // phase-set change -- out of scope to retry with a smaller
+                // increment (Sundman's own C1 does this).
+                if (runNames == null) {
+                    runNames = stablePhaseNames(current);
+                }
+
+                runAxisValues.add(v);
+                previousAxisValue = v;
+                continue;
+            }
+
+            Set<String> currentNames =
+                    stablePhaseNames(current);
+
+            if (runNames == null) {
+
+                // First point: start the first run and record the low
+                // boundary node.
+                runNames = currentNames;
+                runAxisValues.add(v);
+
+                result.addNode(
+                        new NodePoint(
+                                new double[] { v },
+                                new ArrayList<>(currentNames),
+                                NodePoint.Type.BOUNDARY));
+
+            } else if (currentNames.equals(runNames)) {
+
+                runAxisValues.add(v);
+
+            } else {
+
+                // Phase set changed between (previousAxisValue, v) --
+                // refine the crossing, close out the current run, and
+                // start a new one at the crossing point.
+                double crossing =
+                        bisectCrossing(
+                                axis, previousAxisValue, v,
+                                runNames, fixedT, fixedP, compOverall,
+                                candidates);
+
+                runAxisValues.add(crossing);
+
+                result.addLine(
+                        buildSegment(runAxisValues, runNames));
+
+                Set<String> unionAtCrossing =
+                        new LinkedHashSet<>(runNames);
+
+                unionAtCrossing.addAll(currentNames);
+
+                result.addNode(
+                        new NodePoint(
+                                new double[] { crossing },
+                                new ArrayList<>(unionAtCrossing),
+                                NodePoint.Type.CROSSING));
+
+                runAxisValues = new ArrayList<>();
+                runAxisValues.add(crossing);
+                runAxisValues.add(v);
+                runNames = currentNames;
+            }
+
+            previousAxisValue = v;
+        }
+
+        if (runNames != null
+                && !runAxisValues.isEmpty()) {
+
+            result.addLine(
+                    buildSegment(runAxisValues, runNames));
+
+            result.addNode(
+                    new NodePoint(
+                            new double[] { previousAxisValue },
+                            new ArrayList<>(runNames),
+                            NodePoint.Type.BOUNDARY));
+        }
+
+        return result;
+    }
+
+    /**
+     * Bisects between {@code lowValue} (known to have stable set
+     * {@code lowNames}) and {@code highValue} (known to have a different
+     * stable set) to refine the crossing point.
+     */
+    private double bisectCrossing(
+            AxisConfig axis,
+            double lowValue,
+            double highValue,
+            Set<String> lowNames,
+            double fixedT,
+            double fixedP,
+            double[] compOverall,
+            List<GibbsEnergyModel> candidates) {
+
+        double a =
+                lowValue;
+
+        double b =
+                highValue;
+
+        double tolerance =
+                Math.abs(axis.step) * BISECTION_RELATIVE_TOLERANCE;
+
+        for (int iter = 0;
+             iter < MAX_BISECTION_ITERATIONS
+                     && Math.abs(b - a) > tolerance;
+             iter++) {
+
+            double mid =
+                    (a + b) / 2.0;
+
+            EquilibriumResult midResult =
+                    solveAt(axis, mid, fixedT, fixedP, compOverall, candidates);
+
+            if (!midResult.isConverged()) {
+                // Cannot refine further at a non-convergent midpoint --
+                // stop bisecting and report the current bracket midpoint.
+                break;
+            }
+
+            Set<String> midNames =
+                    stablePhaseNames(midResult);
+
+            if (midNames.equals(lowNames)) {
+                a = mid;
+            } else {
+                b = mid;
+            }
+        }
+
+        return (a + b) / 2.0;
+    }
+
+    private LineSegment buildSegment(
+            List<Double> axisValues,
+            Set<String> names) {
+
+        List<double[]> coords =
+                new ArrayList<>(axisValues.size());
+
+        for (double v : axisValues) {
+            coords.add(new double[] { v });
+        }
+
+        return new LineSegment(
+                coords,
+                null,
+                new ArrayList<>(names));
+    }
+
+    private Set<String> stablePhaseNames(
+            EquilibriumResult result) {
+
+        // A LinkedHashSet collapses two stable slots sharing one
+        // phaseName (a miscibility gap) into one entry -- acceptable for
+        // this first version; distinguishing them is not required by any
+        // current step-calculation use case.
+        Set<String> names =
+                new LinkedHashSet<>();
+
+        for (EquilibriumResult.PhaseResult pr : result.getStablePhases()) {
+            names.add(pr.phaseName);
+        }
+
+        return names;
+    }
+
+    private EquilibriumResult solveAt(
+            AxisConfig axis,
+            double axisValue,
+            double fixedT,
+            double fixedP,
+            double[] compOverall,
+            List<GibbsEnergyModel> candidates) {
+
+        double t =
+                fixedT;
+
+        double p =
+                fixedP;
+
+        double[] comp =
+                compOverall.clone();
+
+        switch (axis.type) {
+
+            case TEMPERATURE:
+                t = axisValue;
+                break;
+
+            case PRESSURE:
+                p = axisValue;
+                break;
+
+            case COMPOSITION:
+                /*
+                 * Set the swept component to axisValue, then rescale
+                 * every OTHER component so the vector still sums to 1 --
+                 * fixing the swept component alone (leaving the rest at
+                 * compOverall's original values) would silently pass an
+                 * invalid, non-normalized composition to the solver
+                 * (e.g. {1.0, 0.05} instead of {0.95, 0.05}), which can
+                 * cause spurious solver instability at some points and
+                 * not others depending on how far off-normalization the
+                 * result lands.
+                 */
+                double remainder =
+                        1.0 - axisValue;
+
+                double otherSum =
+                        0.0;
+
+                for (int i = 0; i < comp.length; i++) {
+                    if (i != axis.componentIndex) {
+                        otherSum += comp[i];
+                    }
+                }
+
+                for (int i = 0; i < comp.length; i++) {
+
+                    if (i == axis.componentIndex) {
+                        comp[i] = axisValue;
+                    } else if (otherSum > 0.0) {
+                        comp[i] = comp[i] / otherSum * remainder;
+                    } else {
+                        // All other components were zero -- distribute
+                        // the remainder evenly among them.
+                        comp[i] = remainder / (comp.length - 1);
+                    }
+                }
+                break;
+
+            default:
+                throw new IllegalStateException(
+                        "Unhandled axis type: " + axis.type);
+        }
+
+        try {
+
+            return new EquilibriumSolverV2().solve(t, p, comp, candidates);
+
+        } catch (RuntimeException e) {
+
+            /*
+             * EquilibriumSolverV2.solve() can throw (e.g. "Matrix is
+             * singular", "Excessive global linear-system residual") for
+             * a point GridMinimizer's from-scratch initialization
+             * happens to land badly on -- most often when two stable
+             * slots of the same candidate converge to near-identical
+             * compositions (a known GridMinimizer/updateStablePhaseSet()
+             * gap, see EquilibriumSolverV2BaselineTest's own documented
+             * skips). A single bad axis point must not abort the whole
+             * step walk -- treat it exactly like a non-converged result
+             * (see the non-convergence handling in trace()/
+             * bisectCrossing()) rather than propagating the exception.
+             */
+            return new EquilibriumResult(
+                    t, p, new double[compOverall.length],
+                    java.util.Collections.emptyList(),
+                    java.util.Collections.emptyList(),
+                    false, 0);
+        }
+    }
+}

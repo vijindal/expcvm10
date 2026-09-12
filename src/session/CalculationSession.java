@@ -2,6 +2,7 @@ package session;
 
 import calc.diagram.AxisConfig;
 import calc.diagram.PhaseDiagram;
+import calc.diagram.StepTracer;
 import calc.equil.EquilibriumSolverV2;
 import calc.equil.GridMinimizer;
 import system.ThermodynamicSystem;
@@ -9,6 +10,7 @@ import system.database.TdbParser;
 import system.model.PhaseModelKind;
 import system.ports.DatabasePort;
 import system.ports.EquilibriumResult;
+import ui.result.PhaseDiagramResult;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -16,7 +18,7 @@ import java.util.List;
 
 /**
  * UI-agnostic coordinator sitting above the Thermodynamic System Layer and
- * the Calculation Layer, per {@code docs/plan-3layer-core-dataflow.md}.
+ * the Calculation Layer (see README.md "Structure").
  *
  * <p>A caller (GUI, CLI, API -- anything) sends model details via
  * {@link #setModel} and calculation details via one of four calculation
@@ -30,9 +32,11 @@ import java.util.List;
  * caller in both directions; it never exposes {@link ThermodynamicSystem}
  * construction or a solver to be called directly.
  *
- * <p>{@code calculateStep}/{@code calculateMap} are declared with their
- * intended parameter shapes but not yet implemented -- no plain
- * property-sampling engine exists in this codebase yet (see their Javadoc).
+ * <p>{@link #calculateStep} walks a single axis (Sundman 2021 Calphad 75,
+ * Algorithm B's step branch), via {@link calc.diagram.StepTracer}.
+ * {@code calculateMap} is declared with its intended parameter shape but
+ * not yet implemented -- full ZPF phase-diagram tracing (Algorithm C1+C2+D)
+ * does not exist in this codebase yet (see its Javadoc).
  *
  * <p>{@link #setModel} rebuilds the held {@link ThermodynamicSystem} only
  * when the model details (database path, elements, phases) actually change,
@@ -63,6 +67,7 @@ public final class CalculationSession {
     private EquilibriumResult currentEquilibriumResult;
     private EquilibriumResult currentInitialState;
     private PhaseDiagram currentPhaseDiagram;
+    private PhaseDiagramResult currentStepResult;
 
     /**
      * Owned separately from {@link #currentSystem}: browsing a database's
@@ -161,6 +166,7 @@ public final class CalculationSession {
         this.currentEquilibriumResult = null;
         this.currentInitialState = null;
         this.currentPhaseDiagram = null;
+        this.currentStepResult = null;
     }
 
     /** True once {@link #setModel} has succeeded at least once. */
@@ -323,17 +329,32 @@ public final class CalculationSession {
 
     /**
      * Runs a single-axis property scan (sweep one variable, sample the
-     * equilibrium at each point) against the currently held system.
+     * equilibrium at each point) against the currently held system --
+     * Sundman 2021 Calphad 75, Algorithm B's step branch. Stores the
+     * result; read it back via {@link #currentStepResult()}.
      *
-     * <p>Not yet implemented: no engine for plain property sampling (as
-     * opposed to phase-boundary tracing) exists in this codebase yet.
+     * <p>Delegates to {@link StepTracer}, which walks {@code axis} from
+     * its {@code min} to {@code max} in {@code step} increments, calling
+     * {@link EquilibriumSolverV2#solve} fresh at every point (no warm
+     * start) and locating each stable-phase-set change by black-box
+     * bisection rather than Sundman's own exact zero-amount-phase
+     * condition (a separate, larger piece of work -- see
+     * {@code StepTracer}'s own Javadoc). Unlike {@link #calculateMap},
+     * a step never fixes a phase at zero amount and never branches into
+     * multiple exits.
      *
+     * @param axis    the axis to walk; its {@link AxisConfig.Type} selects
+     *                which of {@code fixedT}/{@code fixedP}/{@code comp} is
+     *                overridden by the swept value
+     * @param fixedT  temperature used when {@code axis.type != TEMPERATURE}
+     * @param fixedP  pressure used when {@code axis.type != PRESSURE}
+     * @param comp    overall composition used when
+     *                {@code axis.type != COMPOSITION}
      * @throws IllegalStateException if {@link #setModel} hasn't been called yet
-     * @throws UnsupportedOperationException always, until a real step engine exists
      */
     public void calculateStep(AxisConfig axis, double fixedT, double fixedP, double[] comp) {
-        currentSystem();   // still enforce the usual precondition
-        throw new UnsupportedOperationException("Step calculation not yet implemented");
+        this.currentStepResult =
+                new StepTracer().trace(axis, fixedT, fixedP, comp, currentSystem().phaseModels());
     }
 
     /**
@@ -377,5 +398,13 @@ public final class CalculationSession {
      */
     public PhaseDiagram currentPhaseDiagram() {
         return currentPhaseDiagram;
+    }
+
+    /**
+     * The most recent step-calculation result, or {@code null} (same
+     * rules as {@link #currentEquilibriumResult()}).
+     */
+    public PhaseDiagramResult currentStepResult() {
+        return currentStepResult;
     }
 }

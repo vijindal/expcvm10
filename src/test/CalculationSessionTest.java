@@ -87,7 +87,7 @@ public class CalculationSessionTest {
     }
 
     private static void testStepAndMapAreUnimplementedStubs() throws Exception {
-        System.out.println("=== calculateStep/calculateMap/calculatePhaseDiagram: unimplemented stubs ===");
+        System.out.println("=== calculateStep implemented; calculateMap/calculatePhaseDiagram: unimplemented stubs ===");
         CalculationSession session = new CalculationSession();
         session.setModel("data/VZR-re2.TDB", List.of("V", "ZR"), List.of("LIQUID", "BCC_A2"));
 
@@ -97,13 +97,12 @@ public class CalculationSessionTest {
         calc.diagram.AxisConfig axis1 =
                 new calc.diagram.AxisConfig("x(ZR)", 1, 0.0, 1.0, 0.05);
 
-        boolean stepThrew = false;
-        try {
-            session.calculateStep(axis0, 2000.0, 101325.0, new double[]{0.5, 0.5});
-        } catch (UnsupportedOperationException expected) {
-            stepThrew = true;
-        }
-        check(stepThrew, "calculateStep() throws UnsupportedOperationException (not yet implemented)");
+        // calculateStep() is implemented (StepTracer) -- see
+        // CalculationSessionStepTracerTest for its own dedicated coverage.
+        // Here just confirm it no longer throws and stores a result.
+        session.calculateStep(axis0, 2000.0, 101325.0, new double[]{0.5, 0.5});
+        check(session.currentStepResult() != null,
+                "calculateStep() is implemented and stores a currentStepResult()");
 
         boolean mapThrew = false;
         try {
@@ -123,7 +122,7 @@ public class CalculationSessionTest {
         check(diagramThrew, "calculatePhaseDiagram() throws UnsupportedOperationException "
                 + "(x-facing tracer removed; no y-facing tracer yet)");
 
-        // All three must still enforce the setModel() precondition even though unimplemented.
+        // All three must still enforce the setModel() precondition.
         CalculationSession freshSession = new CalculationSession();
         boolean stepStateThrew = false;
         try {
@@ -131,7 +130,7 @@ public class CalculationSessionTest {
         } catch (IllegalStateException expected) {
             stepStateThrew = true;
         }
-        check(stepStateThrew, "calculateStep() before setModel() throws IllegalStateException, not UnsupportedOperationException");
+        check(stepStateThrew, "calculateStep() before setModel() throws IllegalStateException");
     }
 
     private static void testBrowsingDoesNotRequireSetModel() throws Exception {
