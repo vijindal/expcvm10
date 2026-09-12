@@ -272,10 +272,19 @@ assessment code is quarantined under `legacy/`.
     `SiteFractionCorrectionContractTest`, `GridMinimizerPycalphadTest`
     in `src/test/`, plus JUnit end-to-end tests in
     `src-test/calc/equil/`), validated against the V–Zr TDB
-    (`data/VZR-re2.TDB`) for both an ordinary substitutional-like
-    sublattice phase (BCC_A2, with a vacancy sublattice) and a
-    stoichiometric two-sublattice ordered phase (V2ZR), including a
-    genuine two-phase (V2ZR + BCC_A2) equilibrium that converges.
+    (`data/VZR-re2.TDB`) for BCC_A2 (vacancy sublattice), HCP_A3,
+    LIQUID, and the two-sublattice ordered V2ZR, including genuine
+    two-phase equilibria that converge.
+  - `EquilibriumSolverV2BaselineTest` (`src/test/`) runs the solver
+    itself (not just the model layer) against J. Cui et al. 2016
+    (CALPHAD 53): the full V2ZR Gibbs-energy curve (Fig. 9) and all
+    three Table 2 invariant reactions, each split into its 3 adjacent
+    two-phase fields. Building it caught a real bug: `GridMinimizer`
+    normalized per-atom energies by `nfu()` (nominal site-ratio sum)
+    instead of the real atom count, badly misjudging any phase with a
+    vacancy sublattice and missing correct equilibria. Fixed via a new
+    `GibbsEnergyModel.totalMoles(y)` (Sundman Eq. 6's `M^alpha`), now
+    the one authoritative per-atom normalization in the codebase.
 - `ThermodynamicSystem` and `CalculationSession`: a single build-once/
   reuse coordinator that parses a TDB and builds phase models one time,
   then serves multiple calculations (and database/element/phase browsing)
@@ -310,10 +319,10 @@ assessment code is quarantined under `legacy/`.
   `MIN_PHASE_FRACTION=1e-6`) rather than anything independently derived
   for this solver's own unit/normalization conventions.
 - **Multiphase convergence has been validated on the V-Zr binary only**
-  (V2ZR + BCC_A2), including phase-set changes (a redundant
-  miscibility-gap slot being removed, and a missing phase being added
-  from a single-phase start). Ternary+ systems and larger phase counts
-  are untested.
+  (all pairwise combinations of V2ZR/BCC_A2/HCP_A3/LIQUID), including
+  phase-set changes (a redundant miscibility-gap slot being removed,
+  a missing phase being added from a single-phase start). Ternary+
+  systems and larger phase counts are untested.
 - `calculateStep`/`calculateMap` on `CalculationSession` are explicit
   unimplemented stubs — there is no plain property-sampling engine (as
   opposed to full phase-boundary tracing) in the codebase yet.
