@@ -2,6 +2,7 @@ package calc.equil;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -79,6 +80,20 @@ public class EquilibriumSolverV2 {
      * pycalphad's COMP_DIFFERENCE_TOL (constants.py:11).
      */
     private static final double ADD_COMP_DIFFERENCE_TOL = 1.0e-4;
+
+    /**
+     * Composition-coincidence tolerance (Chebyshev distance in overall
+     * mole fraction) used to MERGE two already-stable slots of the same
+     * candidate model that have converged toward each other during
+     * Newton iteration -- see mergeConvergedDuplicateSlots(). Deliberately
+     * the same value as GridMinimizer.SAME_COMPOSITION_TOLERANCE (ported
+     * from OpenCalphad's matsmin.F90 same_composition(), xdiff=0.01) since
+     * this is the identical phenomenon at a different point in the solve;
+     * kept as a separate constant (not shared/extracted) to match this
+     * class's existing pattern of ADD_COMP_DIFFERENCE_TOL being its own,
+     * differently-tuned tolerance for a related but distinct purpose.
+     */
+    private static final double SAME_COMPOSITION_TOLERANCE = 0.01;
 
     /**
      * Initial phase amount given to a newly added stable phase -- matches
@@ -653,6 +668,345 @@ public class EquilibriumSolverV2 {
         // via converged=false rather than throwing, since callers expect
         // an EquilibriumResult back in all non-exceptional cases.
         return buildEquilibriumResult(false, maxIterations);
+    }
+
+    // ================================================================
+    // ZPF boundary solve (Sundman Algorithm C2)
+    // ================================================================
+
+    /** Result of {@link #solveBoundary}. */
+    public static final class BoundarySolveResult {
+
+        /** The converged equilibrium AT the boundary (fixedPhase amount == fixedAmount). */
+        public final EquilibriumResult equilibrium;
+
+        /** The released component's target amount, solved for at the boundary. */
+        public final double releasedComponentValue;
+
+        public BoundarySolveResult(EquilibriumResult equilibrium, double releasedComponentValue) {
+            this.equilibrium = equilibrium;
+            this.releasedComponentValue = releasedComponentValue;
+        }
+    }
+
+    /**
+     * Solves for the exact ZPF (Zero Phase Fraction) boundary where phase
+     * {@code fixedPhaseName} has amount exactly {@code fixedAmount} (0 for
+     * an ordinary phase-appearance/disappearance boundary), releasing
+     * component {@code releasedComponentIndex}'s target amount to be
+     * solved for instead -- Sundman 2021 CALPHAD 75's Algorithm C2.
+     *
+     * <p>Mechanism verified directly against OpenCalphad's own
+     * implementation ({@code matsmin.F90}/{@code smp2A.F90}): this is
+     * variable ELIMINATION, not a Lagrange-multiplier row. The fixed
+     * phase's own phase-equilibrium row stays in the system (it is not
+     * exempt from its own {@code M_A*lambda_A = G} equation just because
+     * its amount is pinned); only its {@code DeltaOmega} COLUMN is
+     * repurposed, via {@link
+     * GlobalEquilibriumMatrixAssembler#convertToFixedPhaseAmountSystem},
+     * to instead solve for {@code Delta(targetAmounts[
+     * releasedComponentIndex])}. See that method's javadoc for the full
+     * sign derivation (independently verified numerically against a
+     * known-converged V2ZR+BCC_A2 reference point before this method was
+     * written).
+     *
+     * <p>This is a SEPARATE, smaller Newton loop from {@link #solve},
+     * reusing {@link #evaluateAllPhases}/{@link #buildPhaseResponses}/
+     * {@link #calculateInternalCorrections} (all already generic/
+     * dynamically-sized, safe to reuse unchanged) but deliberately NOT
+     * reusing {@link #buildEquilibriumMatrix} (hardcodes an {@code
+     * omega > 0} guard that a phase pinned at exactly 0 would fail),
+     * {@link #updateState} (its phase-amount damping/clamping logic
+     * exists to keep every phase's amount positive -- exactly the
+     * invariant this method must NOT enforce for the fixed phase), or
+     * {@link #updateStablePhaseSet} (must not run at all here -- this
+     * solve holds the exact phase set from the moment of crossing
+     * detection fixed throughout, per Sundman's own C2 description and
+     * OpenCalphad's {@code map_calcnode}).
+     *
+     * <p>Seeded directly from a caller-supplied prior {@link
+     * EquilibriumResult} (typically the last converged ordinary {@link
+     * #solve} call before a phase-set change was detected) via the same
+     * {@link #setInitialStateForTest}-style mechanism already used for
+     * controlled-starting-point tests -- no cold {@link GridMinimizer}
+     * restart, matching OpenCalphad's own warm continuation
+     * ({@code meq_sameset}, not {@code calceq7}) at a boundary step.
+     *
+     * @param T                       temperature (K)
+     * @param P                       pressure (Pa)
+     * @param compOverAll             overall composition to seed the target amounts
+     *                                (the released component's entry is overwritten
+     *                                as the solve proceeds)
+     * @param candidates              candidate phase models (same list solve() uses)
+     * @param seed                    the prior converged equilibrium to warm-start from
+     * @param fixedPhaseName          name of the phase to fix at {@code fixedAmount}
+     * @param fixedAmount             the phase's fixed amount (0 for an ordinary ZPF boundary)
+     * @param releasedComponentIndex  index of the component whose target amount
+     *                                is released and solved for instead
+     * @return the boundary equilibrium and the released component's solved value
+     * @throws IllegalStateException if {@code fixedPhaseName} is not present in
+     *                                {@code seed}'s stable phases, or the boundary
+     *                                solve fails to converge
+     */
+    public BoundarySolveResult solveBoundary(
+            double T,
+            double P,
+            double[] compOverAll,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult seed,
+            String fixedPhaseName,
+            double fixedAmount,
+            int releasedComponentIndex) {
+
+        if (candidates == null || candidates.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "At least one phase model is required.");
+        }
+
+        this.T = T;
+        this.P = P;
+        this.phaseModels = candidates;
+        this.targetAmounts = compOverAll.clone();
+
+        seedFromEquilibriumResult(seed, candidates);
+
+        int fixedSlotIndex = -1;
+        for (int k = 0; k < stablePhases.length; k++) {
+            if (candidates.get(stablePhases[k]).phaseName().equals(fixedPhaseName)) {
+                fixedSlotIndex = k;
+                break;
+            }
+        }
+
+        if (fixedSlotIndex < 0) {
+            throw new IllegalStateException(
+                    "Phase to fix (" + fixedPhaseName + ") is not among the "
+                    + "seed's stable phases: " + Arrays.toString(stablePhases));
+        }
+
+        /*
+         * validateState()/validateMultiphaseUpdate() (and, for the same
+         * reason, buildEquilibriumMatrix(), which solveBoundaryInternal()
+         * deliberately does NOT call) hardcode omega > 0.0 as an
+         * "invalid state" guard everywhere a phase amount is read -- a
+         * genuinely fixed-at-zero amount trips that guard even though it
+         * is exactly what Algorithm C2 requires. Use the same
+         * MIN_PHASE_AMOUNT floor this class already uses to distinguish
+         * "extinct" from "exactly zero" (updateStablePhaseSet()'s own
+         * removal threshold) as the actual stored value whenever the
+         * caller asks for an amount at or below it -- physically
+         * indistinguishable from zero, but satisfies every existing
+         * positivity guard without having to special-case each one.
+         */
+        double internalFixedAmount = Math.max(fixedAmount, MIN_PHASE_AMOUNT);
+
+        phaseAmounts[fixedSlotIndex] = internalFixedAmount;
+
+        double releasedValue =
+                solveBoundaryInternal(fixedSlotIndex, internalFixedAmount, releasedComponentIndex);
+
+        EquilibriumResult eq = buildEquilibriumResult(true, 0);
+
+        return new BoundarySolveResult(eq, releasedValue);
+    }
+
+    /**
+     * Seeds {@link #stablePhases}/{@link #phaseAmounts}/{@link
+     * #stableSlots}/{@link #phaseWorks}/{@link #phaseInternalVars}/
+     * {@link #mu} directly from a prior converged {@link
+     * EquilibriumResult}, exactly mirroring {@link #initialize}'s
+     * {@code testInitialState} branch (one dedicated {@link PhaseWork}
+     * per stable slot, not aliased candidate-indexed objects, so two
+     * slots sharing one candidate model -- a miscibility gap -- get
+     * independent constitutions).
+     */
+    private void seedFromEquilibriumResult(
+            EquilibriumResult seed,
+            List<GibbsEnergyModel> candidates) {
+
+        List<EquilibriumResult.PhaseResult> seedStable = seed.getStablePhases();
+
+        int nph = candidates.size();
+        int nc = targetAmounts.length;
+
+        phaseWorks = new ArrayList<>(nph);
+        for (int p = 0; p < nph; p++) {
+            GibbsEnergyModel model = candidates.get(p);
+            if (!(model instanceof CefGibbs)) {
+                throw new UnsupportedOperationException(
+                        "EquilibriumSolverV2 currently requires CEF candidate "
+                        + "phases. Phase " + p + " (" + model.phaseName()
+                        + ") is not a CefGibbs.");
+            }
+            CefGibbs cef = (CefGibbs) model;
+            PhaseWork work = new PhaseWork(cef);
+            work.y = initializeSinglePhaseState(cef, targetComposition());
+            evaluatePhaseWork(work);
+            phaseWorks.add(work);
+        }
+
+        stablePhases = new int[seedStable.size()];
+        phaseAmounts = new double[seedStable.size()];
+        stableSlots = new ArrayList<>(seedStable.size());
+
+        for (int k = 0; k < seedStable.size(); k++) {
+
+            EquilibriumResult.PhaseResult pr = seedStable.get(k);
+
+            int p = -1;
+            for (int i = 0; i < nph; i++) {
+                if (candidates.get(i).phaseName().equals(pr.phaseName)) {
+                    p = i;
+                    break;
+                }
+            }
+            if (p < 0) {
+                throw new IllegalStateException(
+                        "Seed equilibrium references phase " + pr.phaseName
+                        + ", not among the given candidates.");
+            }
+
+            stablePhases[k] = p;
+            phaseAmounts[k] = pr.amount;
+
+            CefGibbs cef = (CefGibbs) candidates.get(p);
+            PhaseWork work = new PhaseWork(cef);
+            work.y = pr.y.clone();
+            evaluatePhaseWork(work);
+            stableSlots.add(work);
+        }
+
+        phaseInternalVars = new double[nph][];
+        for (int p = 0; p < nph; p++) {
+            phaseInternalVars[p] = phaseWorks.get(p).y.clone();
+        }
+
+        calculateChemicalPotentials(stableSlots.get(0));
+        mu = (stableSlots.get(0).mu != null)
+                ? stableSlots.get(0).mu.clone()
+                : new double[nc];
+    }
+
+    /**
+     * The boundary-solve Newton loop itself. Reuses {@link
+     * #evaluateAllPhases}/{@link #buildPhaseResponses}/{@link
+     * #calculateInternalCorrections}/{@link #checkConvergence} unchanged;
+     * builds and solves the fixed-phase system inline (bypassing {@link
+     * #buildEquilibriumMatrix}'s positivity guard) and applies the update
+     * directly with its own small validation (bypassing {@link
+     * #updateState}/{@link #validateState}, both of which assume every
+     * slot's amount stays strictly positive -- a hard blocker for a slot
+     * fixed at exactly {@code fixedAmount} -- and {@link #validateState}
+     * additionally depends on snapshot fields ({@code
+     * previousTotalAmounts} etc.) that only {@link #updateState} itself
+     * populates). The fixed slot must STAY at {@code fixedAmount}
+     * exactly, and the other, non-fixed slots in a 2-3 phase boundary
+     * system are normally already well inside their
+     * bounds this close to a converged crossing).
+     *
+     * @return the released component's final solved target-amount value
+     */
+    private double solveBoundaryInternal(
+            int fixedSlotIndex,
+            double fixedAmount,
+            int releasedComponentIndex) {
+
+        final int nc = targetAmounts.length;
+        final int np = stablePhases.length;
+
+        double releasedValue = targetAmounts[releasedComponentIndex];
+
+        for (int iteration = 0; iteration < maxIterations; iteration++) {
+
+            evaluateAllPhases();
+            buildPhaseResponses();
+
+            PhaseEquilData[] phaseData = new PhaseEquilData[np];
+            double[] stablePhaseAmounts = new double[np];
+            for (int k = 0; k < np; k++) {
+                stablePhaseAmounts[k] = phaseAmounts[k];
+                phaseData[k] = stableSlots.get(k).equilData;
+            }
+
+            double[][] ordinaryMatrix =
+                    GlobalEquilibriumMatrixAssembler.buildMatrix(
+                            phaseData, stablePhaseAmounts, targetAmounts);
+            double[] ordinaryRhs =
+                    GlobalEquilibriumMatrixAssembler.buildRhs(
+                            phaseData, stablePhaseAmounts, targetAmounts);
+
+            GlobalEquilibriumMatrixAssembler.Result converted =
+                    GlobalEquilibriumMatrixAssembler.convertToFixedPhaseAmountSystem(
+                            ordinaryMatrix, ordinaryRhs, nc, np,
+                            fixedSlotIndex, releasedComponentIndex);
+
+            equilibriumMatrix = converted.matrix;
+            equilibriumRhs = converted.rhs;
+
+            solveEquilibriumMatrix();
+
+            double deltaReleased = deltaPhaseAmounts[fixedSlotIndex];
+            deltaPhaseAmounts[fixedSlotIndex] = 0.0;
+
+            calculateInternalCorrections();
+
+            previousMu = (mu != null) ? mu.clone() : new double[nc];
+            previousTotalG = 0.0;
+
+            double[] newLambdaChecked = newLambda.clone();
+            for (int A = 0; A < nc; A++) {
+                if (!Double.isFinite(newLambdaChecked[A])) {
+                    throw new IllegalStateException(
+                            "Non-finite newLambda[" + A + "]: " + newLambdaChecked[A]);
+                }
+            }
+
+            for (int k = 0; k < np; k++) {
+
+                PhaseWork work = stableSlots.get(k);
+
+                if (k == fixedSlotIndex) {
+                    // Never moves -- stays exactly at fixedAmount.
+                    phaseAmounts[k] = fixedAmount;
+                } else {
+                    double trial = phaseAmounts[k] + deltaPhaseAmounts[k];
+                    phaseAmounts[k] = Math.max(trial, MIN_PHASE_AMOUNT);
+                }
+
+                double[] dy = deltaPhaseInternalVars[k];
+                double[] newY = new double[work.y.length];
+                for (int i = 0; i < newY.length; i++) {
+                    double v = work.y[i] + dy[i];
+                    if (v < 1.0e-14) v = 1.0e-14;
+                    if (v > 1.0) v = 1.0;
+                    newY[i] = v;
+                }
+                work.y = newY;
+
+                if (!Double.isFinite(phaseAmounts[k])) {
+                    throw new IllegalStateException(
+                            "Non-finite phase amount for stable slot " + k);
+                }
+
+                int phaseIndex = stablePhases[k];
+                phaseInternalVars[phaseIndex] = work.y.clone();
+
+                evaluatePhaseWork(work);
+                work.mu = newLambdaChecked.clone();
+                recomputeSublatticeMultipliers(work);
+            }
+
+            mu = newLambdaChecked.clone();
+            releasedValue += deltaReleased;
+            targetAmounts[releasedComponentIndex] = releasedValue;
+
+            if (checkConvergence()) {
+                return releasedValue;
+            }
+        }
+
+        throw new IllegalStateException(
+                "Boundary solve did not converge within " + maxIterations + " iterations.");
     }
 
     // ================================================================
@@ -3960,6 +4314,28 @@ public class EquilibriumSolverV2 {
         }
 
         // ------------------------------------------------------------
+        // 1.5. Same-composition merge pass: unlike isCompositionDuplicate()
+        //    (which only guards the addition pass below against adding a
+        //    NEW slot indistinguishable from one already stable),
+        //    Newton iteration can also drive two slots that were ALREADY
+        //    both stable toward the same composition (most often two
+        //    slots of the same candidate model converging together,
+        //    e.g. a spurious extra miscibility-gap slot collapsing back
+        //    onto its sibling). Left unmerged, this produces two nearly
+        //    identical rows in the global linear system -- "Matrix is
+        //    singular"/"Excessive global linear-system residual"
+        //    failures observed on quaternary systems mid-sweep (see
+        //    CalculationSessionStepTracerTest Section E). This mirrors
+        //    GridMinimizer.mergeDuplicateCompositions()'s
+        //    SAME_COMPOSITION_TOLERANCE=0.01 (ported from OpenCalphad's
+        //    matsmin.F90 same_composition(), xdiff=0.01), applied here
+        //    every iteration instead of once at GridMinimizer init --
+        //    the two fixes close different halves of the same gap.
+        // ------------------------------------------------------------
+
+        mergeConvergedDuplicateSlots();
+
+        // ------------------------------------------------------------
         // 2. Addition pass: among candidates not currently stable, add
         //    at most one -- the largest driving force above threshold,
         //    skipping any candidate not distinct in composition from an
@@ -4045,6 +4421,87 @@ public class EquilibriumSolverV2 {
 
         if (bestCandidate >= 0) {
             addStableSlot(bestCandidate, bestY);
+        }
+    }
+
+    /**
+     * Merges pairs of already-stable slots of the SAME candidate model
+     * whose overall compositions have converged to within
+     * SAME_COMPOSITION_TOLERANCE -- the per-iteration analogue of
+     * GridMinimizer.mergeDuplicateCompositions(), which only runs once
+     * at initialization and cannot catch two slots that started apart
+     * and converged together mid-solve. Amounts are combined into the
+     * lower-indexed slot; the higher-indexed slot is removed via the
+     * same removeStableSlot() used by the amount-based removal pass
+     * above. If every slot would end up merged into one, the merge is
+     * skipped for that pass rather than emptying stablePhases here --
+     * the existing "no stable phases" guard above already covers a
+     * genuinely empty stable set from the removal pass, and this method
+     * must not introduce a second, differently-shaped path to the same
+     * failure.
+     */
+    private void mergeConvergedDuplicateSlots() {
+
+        int nc =
+                targetAmounts.length;
+
+        List<Integer> toRemove =
+                new ArrayList<>();
+
+        for (int i = 0; i < stablePhases.length; i++) {
+
+            if (toRemove.contains(i)) {
+                continue;
+            }
+
+            PhaseWork workI =
+                    stableSlots.get(i);
+
+            double[] xI =
+                    compositionFromMoles(workI.mA, nc);
+
+            for (int j = i + 1; j < stablePhases.length; j++) {
+
+                if (toRemove.contains(j)) {
+                    continue;
+                }
+
+                PhaseWork workJ =
+                        stableSlots.get(j);
+
+                if (workJ.model != workI.model) {
+                    continue;
+                }
+
+                double[] xJ =
+                        compositionFromMoles(workJ.mA, nc);
+
+                double maxDiff =
+                        0.0;
+
+                for (int A = 0; A < nc; A++) {
+                    maxDiff =
+                            Math.max(
+                                    maxDiff,
+                                    Math.abs(xI[A] - xJ[A]));
+                }
+
+                if (maxDiff <= SAME_COMPOSITION_TOLERANCE) {
+                    phaseAmounts[i] += phaseAmounts[j];
+                    toRemove.add(j);
+                }
+            }
+        }
+
+        if (toRemove.isEmpty()
+                || toRemove.size() >= stablePhases.length) {
+            return;
+        }
+
+        Collections.sort(toRemove, Collections.reverseOrder());
+
+        for (int k : toRemove) {
+            removeStableSlot(k);
         }
     }
 

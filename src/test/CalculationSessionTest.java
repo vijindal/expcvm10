@@ -87,7 +87,7 @@ public class CalculationSessionTest {
     }
 
     private static void testStepAndMapAreUnimplementedStubs() throws Exception {
-        System.out.println("=== calculateStep implemented; calculateMap/calculatePhaseDiagram: unimplemented stubs ===");
+        System.out.println("=== calculateStep/calculateMap implemented; calculatePhaseDiagram: unimplemented stub ===");
         CalculationSession session = new CalculationSession();
         session.setModel("data/VZR-re2.TDB", List.of("V", "ZR"), List.of("LIQUID", "BCC_A2"));
 
@@ -104,13 +104,12 @@ public class CalculationSessionTest {
         check(session.currentStepResult() != null,
                 "calculateStep() is implemented and stores a currentStepResult()");
 
-        boolean mapThrew = false;
-        try {
-            session.calculateMap(axis0, axis1, 2000.0, 101325.0, new double[]{0.5, 0.5});
-        } catch (UnsupportedOperationException expected) {
-            mapThrew = true;
-        }
-        check(mapThrew, "calculateMap() throws UnsupportedOperationException (not yet implemented)");
+        // calculateMap() is implemented (MapTracer) -- see
+        // CalculationSessionMapTracerTest for its own dedicated coverage.
+        // Here just confirm it no longer throws and stores a result.
+        session.calculateMap(axis0, axis1, 2000.0, 101325.0, new double[]{0.5, 0.5});
+        check(session.currentMapResult() != null,
+                "calculateMap() is implemented and stores a currentMapResult()");
 
         boolean diagramThrew = false;
         try {

@@ -1,6 +1,5 @@
 package calc.diagram;
 
-import calc.equil.EquilibriumSolverV2;
 import system.model.GibbsEnergyModel;
 import system.ports.EquilibriumResult;
 import ui.result.PhaseDiagramResult;
@@ -252,18 +251,7 @@ public final class StepTracer {
     private Set<String> stablePhaseNames(
             EquilibriumResult result) {
 
-        // A LinkedHashSet collapses two stable slots sharing one
-        // phaseName (a miscibility gap) into one entry -- acceptable for
-        // this first version; distinguishing them is not required by any
-        // current step-calculation use case.
-        Set<String> names =
-                new LinkedHashSet<>();
-
-        for (EquilibriumResult.PhaseResult pr : result.getStablePhases()) {
-            names.add(pr.phaseName);
-        }
-
-        return names;
+        return EquilibriumSolveHelper.stablePhaseNames(result);
     }
 
     private EquilibriumResult solveAt(
@@ -294,41 +282,7 @@ public final class StepTracer {
                 break;
 
             case COMPOSITION:
-                /*
-                 * Set the swept component to axisValue, then rescale
-                 * every OTHER component so the vector still sums to 1 --
-                 * fixing the swept component alone (leaving the rest at
-                 * compOverall's original values) would silently pass an
-                 * invalid, non-normalized composition to the solver
-                 * (e.g. {1.0, 0.05} instead of {0.95, 0.05}), which can
-                 * cause spurious solver instability at some points and
-                 * not others depending on how far off-normalization the
-                 * result lands.
-                 */
-                double remainder =
-                        1.0 - axisValue;
-
-                double otherSum =
-                        0.0;
-
-                for (int i = 0; i < comp.length; i++) {
-                    if (i != axis.componentIndex) {
-                        otherSum += comp[i];
-                    }
-                }
-
-                for (int i = 0; i < comp.length; i++) {
-
-                    if (i == axis.componentIndex) {
-                        comp[i] = axisValue;
-                    } else if (otherSum > 0.0) {
-                        comp[i] = comp[i] / otherSum * remainder;
-                    } else {
-                        // All other components were zero -- distribute
-                        // the remainder evenly among them.
-                        comp[i] = remainder / (comp.length - 1);
-                    }
-                }
+                comp = applyCompositionAxis(axis, axisValue, compOverall);
                 break;
 
             default:
@@ -336,30 +290,54 @@ public final class StepTracer {
                         "Unhandled axis type: " + axis.type);
         }
 
-        try {
+        return EquilibriumSolveHelper.solveOrSentinel(t, p, comp, candidates);
+    }
 
-            return new EquilibriumSolverV2().solve(t, p, comp, candidates);
+    /**
+     * Sets {@code axis.componentIndex} to {@code axisValue}, then
+     * rescales every OTHER component so the vector still sums to 1 --
+     * fixing the swept component alone (leaving the rest at
+     * {@code compOverall}'s original values) would silently pass an
+     * invalid, non-normalized composition to the solver (e.g.
+     * {1.0, 0.05} instead of {0.95, 0.05}), which can cause spurious
+     * solver instability at some points and not others depending on how
+     * far off-normalization the result lands. Shared with
+     * {@link CoarseDiagramTracer}'s binary-grid case, which applies this
+     * same single-composition-axis logic to one of its two axes.
+     */
+    static double[] applyCompositionAxis(
+            AxisConfig axis,
+            double axisValue,
+            double[] compOverall) {
 
-        } catch (RuntimeException e) {
+        double[] comp =
+                compOverall.clone();
 
-            /*
-             * EquilibriumSolverV2.solve() can throw (e.g. "Matrix is
-             * singular", "Excessive global linear-system residual") for
-             * a point GridMinimizer's from-scratch initialization
-             * happens to land badly on -- most often when two stable
-             * slots of the same candidate converge to near-identical
-             * compositions (a known GridMinimizer/updateStablePhaseSet()
-             * gap, see EquilibriumSolverV2BaselineTest's own documented
-             * skips). A single bad axis point must not abort the whole
-             * step walk -- treat it exactly like a non-converged result
-             * (see the non-convergence handling in trace()/
-             * bisectCrossing()) rather than propagating the exception.
-             */
-            return new EquilibriumResult(
-                    t, p, new double[compOverall.length],
-                    java.util.Collections.emptyList(),
-                    java.util.Collections.emptyList(),
-                    false, 0);
+        double remainder =
+                1.0 - axisValue;
+
+        double otherSum =
+                0.0;
+
+        for (int i = 0; i < comp.length; i++) {
+            if (i != axis.componentIndex) {
+                otherSum += comp[i];
+            }
         }
+
+        for (int i = 0; i < comp.length; i++) {
+
+            if (i == axis.componentIndex) {
+                comp[i] = axisValue;
+            } else if (otherSum > 0.0) {
+                comp[i] = comp[i] / otherSum * remainder;
+            } else {
+                // All other components were zero -- distribute
+                // the remainder evenly among them.
+                comp[i] = remainder / (comp.length - 1);
+            }
+        }
+
+        return comp;
     }
 }

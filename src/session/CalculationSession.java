@@ -1,6 +1,8 @@
 package session;
 
 import calc.diagram.AxisConfig;
+import calc.diagram.CoarseDiagramTracer;
+import calc.diagram.MapTracer;
 import calc.diagram.PhaseDiagram;
 import calc.diagram.StepTracer;
 import calc.equil.EquilibriumSolverV2;
@@ -10,6 +12,7 @@ import system.database.TdbParser;
 import system.model.PhaseModelKind;
 import system.ports.DatabasePort;
 import system.ports.EquilibriumResult;
+import ui.result.CoarseDiagramResult;
 import ui.result.PhaseDiagramResult;
 
 import java.io.IOException;
@@ -33,10 +36,12 @@ import java.util.List;
  * construction or a solver to be called directly.
  *
  * <p>{@link #calculateStep} walks a single axis (Sundman 2021 Calphad 75,
- * Algorithm B's step branch), via {@link calc.diagram.StepTracer}.
- * {@code calculateMap} is declared with its intended parameter shape but
- * not yet implemented -- full ZPF phase-diagram tracing (Algorithm C1+C2+D)
- * does not exist in this codebase yet (see its Javadoc).
+ * Algorithm B's step branch), via {@link calc.diagram.StepTracer}, locating
+ * crossings by black-box bisection. {@link #calculateMap} walks two axes
+ * (Algorithm B's map branch: C1 line-following + C2 exact zero-phase-amount
+ * boundary solving + D invariant-node detection), via {@link
+ * calc.diagram.MapTracer} -- see its Javadoc for the composition-release-only
+ * scope constraint.
  *
  * <p>{@link #setModel} rebuilds the held {@link ThermodynamicSystem} only
  * when the model details (database path, elements, phases) actually change,
@@ -68,6 +73,8 @@ public final class CalculationSession {
     private EquilibriumResult currentInitialState;
     private PhaseDiagram currentPhaseDiagram;
     private PhaseDiagramResult currentStepResult;
+    private CoarseDiagramResult currentCoarseDiagramResult;
+    private PhaseDiagramResult currentMapResult;
 
     /**
      * Owned separately from {@link #currentSystem}: browsing a database's
@@ -167,6 +174,8 @@ public final class CalculationSession {
         this.currentInitialState = null;
         this.currentPhaseDiagram = null;
         this.currentStepResult = null;
+        this.currentCoarseDiagramResult = null;
+        this.currentMapResult = null;
     }
 
     /** True once {@link #setModel} has succeeded at least once. */
@@ -358,19 +367,87 @@ public final class CalculationSession {
     }
 
     /**
-     * Runs a two-axis property scan (sweep two variables on a grid, sample
-     * the equilibrium at each point) against the currently held system.
-     *
-     * <p>Not yet implemented: no engine for plain property sampling (as
-     * opposed to phase-boundary tracing) exists in this codebase yet.
+     * Runs a coarse binary phase diagram: samples a 2D grid over
+     * {@code axisX}/{@code axisY} (composition x temperature is the
+     * standard case), calling the full equilibrium solver independently
+     * at each point; read the result back via
+     * {@link #currentCoarseDiagramResult()}. See
+     * {@link calc.diagram.CoarseDiagramTracer} for the sampling and
+     * per-point failure-isolation details.
      *
      * @throws IllegalStateException if {@link #setModel} hasn't been called yet
-     * @throws UnsupportedOperationException always, until a real map engine exists
+     */
+    public void calculateCoarseBinaryDiagram(AxisConfig axisX, AxisConfig axisY,
+                                              double fixedT, double fixedP, double[] comp) {
+        calculateCoarseBinaryDiagram(axisX, axisY, fixedT, fixedP, comp, null);
+    }
+
+    /**
+     * As {@link #calculateCoarseBinaryDiagram(AxisConfig, AxisConfig, double, double, double[])},
+     * additionally reporting progress after each completed row via
+     * {@code onProgress}, if non-null (see {@code CoarseDiagramTracer}).
+     */
+    public void calculateCoarseBinaryDiagram(AxisConfig axisX, AxisConfig axisY,
+                                              double fixedT, double fixedP, double[] comp,
+                                              java.util.function.Consumer<String> onProgress) {
+        this.currentCoarseDiagramResult =
+                new CoarseDiagramTracer().traceBinary(axisX, axisY, fixedT, fixedP, comp,
+                        currentSystem().phaseModels(), onProgress);
+    }
+
+    /**
+     * Runs a coarse ternary phase diagram: samples a 2D grid over two
+     * composition axes at fixed T/P, with the remaining component(s)'
+     * fraction implied by the simplex constraint; read the result back
+     * via {@link #currentCoarseDiagramResult()}. See
+     * {@link calc.diagram.CoarseDiagramTracer} for the sampling and
+     * per-point failure-isolation details.
+     *
+     * @throws IllegalStateException if {@link #setModel} hasn't been called yet
+     */
+    public void calculateCoarseTernaryDiagram(AxisConfig axisCompI, AxisConfig axisCompJ,
+                                               double fixedT, double fixedP, double[] comp) {
+        calculateCoarseTernaryDiagram(axisCompI, axisCompJ, fixedT, fixedP, comp, null);
+    }
+
+    /**
+     * As {@link #calculateCoarseTernaryDiagram(AxisConfig, AxisConfig, double, double, double[])},
+     * additionally reporting progress after each completed row via
+     * {@code onProgress}, if non-null (see {@code CoarseDiagramTracer}).
+     */
+    public void calculateCoarseTernaryDiagram(AxisConfig axisCompI, AxisConfig axisCompJ,
+                                               double fixedT, double fixedP, double[] comp,
+                                               java.util.function.Consumer<String> onProgress) {
+        this.currentCoarseDiagramResult =
+                new CoarseDiagramTracer().traceTernary(axisCompI, axisCompJ, fixedT, fixedP, comp,
+                        currentSystem().phaseModels(), onProgress);
+    }
+
+    /**
+     * Runs a true two-axis ZPF (Zero Phase Fraction) phase-diagram map:
+     * walks {@code axis0} in fixed increments (Sundman Algorithm C1),
+     * locating each phase-boundary crossing EXACTLY via a zero-phase-
+     * amount condition (Algorithm C2, {@link
+     * calc.equil.EquilibriumSolverV2#solveBoundary}) rather than {@link
+     * #calculateStep}'s black-box bisection, and confirming genuine
+     * invariant nodes (Algorithm D) where three phases coexist. See
+     * {@link calc.diagram.MapTracer} for the full mechanism.
+     *
+     * <p><b>Scope constraint</b>: {@code axis1} (the axis released and
+     * solved for exactly at each boundary) must be {@link
+     * AxisConfig.Type#COMPOSITION} -- {@code EquilibriumSolverV2} has no
+     * T/P derivative terms yet, so a T- or P-released map is not yet
+     * supported. {@code axis0} (walked in fixed increments) may be any
+     * type, typically TEMPERATURE for a binary T-x map.
+     *
+     * @throws IllegalStateException if {@link #setModel} hasn't been called yet
+     * @throws IllegalArgumentException if {@code axis1.type != COMPOSITION}
      */
     public void calculateMap(AxisConfig axis0, AxisConfig axis1,
                               double fixedT, double fixedP, double[] comp) {
-        currentSystem();   // still enforce the usual precondition
-        throw new UnsupportedOperationException("Map calculation not yet implemented");
+        this.currentMapResult =
+                new MapTracer().trace(axis0, axis1, fixedT, fixedP, comp,
+                        currentSystem().phaseModels());
     }
 
     /**
@@ -406,5 +483,21 @@ public final class CalculationSession {
      */
     public PhaseDiagramResult currentStepResult() {
         return currentStepResult;
+    }
+
+    /**
+     * The most recent coarse binary/ternary phase diagram result, or
+     * {@code null} (same rules as {@link #currentEquilibriumResult()}).
+     */
+    public CoarseDiagramResult currentCoarseDiagramResult() {
+        return currentCoarseDiagramResult;
+    }
+
+    /**
+     * The most recent map result, or {@code null} (same rules as
+     * {@link #currentEquilibriumResult()}).
+     */
+    public PhaseDiagramResult currentMapResult() {
+        return currentMapResult;
     }
 }

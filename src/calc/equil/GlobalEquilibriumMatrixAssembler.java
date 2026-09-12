@@ -202,4 +202,100 @@ public final class GlobalEquilibriumMatrixAssembler {
 
         return b;
     }
+
+    /**
+     * Converts an already-assembled (matrix, rhs) pair from {@link
+     * #buildMatrix}/{@link #buildRhs} into the ZPF boundary-fixing system
+     * Sundman's Algorithm C2 needs: phase {@code fixedSlotIndex}'s amount
+     * is removed as a Newton unknown (its column is repurposed) while
+     * component {@code releasedComponentIndex}'s target amount -- normally
+     * a fixed input -- becomes the new unknown occupying that column, so
+     * the amount-of-that-component correction needed to sit exactly on the
+     * boundary falls out of the solve.
+     *
+     * <p>This is variable ELIMINATION, matching OpenCalphad's own
+     * mechanism (verified directly against {@code matsmin.F90}): fixing a
+     * phase's amount does NOT add a new "amount = fixedAmount" equation
+     * row, and does NOT remove that phase's own phase-equilibrium row --
+     * both the row count and the unknown count stay exactly {@code nc+np},
+     * only the classification of one column changes. Concretely (see
+     * {@code setup_equilmatrix}'s "incl fixed" phase-equilibrium loop and
+     * the "if(pmi%phasestatus.ne.PHFIXED) notf=notf+1" column-index
+     * pattern repeated at every condition-row builder): a fixed phase
+     * keeps contributing to the matrix as a KNOWN constant amount (its
+     * {@code phaseAmounts[fixedSlotIndex]} entry, already driven to {@code
+     * fixedAmount} by the caller before this method is invoked -- see
+     * {@link EquilibriumSolverV2#solveBoundary}), it simply loses its own
+     * unknown column.
+     *
+     * <p>The freed column ({@code nc + fixedSlotIndex}, previously the
+     * {@code DeltaOmega_fixedSlotIndex} coefficients: zero in every
+     * phase-equilibrium row, {@code phaseData[k].mA[Aidx]} in every
+     * mass-balance row per {@link #buildMatrix}) is replaced with
+     * coefficient {@code -1} in mass-balance row {@code np +
+     * releasedComponentIndex}, 0 elsewhere. Solving the SAME-SIZE system
+     * then yields, in that column, {@code Delta targetAmounts[
+     * releasedComponentIndex]} -- an INCREMENT, exactly like every other
+     * {@code DeltaOmega_k} this system already solves for (not an
+     * absolute value like {@code lambda}) -- so the caller applies it the
+     * same way {@code updateState()} already applies {@code
+     * deltaPhaseAmounts}: {@code targetAmounts[releasedComponentIndex] +=
+     * solution[nc + fixedSlotIndex]}.
+     *
+     * <p>Sign derivation: row {@code np+releasedComponentIndex}'s
+     * unmodified equation is
+     * {@code LHS_others + mA_fixed^A * DeltaOmega_fixed = target_A - represented - q}.
+     * Substituting {@code target_A = target_A_current + Delta_target_A}
+     * and moving the now-solved-for {@code Delta_target_A} to the LHS
+     * gives {@code LHS_others + (-1)*Delta_target_A = target_A_current -
+     * represented - q} -- i.e. the RHS is UNCHANGED from {@link
+     * #buildRhs}'s existing {@code massResidual - q} (which already uses
+     * {@code target_A_current}), and only the column coefficient (-1)
+     * differs from an ordinary {@code DeltaOmega} column.
+     *
+     * <p>{@code buildMatrix}/{@code buildRhs}'s own mass-balance formulas
+     * are otherwise unchanged and still correct here -- they already fold
+     * {@code phaseAmounts[fixedSlotIndex]} in as a plain constant for
+     * every row (there is nothing that treats slot {@code
+     * fixedSlotIndex} specially versus any other stable slot in either
+     * method); only the LHS column swap below is new.
+     *
+     * @param matrix                  the assembled matrix from {@link #buildMatrix},
+     *                                built with {@code phaseAmounts[fixedSlotIndex]}
+     *                                already equal to the phase's fixed amount
+     * @param rhs                     the assembled RHS from {@link #buildRhs},
+     *                                built with the same {@code phaseAmounts}
+     * @param nc                      number of components
+     * @param np                      number of stable phases
+     * @param fixedSlotIndex          index into {@code phaseData}/{@code phaseAmounts} of
+     *                                the phase whose amount is fixed
+     * @param releasedComponentIndex  index of the component whose target amount is
+     *                                released and solved for instead
+     * @return a NEW (matrix, rhs) pair -- the inputs are not mutated
+     */
+    public static Result convertToFixedPhaseAmountSystem(
+            double[][] matrix,
+            double[] rhs,
+            int nc,
+            int np,
+            int fixedSlotIndex,
+            int releasedComponentIndex) {
+
+        int n = nc + np;
+
+        double[][] A = new double[n][];
+        for (int row = 0; row < n; row++) {
+            A[row] = matrix[row].clone();
+        }
+        double[] b = rhs.clone();
+
+        int fixedColumn = nc + fixedSlotIndex;
+
+        for (int row = 0; row < n; row++) {
+            A[row][fixedColumn] = 0.0;
+        }
+        A[np + releasedComponentIndex][fixedColumn] = -1.0;
+
+        return new Result(A, b, null, null);
+    }
 }
