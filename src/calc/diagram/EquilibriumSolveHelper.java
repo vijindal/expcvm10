@@ -197,4 +197,33 @@ final class EquilibriumSolveHelper {
             return null;
         }
     }
+
+    /**
+     * Calls {@link EquilibriumSolverV2#solveInvariantNode} (the genuine
+     * binary-invariant solve -- fixes two phases at zero and releases T
+     * and one composition component together, see that method's javadoc
+     * for why a single-phase/single-condition release cannot locate an
+     * invariant), returning {@code null} instead of throwing if the
+     * solve fails to converge for either choice of which seed phase is
+     * fixed alongside the newly-appearing one.
+     */
+    static EquilibriumSolverV2.BoundarySolveResult solveInvariantNodeOrNull(
+            double t,
+            double p,
+            double[] comp,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult seed,
+            String newPhaseName,
+            int releasedComponentIndex) {
+
+        try {
+
+            return new EquilibriumSolverV2().solveInvariantNode(
+                    t, p, comp, candidates, seed, newPhaseName, releasedComponentIndex);
+
+        } catch (RuntimeException e) {
+
+            return null;
+        }
+    }
 }

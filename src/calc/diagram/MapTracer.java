@@ -32,32 +32,29 @@ import java.util.Set;
  * TEMPERATURE). This is fully sufficient for a binary T-x map (this
  * project's own validated systems, e.g. Ag-Cu's eutectic).
  *
- * <p><b>Invariant nodes (eutectics/peritectics) release T instead.</b>
- * A genuine invariant is a single POINT where the stable set jumps by
- * MORE than one phase at once (confirmed by direct testing against
- * V-Zr's documented 1586K peritectic: no adjacent sub-interval exists
- * where only one phase differs, so a composition-release C2 call cannot
- * locate it). Sundman/pycalphad/OpenCalphad all locate it the same way
- * as an ordinary boundary: fix the newly-appearing phase at zero amount
- * and release the WALK axis instead, solving for T and composition
- * together ({@link EquilibriumSolverV2#solveBoundaryReleasingT}, enabled
- * by {@code dG_dT}/{@code dM_dT} on {@link
- * system.model.PhaseEquilData}). This only applies when {@code
- * walkAxis.type == TEMPERATURE} -- releasing P at an invariant, or a
- * fully general any-axis-releasable map, is a distinct, smaller
- * follow-up (the same {@code dG_dP}/pressure-response machinery already
- * exists per-phase, per {@code PhaseMatrixAssembler}, but is not yet
- * threaded through the global matrix the way T now is).
- *
- * <p><b>Known gap: {@code solveBoundaryReleasingT} converges slowly when
- * seeding a genuinely new phase</b> (see that method's own javadoc) --
- * confirmed against V-Zr's own 1586K peritectic to converge too slowly
- * to finish within its default iteration budget. Until that is fixed,
- * a multi-phase-change walk step commonly falls through to the "could
- * not be located" fallback below (an ordinary approximate {@code
- * CROSSING} at the raw walk point, {@code isComplete()==false}) rather
- * than actually landing on {@code INVARIANT} -- this is a real,
- * documented limitation, not a silent one.
+ * <p><b>Invariant nodes (eutectics/peritectics) fix TWO phases and
+ * release TWO conditions (T and composition) together.</b> A genuine
+ * binary invariant is a single POINT where the stable set jumps by MORE
+ * than one phase at once (confirmed by direct testing against V-Zr's
+ * documented 1586K peritectic: no adjacent sub-interval exists where
+ * only one phase differs). Per Sundman Eq. 8 (an isobaric binary
+ * invariant has exactly {@code p=n+1=3} stable phases) and Eq. 9 ("two
+ * of the n+1 phases... must have zero amount... use the remaining n-1
+ * phases and the n-1 conditions"), a SINGLE-phase-fix/single-condition
+ * release (Algorithm C2, as used for an ordinary crossing above) is
+ * mathematically singular here by construction: with 3 stable phases
+ * but only 2 chemical potentials, the 3 phase-equilibrium rows are
+ * confined to 2 nonzero columns and are linearly dependent regardless
+ * of seeding (confirmed directly this session -- even an optimally
+ * seeded new phase still produced an exactly-singular matrix on
+ * iteration 0). {@link EquilibriumSolverV2#solveInvariantNode} fixes
+ * TWO of the three phases at zero and releases T and one composition
+ * component TOGETHER, breaking that degeneracy -- verified against
+ * V-Zr's 1586K peritectic: converges to T=1586.45K (matching the
+ * literature reference to ~0.5K) with the correct 3-phase composition
+ * set. Only applies when {@code walkAxis.type == TEMPERATURE} --
+ * releasing P at an invariant, or a fully general any-axis-releasable
+ * map, is a distinct, smaller follow-up.
  *
  * <p>Unlike {@link StepTracer}, every ordinary (non-crossing) walk point
  * is solved with the CURRENT tracked boundary composition (updated after
@@ -177,11 +174,13 @@ public final class MapTracer {
                 // phase at once (e.g. V2ZR disappears and LIQUID appears
                 // at the exact same T) -- confirmed by direct testing
                 // this session against V-Zr's own documented 1586K
-                // peritectic. Sundman/pycalphad/OpenCalphad all locate
-                // this the SAME way as an ordinary boundary (Algorithm
-                // C2): fix the newly-appearing phase's amount at zero
-                // and release the WALK axis (not the composition axis)
-                // instead, so T and composition are solved together.
+                // peritectic. A single-phase-fix/single-condition
+                // release (Algorithm C2, used for the ordinary crossing
+                // below) is mathematically singular for a genuine
+                // 3-phase binary invariant (see class javadoc); the
+                // well-posed mechanism fixes TWO phases at zero and
+                // releases T and composition TOGETHER (Sundman Eq. 9,
+                // see EquilibriumSolverV2#solveInvariantNode).
                 String appearingOrDisappearing =
                         findChangedPhase(runNames, currentNames);
 
@@ -194,9 +193,9 @@ public final class MapTracer {
                     invariantFixedPhase = findAppearingPhase(runNames, currentNames);
 
                     if (invariantFixedPhase != null) {
-                        invariantBoundary = EquilibriumSolveHelper.solveBoundaryReleasingTOrNull(
+                        invariantBoundary = EquilibriumSolveHelper.solveInvariantNodeOrNull(
                                 t, p, comp, candidates, previousResult,
-                                invariantFixedPhase, 0.0);
+                                invariantFixedPhase, releaseAxis.componentIndex);
                     }
                 }
 
@@ -208,11 +207,17 @@ public final class MapTracer {
 
                 if (invariantBoundary != null) {
 
-                    // The T-release solve converged with the appearing
-                    // phase fixed at zero -- the original two phases
-                    // plus the new one are all simultaneously stable at
-                    // this exact (T, comp): this IS the invariant node.
-                    crossingWalkValue = invariantBoundary.releasedComponentValue;
+                    // The two-phase-fixed, T-and-composition-released
+                    // solve converged: the original two phases plus the
+                    // newly-appearing one are all simultaneously stable
+                    // at this exact (T, comp) -- this IS the invariant
+                    // node.
+                    crossingWalkValue = invariantBoundary.equilibrium.getT();
+                    crossingReleaseValue = invariantBoundary.releasedComponentValue;
+                    comp[releaseAxis.componentIndex] = crossingReleaseValue;
+                    if (walkAxis.type == AxisConfig.Type.TEMPERATURE) {
+                        t = crossingWalkValue;
+                    }
                     nodeNames = EquilibriumSolveHelper.stablePhaseNames(
                             invariantBoundary.equilibrium);
                     nodeNames.add(invariantFixedPhase);
@@ -298,7 +303,7 @@ public final class MapTracer {
     /**
      * Returns a phase present in {@code after} but not {@code before}
      * (a genuinely NEW phase appearing), preferring this over a
-     * disappearing one since {@link EquilibriumSolverV2#solveBoundaryReleasingT}
+     * disappearing one since {@link EquilibriumSolverV2#solveInvariantNode}
      * needs the newly-appearing phase (fixed at zero amount, about to
      * become stable) to seed the invariant search from the {@code
      * before} side's converged 2-phase equilibrium. Returns {@code null}

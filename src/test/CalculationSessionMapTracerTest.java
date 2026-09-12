@@ -38,19 +38,18 @@ import java.util.Arrays;
  *       Table 2 reference), with all 3 phases (LIQUID, BCC_A2, V2ZR) as
  *       candidates, walking TEMPERATURE through the transition. This is
  *       a genuine 3-phase invariant, unlike Sections A/B's negative
- *       controls. Documents a KNOWN, currently-unresolved gap: locating
- *       it requires {@link calc.equil.EquilibriumSolverV2#solveBoundaryReleasingT}
- *       to converge after seeding a brand-new (not previously stable)
- *       phase, which converges too slowly to finish within its default
- *       iteration budget (confirmed by direct testing this session --
- *       mass-balance/stationarity converge quickly, but the
- *       phase-equilibrium residual decays only linearly, ~0.87x per
- *       iteration, after the new phase's crude initial-guess
- *       constitution causes an overshoot). This section asserts the
- *       tracer degrades GRACEFULLY (no exception, {@code
- *       isComplete()==false} with an explanatory message) rather than
- *       silently mislabeling the node or crashing -- not that the
- *       invariant is actually found yet.</li>
+ *       controls. Located via {@link
+ *       calc.equil.EquilibriumSolverV2#solveInvariantNode} (Sundman Eq.
+ *       8/9: fixes TWO of the three phases at zero amount and releases
+ *       T and composition TOGETHER -- a single-phase/single-condition
+ *       release, as used for an ordinary crossing, is mathematically
+ *       singular once a third phase is stable at a binary node, since
+ *       {@code GlobalEquilibriumMatrixAssembler.buildMatrix} never puts
+ *       a phase-amount coefficient in a phase-equilibrium row, making 3
+ *       such rows confined to 2 lambda columns linearly dependent by
+ *       construction, confirmed directly this session). Asserts the
+ *       invariant is found within 1K of the literature 1586K reference
+ *       and that {@code isComplete()} is true.</li>
  * </ul>
  */
 public class CalculationSessionMapTracerTest {
@@ -174,16 +173,15 @@ public class CalculationSessionMapTracerTest {
     }
 
     // ------------------------------------------------------------------
-    // Section C -- V-Zr's real 1586K peritectic (LIQUID+BCC_A2->V2ZR):
-    // documents the known solveBoundaryReleasingT convergence-speed gap
-    // -- asserts graceful degradation, not that the invariant is found.
+    // Section C -- V-Zr's real 1586K peritectic (LIQUID+BCC_A2->V2ZR),
+    // located via EquilibriumSolverV2#solveInvariantNode.
     // ------------------------------------------------------------------
 
     private static void runSectionC() throws Exception {
 
         System.out.println();
         System.out.println("============================================================");
-        System.out.println("Section C: V-Zr 1586K peritectic -- known convergence-speed gap");
+        System.out.println("Section C: V-Zr 1586K peritectic");
         System.out.println("============================================================");
 
         CalculationSession session = new CalculationSession();
@@ -213,18 +211,22 @@ public class CalculationSessionMapTracerTest {
                         && hasSegmentContaining(result, "BCC_A2", "LIQUID"),
                 "lines=" + result.getLines());
 
-        // NOT currently asserting INVARIANT is found here -- see class
-        // Javadoc's documented convergence-speed gap. Once
-        // solveBoundaryReleasingT's iteration budget/seeding is fixed,
-        // this section should be strengthened to require
-        // countInvariants(result) >= 1 near T=1586K.
-        require("result reports incomplete (known solveBoundaryReleasingT "
-                        + "convergence-speed gap, documented in MapTracer/"
-                        + "EquilibriumSolverV2#solveBoundaryReleasingT's javadoc)",
-                !result.isComplete(),
-                "expected isComplete()==false given the known gap, got true "
-                        + "-- if this now passes, the gap may be fixed; "
-                        + "strengthen this section's assertions");
+        require("result reports complete (solveInvariantNode converged)",
+                result.isComplete(),
+                "message=" + result.getMessage());
+
+        double bestInvariantT = Double.NaN;
+        for (NodePoint node : result.getNodes()) {
+            if (node.type == NodePoint.Type.INVARIANT) {
+                bestInvariantT = node.axisValues[0];
+            }
+        }
+
+        require("an INVARIANT node was found within 1K of the literature "
+                        + "1586K peritectic (Cui et al., CALPHAD 53 (2016) 122-129, "
+                        + "Table 2)",
+                !Double.isNaN(bestInvariantT) && Math.abs(bestInvariantT - 1586.0) < 1.0,
+                "invariant T=" + bestInvariantT);
     }
 
     private static boolean hasSegmentContaining(PhaseDiagramResult result, String... phaseNames) {
