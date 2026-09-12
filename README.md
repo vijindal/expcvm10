@@ -45,16 +45,14 @@ diagrams, and supports parameter assessment against experimental data.
 
 ### Design principle: the equilibrium kernel is central
 
-The equilibrium engine (`calc/equil/`) is the architectural core of this
-project. It must depend only on the model-agnostic `GibbsEnergyModel`
-contract (G, gradient, Hessian, T/P derivatives, internal-variable
-handling) and must never contain model-specific logic (CEF sublattice
-details, RK polynomial order, CVM cluster variables, etc.). Conversely,
-each model implementation (RK, CEF, CVM, unary) is responsible for
-correctly satisfying that contract and must not require the equilibrium
-engine to know its internals. Keeping this separation intact is what
-allows new models, and eventually new equilibrium algorithms, to be added
-without rewriting the rest of the system.
+The equilibrium engine (`calc/equil/`) depends only on the model-agnostic
+`GibbsEnergyModel` contract (G, gradient, Hessian, T/P derivatives,
+internal-variable handling) and never contains model-specific logic
+(CEF sublattices, RK polynomial order, CVM cluster variables). Each
+model implementation is responsible for satisfying that contract
+without the engine knowing its internals — this is what lets new
+models, and eventually new equilibrium algorithms, be added without
+rewriting the rest of the system.
 
 ## Structure
 
@@ -130,12 +128,11 @@ version.
 
 ### Static vs. dynamic
 
-The split follows the PANDAT/Sundman separation of a **static** part (the
-thermodynamic system: phase models, parameters, database-derived
-structure — built once, unchanged during a calculation) from a
-**dynamic** part (the calculation: phase amounts, compositions, chemical
-potentials, solver iterations). The System Layer holds no state between
-solver calls; the Calculation Layer holds no thermodynamic knowledge.
+The System Layer (phase models, parameters, database-derived structure)
+is built once and unchanged during a calculation; the Calculation Layer
+(phase amounts, compositions, chemical potentials, solver iterations)
+changes every iteration. The System Layer holds no state between solver
+calls; the Calculation Layer holds no thermodynamic knowledge.
 
 ### Core data flow (UI → UI)
 
@@ -187,171 +184,119 @@ clone.
 Most validation is still standalone diagnostic `main()` programs under
 `src/test/` run directly, not through the Gradle test task.
 
-## Current state (as of the multiphase equilibrium solver pass)
+## Current state
 
 The codebase is organized into the layers described above. The legacy
 assessment code is quarantined under `legacy/`.
 
 ### Current capabilities
 
-- TDB parsing for standard SGTE-style syntax: elements, `FUNCTION`
+- **TDB parsing** for standard SGTE-style syntax: elements, `FUNCTION`
   substitution, multi-sublattice `PHASE`/`CONSTITUENT` records, `G`/`L`
-  (Redlich-Kister interaction, arbitrary order) and `TC`/`BMAGN`
-  (magnetic) parameters, `V0`/`VA` (molar volume) parameters, both
-  literal-phase-name and `%`-flag-resolved `TYPE_DEFINITION` (magnetic/
-  disordered-part) declarations. `TdbParser` caches by file path, so
-  repeated loads of the same database are no-ops. 516/545 phase ×
-  database combinations across the 11 bundled TDBs build and evaluate
-  cleanly; the rest are genuine missing-parameter rejections, not parser
-  bugs. Known, precisely-characterized gap: end-member `G()` expressions
-  with pressure dependence expressed through nested transcendental
-  `FUNCTION` chains (an older, pre-`V0`/`VA` mechanism) are silently
-  dropped rather than evaluated — see `CefContractTest`'s
-  `knownPResidual` cases for the two instances found.
-- `GibbsEnergyModel` is a minimal, model-agnostic abstract contract
-  (`system/model`): every method on it is either required by Sundman's
-  phase-matrix/equilibrium-matrix construction (2015 Eq. 40/58) or is a
-  genuine external entry point, verified by an explicit audit this
-  session (no dead accessors, no CEF-specific assumptions baked in
-  beyond the sublattice-block accessors, deliberately deferred pending a
-  second, CVM, implementation). `CefGibbs` (`system/model/cef`) is its
-  sole current implementation: a general n-sublattice CEF Gibbs-energy
-  evaluator with analytical `G`, `dG_dy`, `d2G_dy2`, `dG_dT`,
-  `d2G_dydT`, `dG_dP`, `d2G_dydP` — reference, ideal, excess, magnetic
-  (Inden-Hillert-Jarl), and volume/pressure (`V0*exp(VA)*(P-P_ref)`)
-  contributions all analytically differentiated, with reference/excess
-  gradients and Hessians both derived from one shared `AD2`
-  (second-order automatic differentiation) construction so they cannot
-  silently diverge from each other.
-- Assembling and inverting the Newton phase matrix from those values is
-  calculation-layer work, not model-layer work
-  (`calc/equil/PhaseMatrixAssembler`) — it operates purely through
-  `GibbsEnergyModel`'s abstract surface, so a future non-CEF model (e.g.
-  CVM) gets phase-matrix/equilibrium-matrix assembly for free instead of
-  reimplementing it. `EquilibriumSolverV2` is the sole production
-  solver consumer.
-- `CefContractTest` (`src/test/`) verifies every quantity on
-  `GibbsEnergyModel`'s abstract contract against pycalphad 0.11.1 with
-  every comparison gated (no report-only exceptions — the R-constant
-  convention difference is corrected analytically in the reference
-  values, not excused), plus structural invariants (Hessian symmetry,
-  `dMoles_dy` y-independence, composition/mole consistency, `isValid`
-  accept/reject) that hold independent of any reference implementation.
-  This caught a real bug this session: the Redlich-Kister interaction
-  gradient double-counted a term for any RK order > 0, silently wrong
-  for essentially any phase with a binary/ternary interaction parameter,
-  fixed and now regression-tested.
-- A Sundman-style (2015 ComMatSci) multiphase equilibrium solver in
-  `calc/equil/EquilibriumSolverV2`, implementing the full flowchart
-  (`docs/solver_flowchart_target.png`) rather than a single-phase-only
-  path:
-  - **Initialization** (`GridMinimizer`): a pycalphad-verified port of
-    `calculate()`'s grid sampling (scrambled Halton sequence, endmembers,
-    edges, interior points — `Halton.java`) and `lower_convex_hull()`'s
-    N-dimensional tangent-hyperplane pivot search (`Hyperplane.java`),
-    used to find the initial stable-phase set and per-phase site
-    fractions directly, including correctly representing a miscibility
+  (Redlich-Kister, arbitrary order), `TC`/`BMAGN` (magnetic), `V0`/`VA`
+  (molar volume), and `TYPE_DEFINITION` declarations. Caches by file
+  path. 516/545 phase × database combinations across the 11 bundled
+  TDBs build and evaluate cleanly; the rest are genuine missing-
+  parameter rejections. Known gap: end-member `G()` expressions with
+  pressure dependence via nested `FUNCTION` chains (a pre-`V0`/`VA`
+  mechanism) are silently dropped (`CefContractTest`'s `knownPResidual`
+  cases).
+- **`GibbsEnergyModel`** (`system/model`): a minimal, model-agnostic
+  abstract contract — every method is either required by Sundman's
+  phase-matrix/equilibrium-matrix construction (2015 Eq. 40/58) or a
+  genuine external entry point. `CefGibbs` (`system/model/cef`) is its
+  sole implementation: a general n-sublattice CEF evaluator with
+  analytical `G`, `dG_dy`, `d2G_dy2`, `dG_dT`, `d2G_dydT`, `dG_dP`,
+  `d2G_dydP` — reference, ideal, excess, magnetic (Inden-Hillert-Jarl),
+  and volume/pressure contributions, all sharing one `AD2`
+  (second-order automatic differentiation) construction so gradients
+  and Hessians cannot silently diverge. `CefContractTest` (`src/test/`)
+  verifies every quantity against pycalphad 0.11.1, plus structural
+  invariants (Hessian symmetry, `dMoles_dy` y-independence,
+  composition/mole consistency, `isValid` accept/reject).
+- **Newton phase-matrix assembly** (`calc/equil/PhaseMatrixAssembler`)
+  is calculation-layer work operating purely through
+  `GibbsEnergyModel`'s abstract surface, so a future non-CEF model
+  (e.g. CVM) gets it for free. `EquilibriumSolverV2` is the sole
+  production solver consumer.
+- **Multiphase equilibrium solver** (`calc/equil/EquilibriumSolverV2`),
+  implementing the full flowchart (`docs/solver_flowchart_target.png`):
+  - *Initialization* (`GridMinimizer`): a pycalphad-verified port of
+    `calculate()`'s grid sampling (Halton sequence, endmembers, edges —
+    `Halton.java`) and `lower_convex_hull()`'s tangent-hyperplane pivot
+    search (`Hyperplane.java`), correctly representing a miscibility
     gap as two independent stable slots of the same candidate phase.
-  - **Newton iteration** (STEP 1-9): per-phase Newton-response
-    coefficients (`PhaseMatrixAssembler`, Sundman Eq. 40) and the global
-    multiphase equilibrium matrix (`GlobalEquilibriumMatrixAssembler`,
-    Eq. 58) are extracted into stateless, independently-tested
-    assemblers; the Newton step is damped at bounds (phase-amount and
-    site-fraction step-size capping) rather than hard-failing, matching
-    pycalphad's own `advance_state()`.
-  - **Phase-set management** (STEP 8, `updateStablePhaseSet()`): removes
-    a stable phase once its amount reaches the phase-amount floor and
-    adds a metastable candidate once its driving force (Eq. 62) turns
-    positive — evaluated over the same style of sampled grid
-    `GridMinimizer` uses, not a single frozen constitution, following
-    pycalphad's `Solver.solve()`/`add_new_phases()` design
-    (`eqsolver.pyx`) including its composition-distinctness
-    anti-thrashing guard.
-  - Every stage above has a pycalphad-referenced regression test
-    (`PhaseMatrixAssemblerContractTest`, `GlobalEquilibriumMatrixAssemblerContractTest`,
-    `SiteFractionCorrectionContractTest`, `GridMinimizerPycalphadTest`
-    in `src/test/`, plus JUnit end-to-end tests in
-    `src-test/calc/equil/`), validated against the V–Zr TDB
-    (`data/VZR-re2.TDB`) for BCC_A2 (vacancy sublattice), HCP_A3,
-    LIQUID, and the two-sublattice ordered V2ZR, including genuine
-    two-phase equilibria that converge.
-  - `EquilibriumSolverV2BaselineTest` (`src/test/`) runs the solver
-    itself (not just the model layer) against J. Cui et al. 2016
-    (CALPHAD 53): the full V2ZR Gibbs-energy curve (Fig. 9) and all
-    three Table 2 invariant reactions, each split into its 3 adjacent
-    two-phase fields. Building it caught a real bug: `GridMinimizer`
-    normalized per-atom energies by `nfu()` (nominal site-ratio sum)
-    instead of the real atom count, badly misjudging any phase with a
-    vacancy sublattice and missing correct equilibria. Fixed via a new
-    `GibbsEnergyModel.totalMoles(y)` (Sundman Eq. 6's `M^alpha`), now
-    the one authoritative per-atom normalization in the codebase.
-- `ThermodynamicSystem` and `CalculationSession`: a single build-once/
-  reuse coordinator that parses a TDB and builds phase models one time,
-  then serves multiple calculations (and database/element/phase browsing)
-  against the same system without re-parsing. All three UIs go through it:
-  the GUI single-point path (`MainController.runSinglePoint`), the CLI
-  `equilibrium` command, and the REST API — all three independently
-  verified to produce bit-identical results for the same V–Zr scenario.
-- A REST/JSON API (`src/ui/api`, `com.sun.net.httpserver` + Gson, no
-  server framework) exposing `CalculationSession` over HTTP: explicit
-  session lifecycle, per-session locking, `equilibrium` and
-  `phase-diagram` endpoints (`step`/`map` return 501), structured error
-  bodies. Launch via `ui.api.ApiMain [port]`.
-- A standalone RK (Redlich-Kister) Gibbs-energy model (binary/ternary/
-  quaternary interaction terms, analytical derivatives) and a standalone
-  CVM Gibbs-energy evaluator (binary systems, parsed from Mathematica
-  `.nb` output), both implemented but not yet wired into the production
-  TDB → equilibrium pipeline.
-- A binary phase-diagram tracer (`calc/diagram`) implementing ZPF line
-  following, phase-boundary bisection, and invariant-reaction handling,
-  wired to the CLI/use-case layer.
-- A legacy Levenberg-Marquardt parameter-fitting/assessment pathway
-  (`legacy/calbince`), used by the `opt`/`cal` CLI commands, kept separate
-  from the new model/equilibrium code.
+  - *Newton iteration*: per-phase response coefficients
+    (`PhaseMatrixAssembler`, Eq. 40) and the global equilibrium matrix
+    (`GlobalEquilibriumMatrixAssembler`, Eq. 58) are stateless,
+    independently-tested assemblers; the Newton step is damped at
+    bounds rather than hard-failing, matching pycalphad's
+    `advance_state()`.
+  - *Phase-set management* (`updateStablePhaseSet()`): removes a
+    stable phase once its amount hits the phase-amount floor and adds
+    a metastable candidate once its driving force (Eq. 62) turns
+    positive, following pycalphad's `Solver.solve()`/`add_new_phases()`
+    design including its composition-distinctness anti-thrashing guard.
+  - Validated against the V–Zr TDB (`data/VZR-re2.TDB`) for BCC_A2
+    (vacancy sublattice), HCP_A3, LIQUID, and the ordered V2ZR,
+    including converging two-phase equilibria, via pycalphad-referenced
+    contract tests (`src/test/`) and JUnit end-to-end tests
+    (`src-test/calc/equil/`). `EquilibriumSolverV2BaselineTest`
+    (`src/test/`) additionally checks the solver itself against
+    J. Cui et al. 2016 (CALPHAD 53): the V2ZR Gibbs-energy curve
+    (Fig. 9) and all three Table 2 invariant reactions, each split
+    into its adjacent two-phase fields.
+- **`ThermodynamicSystem` / `CalculationSession`**: a build-once/reuse
+  coordinator — parses a TDB and builds phase models once, then serves
+  repeated calculations and database/element/phase browsing. All three
+  UIs (GUI, CLI, REST API) go through it and produce bit-identical
+  results for the same scenario.
+- **REST/JSON API** (`src/ui/api`, `com.sun.net.httpserver` + Gson):
+  explicit session lifecycle, per-session locking, `equilibrium` and
+  `phase-diagram` endpoints (`step`/`map` return 501). Launch via
+  `ui.api.ApiMain [port]`.
+- A standalone RK (Redlich-Kister) model and a standalone CVM model
+  (binary systems, parsed from Mathematica `.nb` output), implemented
+  but not yet wired into the TDB → equilibrium pipeline.
+- A binary phase-diagram tracer (`calc/diagram`): ZPF line following,
+  phase-boundary bisection, invariant-reaction handling, wired to the
+  CLI/use-case layer.
+- A legacy Levenberg-Marquardt assessment pathway (`legacy/calbince`),
+  used by the `opt`/`cal` CLI commands, kept separate from the new code.
 
 ### Current limitations
 
-- **`updateStablePhaseSet()`'s add/remove tolerances are engineering
-  defaults, not derived from Sundman's paper.** The paper only says
-  "allow a few iterations after a change... before another change is
-  allowed" with no numbers; the current thresholds mirror pycalphad's
-  own constants (`minimum_df=1e-4`, `COMP_DIFFERENCE_TOL=1e-4`,
-  `MIN_PHASE_FRACTION=1e-6`) rather than anything independently derived
-  for this solver's own unit/normalization conventions.
-- **Multiphase convergence has been validated on the V-Zr binary only**
-  (all pairwise combinations of V2ZR/BCC_A2/HCP_A3/LIQUID), including
-  phase-set changes (a redundant miscibility-gap slot being removed,
-  a missing phase being added from a single-phase start). Ternary+
-  systems and larger phase counts are untested.
-- `calculateStep`/`calculateMap` on `CalculationSession` are explicit
-  unimplemented stubs — there is no plain property-sampling engine (as
-  opposed to full phase-boundary tracing) in the codebase yet.
-- Two-state/Einstein and ordering/disordering (B2/L1₂-style) contributions
-  are not implemented in `CefGibbs` at all (separate from the
-  pressure-dependent-`FUNCTION` gap noted above). `VK` (isothermal
-  compressibility) is detected and rejected with an explicit exception
-  rather than silently ignored, matching pycalphad's own unimplemented
-  status for it.
-- RK and CVM models are not connected to the TDB → equilibrium production
-  path; only CEF phases can currently be built and solved end-to-end from
-  a TDB file. `GibbsEnergyModel`'s sublattice-block accessors
-  (`numSublattices`/`offsets`/`constituentsPerSublattice`) carry CEF's
-  own vocabulary for now — deliberately not generalized until a second
-  (CVM) implementation exists to validate what generalization actually
-  fits both.
-- The test suite is mostly standalone diagnostic `main()` programs under
-  `src/test/` (pycalphad-referenced contract tests among them — run
-  individually via `java -cp build/classes/java/main test.<ClassName>`)
-  rather than the Gradle/JUnit setup `build.gradle` declares; only one
-  JUnit test class exists so far (`src-test/calc/equil/`, several
-  end-to-end methods). There is no single command that runs everything
-  as a pass/fail regression gate.
-- Phase-diagram tracing has only been exercised for binary systems; the
-  underlying grid-minimizer's convex-hull step is binary-only (ternary+
-  falls back to a non-hull heuristic).
-- API/GUI hardening is out of scope so far: no authentication, TLS, or
+- `updateStablePhaseSet()`'s add/remove tolerances
+  (`minimum_df=1e-4`, `COMP_DIFFERENCE_TOL=1e-4`, `MIN_PHASE_FRACTION=1e-6`)
+  are engineering defaults borrowed from pycalphad, not derived from
+  Sundman's paper (which gives no numbers).
+- Multiphase convergence is validated on the V–Zr binary only (all
+  pairwise combinations of V2ZR/BCC_A2/HCP_A3/LIQUID), including
+  phase-set changes. Ternary+ systems and larger phase counts are
+  untested.
+- `calculateStep`/`calculateMap` on `CalculationSession` are
+  unimplemented stubs — no plain property-sampling engine yet.
+- Two-state/Einstein and ordering/disordering (B2/L1₂-style)
+  contributions are not implemented in `CefGibbs`. `VK` (isothermal
+  compressibility) is detected and rejected explicitly rather than
+  silently ignored, matching pycalphad's own unimplemented status.
+- RK and CVM models are not connected to the TDB → equilibrium path;
+  only CEF phases build and solve end-to-end from a TDB file.
+  `GibbsEnergyModel`'s sublattice-block accessors carry CEF's own
+  vocabulary for now, pending a second (CVM) implementation to
+  validate what generalization fits both.
+- Most of the test suite is standalone diagnostic `main()` programs
+  under `src/test/` (including pycalphad-referenced contract tests —
+  run via `java -cp build/classes/java/main test.<ClassName>`), not
+  the Gradle/JUnit setup `build.gradle` declares. Only one JUnit test
+  class exists (`src-test/calc/equil/`). No single command runs
+  everything as a pass/fail gate.
+- Phase-diagram tracing has only been exercised for binary systems;
+  the grid-minimizer's convex-hull step is binary-only (ternary+ falls
+  back to a non-hull heuristic).
+- API/GUI hardening is out of scope: no authentication, TLS, or
   session expiry on the REST API; the GUI has no phase-diagram or
-  property-scan wiring through `CalculationSession` yet.
+  property-scan wiring yet.
 
 ### Long-term intended capabilities
 
