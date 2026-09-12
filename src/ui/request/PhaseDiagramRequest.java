@@ -4,6 +4,7 @@ import calc.diagram.AxisConfig;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * Input DTO for a phase diagram calculation.
@@ -33,8 +34,12 @@ import java.util.List;
  */
 public class PhaseDiagramRequest {
 
-    /** Calculation type: one axis (STEP) or two axes (MAP). */
-    public enum DiagramType { STEP, MAP }
+    /**
+     * Calculation type: one axis (STEP), two axes with ZPF boundary
+     * tracing (MAP), or two axes sampled independently as a coarse
+     * scatter/dot diagram (COARSE -- see {@link #ternary}).
+     */
+    public enum DiagramType { STEP, MAP, COARSE }
 
     // ── Required fields ───────────────────────────────────────────────
 
@@ -43,8 +48,16 @@ public class PhaseDiagramRequest {
     private List<String>     phases    = new ArrayList<>();
     private DiagramType      diagramType = DiagramType.MAP;
 
-    /** Axis configurations; 1 entry for STEP, 2 entries for MAP. */
+    /** Axis configurations; 1 entry for STEP, 2 entries for MAP/COARSE. */
     private List<AxisConfig> axes      = new ArrayList<>();
+
+    /**
+     * COARSE only: {@code true} selects the ternary case (both axes are
+     * COMPOSITION axes over two different components, the third implied
+     * by the simplex constraint); {@code false} selects the binary case
+     * (one axis is typically TEMPERATURE). Ignored for STEP/MAP.
+     */
+    private boolean ternary = false;
 
     // ── Fixed conditions ─────────────────────────────────────────────
 
@@ -65,6 +78,15 @@ public class PhaseDiagramRequest {
      */
     private double[] startComposition;
 
+    /**
+     * Optional progress callback for COARSE diagrams (ignored by
+     * STEP/MAP): called from the calculation's background thread after
+     * each completed grid row -- see {@code CoarseDiagramTracer}. Not
+     * serialized; set per-request by a caller that wants live feedback
+     * (e.g. a GUI worker streaming rows into a log panel).
+     */
+    private transient Consumer<String> progressCallback;
+
     // ── Getters / setters ────────────────────────────────────────────
 
     public String getTdbFilePath()                  { return tdbFilePath; }
@@ -78,6 +100,9 @@ public class PhaseDiagramRequest {
 
     public DiagramType getDiagramType()             { return diagramType; }
     public void        setDiagramType(DiagramType t){ this.diagramType = t; }
+
+    public boolean isTernary()                      { return ternary; }
+    public void    setTernary(boolean t)            { this.ternary = t; }
 
     public List<AxisConfig> getAxes()               { return axes; }
     public void addAxis(AxisConfig axis)             { this.axes.add(axis); }
@@ -93,6 +118,9 @@ public class PhaseDiagramRequest {
                                                              ? null
                                                              : startComposition.clone(); }
     public void setStartComposition(double[] c)     { this.startComposition = c.clone(); }
+
+    public Consumer<String> getProgressCallback()              { return progressCallback; }
+    public void             setProgressCallback(Consumer<String> cb) { this.progressCallback = cb; }
 
     // ── Convenience: build AxisConfig[] ─────────────────────────────
 

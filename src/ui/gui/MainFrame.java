@@ -46,6 +46,7 @@ public class MainFrame extends JFrame {
     private PropertyCalcConfigPanel    stepCalcPanel;
     private PropertyCalcConfigPanel    mapCalcPanel;
     private PhaseDiagramConfigPanel    phaseDiagramConfigPanel;
+    private PhaseDiagramConfigPanel    coarseDiagramConfigPanel;
     private SwingWorker<?,?>           stepWorker;
     private SwingWorker<?,?>           mapWorker;
     private ModelInspectorSidebarPanel modelInspectorSidebar;
@@ -57,6 +58,7 @@ public class MainFrame extends JFrame {
     private StepResultPanel  stepResultPanel;
     private MapResultPanel   mapResultPanel;
     private PhaseDiagramPanel phaseDiagramPanel;
+    private CoarseDiagramPanel coarseDiagramPanel;
     private JList<String>    phaseJList;
     private JTextArea        paramArea;
     private String           currentInspectorTdb;
@@ -106,6 +108,9 @@ public class MainFrame extends JFrame {
         phaseDiagramConfigPanel = new PhaseDiagramConfigPanel(controller);
         phaseDiagramConfigPanel.setCalculateCallback(this::onCalculatePhaseDiagram);
 
+        coarseDiagramConfigPanel = new PhaseDiagramConfigPanel(controller, PhaseDiagramConfigPanel.Mode.COARSE);
+        coarseDiagramConfigPanel.setCalculateCallback(this::onCalculateCoarseDiagram);
+
         modelInspectorSidebar = new ModelInspectorSidebarPanel(controller);
         modelInspectorSidebar.setInspectCallback(this::onInspectModel);
         modelInspectorSidebar.setOnSelectionChanged(sel -> {
@@ -119,6 +124,7 @@ public class MainFrame extends JFrame {
         sidebarCard.add(stepCalcPanel,           "stepcalc");
         sidebarCard.add(mapCalcPanel,            "mapcalc");
         sidebarCard.add(phaseDiagramConfigPanel, "phasediagram");
+        sidebarCard.add(coarseDiagramConfigPanel, "coarsediagram");
         sidebarCard.add(modelInspectorSidebar,   "inspector");
 
         // Editors
@@ -127,6 +133,7 @@ public class MainFrame extends JFrame {
         editorCard.add(buildStepEditor(),        "stepcalc");
         editorCard.add(buildMapEditor(),         "mapcalc");
         editorCard.add(buildPhaseDiagramEditor(),"phasediagram");
+        editorCard.add(buildCoarseDiagramEditor(),"coarsediagram");
         editorCard.add(buildInspectorEditor(),   "inspector");
 
         // Log panel
@@ -150,6 +157,7 @@ public class MainFrame extends JFrame {
         activityBar.addActivity("STEP Calc",      new ActivityBar.LineIcon(),     () -> switchActivity("stepcalc"));
         activityBar.addActivity("MAP Calc",       new ActivityBar.SquareIcon(),   () -> switchActivity("mapcalc"));
         activityBar.addActivity("Phase Diagram",  new ActivityBar.DiamondIcon(),  () -> switchActivity("phasediagram"));
+        activityBar.addActivity("Coarse Diagram", new ActivityBar.SquareIcon(),   () -> switchActivity("coarsediagram"));
         activityBar.addActivity("Inspect Database",  new ActivityBar.InfoIcon(),     () -> switchActivity("inspector"));
 
         JPanel root = new JPanel(new BorderLayout(0, 0));
@@ -223,6 +231,16 @@ public class MainFrame extends JFrame {
         phaseDiagramPanel = new PhaseDiagramPanel();
         phaseDiagramPanel.setBackground(Color.WHITE);
         panel.add(phaseDiagramPanel, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JComponent buildCoarseDiagramEditor() {
+        JPanel panel = new JPanel(new BorderLayout(0, 0));
+        panel.setBackground(BG);
+        panel.add(DarkTheme.panelHeader("COARSE DIAGRAM"), BorderLayout.NORTH);
+        coarseDiagramPanel = new CoarseDiagramPanel();
+        coarseDiagramPanel.setBackground(Color.WHITE);
+        panel.add(coarseDiagramPanel, BorderLayout.CENTER);
         return panel;
     }
 
@@ -560,6 +578,54 @@ public class MainFrame extends JFrame {
             }
         };
         phaseDiagramConfigPanel.setAbortCallback(() -> worker.cancel(true));
+        worker.execute();
+    }
+
+    // ── Coarse binary/ternary diagram ───────────────────────────────────
+
+    private void onCalculateCoarseDiagram() {
+        final ui.request.PhaseDiagramRequest req = coarseDiagramConfigPanel.buildRequest();
+        coarseDiagramConfigPanel.setStatus("Calculating...", DarkTheme.ACCENT);
+        coarseDiagramConfigPanel.setRunning(true);
+        SwingWorker<ui.result.CoarseDiagramResult, String> worker =
+                new SwingWorker<ui.result.CoarseDiagramResult, String>() {
+            @Override protected ui.result.CoarseDiagramResult doInBackground() {
+                req.setProgressCallback(this::publish);
+                return controller.runCoarseDiagram(req);
+            }
+            @Override protected void process(java.util.List<String> chunks) {
+                for (String s : chunks) {
+                    addGuiLog("COARSE", s);
+                    coarseDiagramConfigPanel.setStatus(s, DarkTheme.ACCENT);
+                }
+            }
+            @Override protected void done() {
+                coarseDiagramConfigPanel.setRunning(false);
+                try {
+                    ui.result.CoarseDiagramResult result = get();
+                    if (result != null) {
+                        coarseDiagramPanel.setDiagram(result);
+                        if (result.isComplete()) {
+                            coarseDiagramConfigPanel.setStatus("✓ Calculation complete", SUCCESS);
+                            addGuiLog("RESULT", "Coarse diagram calculated successfully");
+                        } else {
+                            coarseDiagramConfigPanel.setStatus("⚠ " + result.getMessage(), DarkTheme.FG_SECOND);
+                            addGuiLog("RESULT", "Coarse diagram completed with gaps: " + result.getMessage());
+                        }
+                    } else {
+                        coarseDiagramConfigPanel.setStatus("✗ Unknown error", ERROR_COLOR);
+                        addGuiLog("RESULT", "Coarse diagram failed: unknown error");
+                    }
+                } catch (java.util.concurrent.CancellationException ex) {
+                    coarseDiagramConfigPanel.setStatus("⊘ Aborted", ERROR_COLOR);
+                    addGuiLog("RESULT", "Coarse diagram aborted by user");
+                } catch (Exception e) {
+                    coarseDiagramConfigPanel.setStatus("✗ Error: " + e.getMessage(), ERROR_COLOR);
+                    addGuiLog("RESULT", "Exception: " + e.getMessage());
+                }
+            }
+        };
+        coarseDiagramConfigPanel.setAbortCallback(() -> worker.cancel(true));
         worker.execute();
     }
 

@@ -120,6 +120,46 @@ public class MainController {
     }
 
     /**
+     * Run a coarse binary/ternary phase diagram: samples a 2D grid of
+     * conditions and calls the full equilibrium solver independently at
+     * each point, coloring the result by stable-phase-set for scatter/
+     * dot rendering. Unlike {@link #runPhaseDiagram}, this is fully
+     * wired through {@link CalculationSession} -- see {@code
+     * CalculationSession#calculateCoarseBinaryDiagram}/
+     * {@code calculateCoarseTernaryDiagram}.
+     */
+    public ui.result.CoarseDiagramResult runCoarseDiagram(PhaseDiagramRequest request) {
+        Trace.enter(LOG, AppLevel.FLOW, "MainController", "runCoarseDiagram");
+        try {
+            calculationSession.setModel(request.getTdbFilePath(), request.getElements(),
+                    request.getPhases());
+
+            List<calc.diagram.AxisConfig> axes = request.getAxes();
+            calc.diagram.AxisConfig axisX = axes.get(0);
+            calc.diagram.AxisConfig axisY = axes.get(1);
+            double[] comp = request.getStartComposition();
+
+            if (request.isTernary()) {
+                calculationSession.calculateCoarseTernaryDiagram(axisX, axisY,
+                        request.getFixedT(), request.getFixedP(), comp,
+                        request.getProgressCallback());
+            } else {
+                calculationSession.calculateCoarseBinaryDiagram(axisX, axisY,
+                        request.getFixedT(), request.getFixedP(), comp,
+                        request.getProgressCallback());
+            }
+
+            ui.result.CoarseDiagramResult r = calculationSession.currentCoarseDiagramResult();
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "runCoarseDiagram");
+            return r;
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "Coarse diagram calculation failed", e);
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "runCoarseDiagram");
+            throw new RuntimeException("Coarse diagram calculation failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * Run optimization from the GUI.
      */
     public String runOptimization(String exptDataFile, String phaseDataFile,

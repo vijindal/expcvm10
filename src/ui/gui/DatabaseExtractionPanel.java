@@ -357,6 +357,15 @@ public class DatabaseExtractionPanel extends JPanel {
     //  Helpers
     // ================================================================
 
+    /**
+     * Returns the confirmed elements in alphabetical order, regardless
+     * of the order badges were added/typed in -- element order is not
+     * just cosmetic: it fixes each element's composition-axis component
+     * index (e.g. V-Zr sorts to [V, ZR], so x(Zr) is always axis
+     * component index 1), so a stable, predictable ordering avoids a
+     * calculation silently sweeping the wrong element depending on
+     * typing order.
+     */
     private List<String> getConfirmedElements() {
         List<String> result = new ArrayList<>();
         for (Component c : confirmedPanel.getComponents()) {
@@ -370,6 +379,7 @@ public class DatabaseExtractionPanel extends JPanel {
                 }
             }
         }
+        java.util.Collections.sort(result);
         return result;
     }
 

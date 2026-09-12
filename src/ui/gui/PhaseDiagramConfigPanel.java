@@ -11,28 +11,45 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Configuration panel for phase diagram calculations (MAP or STEP).
+ * Configuration panel for phase diagram calculations (MAP, STEP, or
+ * COARSE -- a scatter/dot diagram sampled independently at each grid
+ * point, see {@code CoarseDiagramTracer}).
  *
  * Top zone  : shared {@link DatabaseExtractionPanel} (TDB + element selection).
  * Lower zone: Axis configs, phase selection, fixed conditions + Calculate button.
- *
- * @param isStep  true → STEP (1-axis) mode; false → MAP (2-axis) mode
  */
 public class PhaseDiagramConfigPanel extends JPanel {
 
+    /** Which calculation this panel is configured for. */
+    public enum Mode { STEP, MAP, COARSE }
+
+    private final Mode mode;
     private final boolean isStep;
     private final DatabaseExtractionPanel dbPanel;
 
     private JComboBox<String> axis0TypeCombo;
     private RangeField axis0Range;
 
-    // MAP only
+    // MAP/COARSE only
     private JComboBox<String> axis1TypeCombo;
     private RangeField axis1Range;
     private JPanel axis1Section;
 
-    // STEP: start composition
+    // COARSE only: toggles axis 1 between TEMPERATURE (binary) and a
+    // second COMPOSITION axis picked by element (ternary); one field per
+    // element for the fixed/start composition instead of a raw CSV field.
+    private JCheckBox ternaryModeCheckBox;
+    private JComboBox<String> axis1ElementCombo;
+    private JLabel axis1ElementLabel;
+    private JLabel axis0SectionLabel;
+    private JPanel compositionFieldsPanel;
+    private final List<JTextField> compositionFields = new ArrayList<>();
+    private List<String> compositionFieldsElements = new ArrayList<>();
+
+    // STEP: start composition (label shows the actual 2nd element symbol,
+    // e.g. "x(Zr)" for V-Zr, once a database/elements are selected)
     private JTextField startCompositionField;
+    private JLabel startCompositionLabel;
 
     private JTextField pressureField;
     private JTextField temperatureField;
@@ -48,8 +65,9 @@ public class PhaseDiagramConfigPanel extends JPanel {
     private Runnable onCalculate;
     private Runnable onAbort;
 
-    public PhaseDiagramConfigPanel(MainController controller, boolean isStep) {
-        this.isStep = isStep;
+    public PhaseDiagramConfigPanel(MainController controller, Mode mode) {
+        this.mode = mode;
+        this.isStep = mode == Mode.STEP;
         setLayout(new BorderLayout());
         setBackground(DarkTheme.SIDEBAR_BG);
 
@@ -74,9 +92,14 @@ public class PhaseDiagramConfigPanel extends JPanel {
         add(buildButtonPanel(), BorderLayout.SOUTH);
     }
 
+    /** Backwards-compatible constructor: {@code isStep=true} -> STEP mode, else MAP mode. */
+    public PhaseDiagramConfigPanel(MainController controller, boolean isStep) {
+        this(controller, isStep ? Mode.STEP : Mode.MAP);
+    }
+
     /** Backwards-compatible constructor: defaults to MAP mode. */
     public PhaseDiagramConfigPanel(MainController controller) {
-        this(controller, false);
+        this(controller, Mode.MAP);
     }
 
     // ── Phase selection ────────────────────────────────────────────────
@@ -114,6 +137,10 @@ public class PhaseDiagramConfigPanel extends JPanel {
     // ── Layout ─────────────────────────────────────────────────────────
 
     private JPanel buildLowerContent() {
+        return mode == Mode.COARSE ? buildCoarseLowerContent() : buildStepOrMapLowerContent();
+    }
+
+    private JPanel buildStepOrMapLowerContent() {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setBackground(DarkTheme.SIDEBAR_BG);
         panel.setBorder(new EmptyBorder(6, 10, 10, 10));
@@ -127,23 +154,149 @@ public class PhaseDiagramConfigPanel extends JPanel {
 
         // ── Axis 0 ─────────────────────────────────────────────────
         addSectionLabel(panel, gbc, row++, isStep ? "AXIS (Scan Variable)" : "AXIS 0 (X-Axis)");
-        String defAxis0Type = isStep ? "TEMPERATURE" : "COMPOSITION";
-        axis0TypeCombo = addAxisTypeCombo(panel, gbc, row++, "Type", defAxis0Type);
+        axis0TypeCombo = addAxisTypeCombo(panel, gbc, row++, "Type", isStep ? "COMPOSITION" : "COMPOSITION");
         axis0Range = addRangeField(panel, gbc, row++, "Range",
-                isStep ? "500, 1500, 100" : "0.0, 1.0, 0.1");
+                isStep ? "300, 2500, 100" : "0.0, 1.0, 0.1");
         axis0TypeCombo.addItemListener(e -> axis0Range.setText(
-                "COMPOSITION".equals(axis0TypeCombo.getSelectedItem()) ? "0.0, 1.0, 0.1" : "500, 1500, 100"));
+                "COMPOSITION".equals(axis0TypeCombo.getSelectedItem()) ? "0.0, 1.0, 0.1" : "300, 2500, 100"));
 
         // ── Axis 1 (MAP only) ───────────────────────────────────────
         if (!isStep) {
             addSectionLabel(panel, gbc, row++, "AXIS 1 (Y-Axis)");
             axis1TypeCombo = addAxisTypeCombo(panel, gbc, row++, "Type", "TEMPERATURE");
-            axis1Range = addRangeField(panel, gbc, row++, "Range", "500, 1500, 100");
+            axis1Range = addRangeField(panel, gbc, row++, "Range", "300, 2500, 100");
             axis1TypeCombo.addItemListener(e -> axis1Range.setText(
-                    "COMPOSITION".equals(axis1TypeCombo.getSelectedItem()) ? "0.0, 1.0, 0.1" : "500, 1500, 100"));
+                    "COMPOSITION".equals(axis1TypeCombo.getSelectedItem()) ? "0.0, 1.0, 0.1" : "300, 2500, 100"));
         }
 
-        // ── Phases ──────────────────────────────────────────────────
+        row = addPhaseSelectionSection(panel, gbc, row);
+
+        // ── Fixed conditions ────────────────────────────────────────
+        addSectionLabel(panel, gbc, row++, "FIXED CONDITIONS");
+        pressureField = addTextField(panel, gbc, row++, "Pressure (Pa)", "101325.0");
+        if (isStep) {
+            startCompositionLabel = new JLabel("x(comp 2)");
+            startCompositionLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0; gbc.gridwidth = 1;
+            panel.add(startCompositionLabel, gbc);
+
+            startCompositionField = new JTextField("0.5");
+            startCompositionField.setBackground(DarkTheme.BG_INPUT);
+            startCompositionField.setForeground(DarkTheme.FG_PRIMARY);
+            startCompositionField.setCaretColor(DarkTheme.FG_PRIMARY);
+            startCompositionField.setFont(new Font("Consolas", Font.PLAIN, 10));
+            gbc.gridx = 1; gbc.gridy = row; gbc.weightx = 1; gbc.gridwidth = 2;
+            panel.add(startCompositionField, gbc);
+            gbc.gridwidth = 1;
+            row++;
+
+            dbPanel.setOnSelectionChanged(sel -> {
+                populatePhaseCheckBoxes(sel.getAvailablePhases());
+                List<String> els = sel.getElements();
+                startCompositionLabel.setText(
+                        els != null && els.size() >= 2 ? "x(" + els.get(1) + ")" : "x(comp 2)");
+            });
+        } else {
+            temperatureField = addTextField(panel, gbc, row++, "Temperature (K)", "");
+        }
+
+        // Filler
+        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 3; gbc.weighty = 1;
+        panel.add(Box.createVerticalGlue(), gbc);
+
+        return panel;
+    }
+
+    /**
+     * COARSE mode's own, simplified layout: axis 0 is always the first
+     * component's composition (no type picker to disable), a single
+     * "Ternary diagram" toggle swaps axis 1 between a temperature range
+     * and a second component's composition range picked from a dropdown
+     * (no raw index spinner), and the fixed composition is one labeled
+     * field per element (no comma-separated string to get wrong) that
+     * only needs a value for whichever elements are NOT swept by an
+     * axis. Default ranges use a denser 0.02 step (vs. 0.1 elsewhere)
+     * since a coarse scatter diagram's whole value is in the density of
+     * its sampled grid.
+     */
+    private JPanel buildCoarseLowerContent() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBackground(DarkTheme.SIDEBAR_BG);
+        panel.setBorder(new EmptyBorder(6, 10, 10, 10));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(4, 6, 4, 6);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        int row = 0;
+        String denseDefault = "0.0, 1.0, 0.02";
+
+        axis0SectionLabel = addSectionLabel(panel, gbc, row++, "AXIS 0: composition x(comp 1)");
+        axis0Range = addRangeField(panel, gbc, row++, "Range", denseDefault);
+
+        addSectionLabel(panel, gbc, row++, "AXIS 1");
+        ternaryModeCheckBox = new JCheckBox("Ternary diagram (2nd composition axis)");
+        ternaryModeCheckBox.setOpaque(false);
+        ternaryModeCheckBox.setForeground(DarkTheme.FG_PRIMARY);
+        ternaryModeCheckBox.setFont(new Font("Consolas", Font.PLAIN, 10));
+        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 3; gbc.weightx = 1;
+        panel.add(ternaryModeCheckBox, gbc);
+        gbc.gridwidth = 1;
+        row++;
+
+        axis1ElementLabel = new JLabel("Axis 1 = Temperature (K)");
+        axis1ElementLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0; gbc.gridwidth = 1;
+        panel.add(axis1ElementLabel, gbc);
+
+        axis1ElementCombo = new JComboBox<>();
+        axis1ElementCombo.setBackground(DarkTheme.BG_INPUT);
+        axis1ElementCombo.setForeground(DarkTheme.FG_PRIMARY);
+        axis1ElementCombo.setRenderer(new DarkTheme.ComboRenderer());
+        axis1ElementCombo.setEnabled(false);
+        gbc.gridx = 1; gbc.gridy = row; gbc.weightx = 1; gbc.gridwidth = 2;
+        panel.add(axis1ElementCombo, gbc);
+        gbc.gridwidth = 1;
+        row++;
+
+        axis1Range = addRangeField(panel, gbc, row++, "Range", "300, 2500, 25");
+
+        ternaryModeCheckBox.addItemListener(e -> {
+            boolean ternary = ternaryModeCheckBox.isSelected();
+            axis1ElementCombo.setEnabled(ternary);
+            axis1ElementLabel.setText(ternary ? "Axis 1 = composition of" : "Axis 1 = Temperature (K)");
+            axis1Range.setText(ternary ? denseDefault : "300, 2500, 25");
+        });
+
+        row = addPhaseSelectionSection(panel, gbc, row);
+
+        addSectionLabel(panel, gbc, row++, "FIXED CONDITIONS");
+        pressureField = addTextField(panel, gbc, row++, "Pressure (Pa)", "101325.0");
+        temperatureField = addTextField(panel, gbc, row++, "Temperature (K)", "1500.0");
+
+        addSectionLabel(panel, gbc, row++, "COMPOSITION (non-swept elements)");
+        compositionFieldsPanel = new JPanel();
+        compositionFieldsPanel.setLayout(new BoxLayout(compositionFieldsPanel, BoxLayout.Y_AXIS));
+        compositionFieldsPanel.setOpaque(false);
+        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 3; gbc.weightx = 1;
+        panel.add(compositionFieldsPanel, gbc);
+        gbc.gridwidth = 1;
+        row++;
+
+        dbPanel.setOnSelectionChanged(sel -> {
+            populatePhaseCheckBoxes(sel.getAvailablePhases());
+            populateCoarseElementUI(sel.getElements());
+        });
+
+        // Filler
+        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 3; gbc.weighty = 1;
+        panel.add(Box.createVerticalGlue(), gbc);
+
+        return panel;
+    }
+
+    private int addPhaseSelectionSection(JPanel panel, GridBagConstraints gbc, int row) {
         addSectionLabel(panel, gbc, row++, "PHASES");
 
         phaseCheckBoxPanel = new JPanel();
@@ -175,20 +328,43 @@ public class PhaseDiagramConfigPanel extends JPanel {
         gbc.gridwidth = 1;
         row++;
 
-        // ── Fixed conditions ────────────────────────────────────────
-        addSectionLabel(panel, gbc, row++, "FIXED CONDITIONS");
-        pressureField = addTextField(panel, gbc, row++, "Pressure (Pa)", "101325.0");
-        if (isStep) {
-            startCompositionField = addTextField(panel, gbc, row++, "x(comp 2)", "0.5");
-        } else {
-            temperatureField = addTextField(panel, gbc, row++, "Temperature (K)", "");
+        return row;
+    }
+
+    /** Repopulates the axis-1 element dropdown and the per-element composition fields. */
+    private void populateCoarseElementUI(List<String> elements) {
+        compositionFieldsElements = elements != null ? new ArrayList<>(elements) : new ArrayList<>();
+
+        axis0SectionLabel.setText(compositionFieldsElements.isEmpty()
+                ? "AXIS 0: composition x(comp 1)"
+                : "AXIS 0: composition x(" + compositionFieldsElements.get(0) + ")");
+
+        axis1ElementCombo.removeAllItems();
+        for (int i = 1; i < compositionFieldsElements.size(); i++) {
+            axis1ElementCombo.addItem(compositionFieldsElements.get(i));
         }
 
-        // Filler
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 3; gbc.weighty = 1;
-        panel.add(Box.createVerticalGlue(), gbc);
-
-        return panel;
+        compositionFieldsPanel.removeAll();
+        compositionFields.clear();
+        for (String el : compositionFieldsElements) {
+            JPanel row = new JPanel(new BorderLayout(6, 0));
+            row.setOpaque(false);
+            JLabel label = new JLabel("x(" + el + ")");
+            label.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            label.setForeground(DarkTheme.FG_PRIMARY);
+            label.setPreferredSize(new Dimension(60, 20));
+            JTextField field = new JTextField(String.format("%.3f", 1.0 / compositionFieldsElements.size()));
+            field.setBackground(DarkTheme.BG_INPUT);
+            field.setForeground(DarkTheme.FG_PRIMARY);
+            field.setCaretColor(DarkTheme.FG_PRIMARY);
+            field.setFont(new Font("Consolas", Font.PLAIN, 10));
+            row.add(label, BorderLayout.WEST);
+            row.add(field, BorderLayout.CENTER);
+            compositionFieldsPanel.add(row);
+            compositionFields.add(field);
+        }
+        compositionFieldsPanel.revalidate();
+        compositionFieldsPanel.repaint();
     }
 
     private JButton smallButton(String text) {
@@ -211,7 +387,7 @@ public class PhaseDiagramConfigPanel extends JPanel {
         statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 10));
         statusLabel.setForeground(DarkTheme.FG_SECOND);
 
-        String btnText = isStep ? "Calculate STEP" : "Calculate MAP Diagram";
+        String btnText = buttonText();
         calculateButton = new JButton(btnText);
         calculateButton.setBackground(DarkTheme.ACCENT);
         calculateButton.setForeground(Color.WHITE);
@@ -233,15 +409,25 @@ public class PhaseDiagramConfigPanel extends JPanel {
         return panel;
     }
 
+    private String buttonText() {
+        switch (mode) {
+            case STEP: return "Calculate STEP";
+            case COARSE: return "Calculate Coarse Diagram";
+            case MAP:
+            default: return "Calculate MAP Diagram";
+        }
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────
 
-    private void addSectionLabel(JPanel panel, GridBagConstraints gbc, int row, String text) {
+    private JLabel addSectionLabel(JPanel panel, GridBagConstraints gbc, int row, String text) {
         JLabel label = new JLabel(text);
         label.setFont(new Font("Segoe UI", Font.BOLD, 10));
         label.setForeground(DarkTheme.SECTION_FG);
         gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 3; gbc.weightx = 1;
         panel.add(label, gbc);
         gbc.gridwidth = 1;
+        return label;
     }
 
     private JTextField addTextField(JPanel panel, GridBagConstraints gbc, int row,
@@ -308,15 +494,34 @@ public class PhaseDiagramConfigPanel extends JPanel {
         request.setPhases(phases);
 
         request.setDiagramType(isStep ? PhaseDiagramRequest.DiagramType.STEP
-                                      : PhaseDiagramRequest.DiagramType.MAP);
+                : mode == Mode.COARSE ? PhaseDiagramRequest.DiagramType.COARSE
+                : PhaseDiagramRequest.DiagramType.MAP);
+
+        List<String> els = sel.getElements();
+        String firstElement = els != null && !els.isEmpty() ? els.get(0) : null;
 
         List<AxisConfig> axes = new ArrayList<>();
-        AxisConfig axis0 = buildAxisConfig(axis0TypeCombo.getSelectedItem().toString(), axis0Range, "Axis0");
+        AxisConfig axis0 = mode == Mode.COARSE
+                ? buildCompositionAxisConfig(axis0Range, firstElement, 0)
+                : buildAxisConfig(axis0TypeCombo.getSelectedItem().toString(), axis0Range, "Axis0");
         if (axis0 != null) axes.add(axis0);
 
-        if (!isStep) {
+        if (!isStep && mode != Mode.COARSE) {
             AxisConfig axis1 = buildAxisConfig(axis1TypeCombo.getSelectedItem().toString(), axis1Range, "Axis1");
             if (axis1 != null) axes.add(axis1);
+        } else if (mode == Mode.COARSE) {
+            boolean ternary = ternaryModeCheckBox.isSelected();
+            request.setTernary(ternary);
+
+            if (ternary && axis1ElementCombo.getSelectedItem() != null) {
+                String axis1Element = (String) axis1ElementCombo.getSelectedItem();
+                int axis1Index = compositionFieldsElements.indexOf(axis1Element);
+                AxisConfig axis1 = buildCompositionAxisConfig(axis1Range, axis1Element, Math.max(axis1Index, 1));
+                if (axis1 != null) axes.add(axis1);
+            } else if (!ternary && axis1Range != null && axis1Range.isValid()) {
+                axes.add(new AxisConfig("T / K", Type.TEMPERATURE,
+                        axis1Range.getMin(), axis1Range.getMax(), axis1Range.getStep()));
+            }
         }
         request.setAxes(axes);
 
@@ -328,12 +533,48 @@ public class PhaseDiagramConfigPanel extends JPanel {
                 double x2 = Double.parseDouble(startCompositionField.getText().trim());
                 request.setStartComposition(new double[]{1.0 - x2, x2});
             } catch (NumberFormatException ignored) {}
+        } else if (mode == Mode.COARSE) {
+            if (temperatureField != null && !temperatureField.getText().trim().isEmpty()) {
+                try { request.setFixedT(Double.parseDouble(temperatureField.getText().trim())); }
+                catch (NumberFormatException ignored) {}
+            }
+            request.setStartComposition(readCoarseStartComposition(sel.getElements().size()));
         } else if (!isStep && temperatureField != null
                    && !temperatureField.getText().trim().isEmpty()) {
             try { request.setFixedT(Double.parseDouble(temperatureField.getText().trim())); }
             catch (NumberFormatException ignored) {}
         }
         return request;
+    }
+
+    /**
+     * Reads the COARSE-mode per-element composition fields (see
+     * {@link #populateCoarseElementUI}), falling back to a uniform
+     * composition over {@code numElements} components if the fields
+     * haven't been populated yet or don't match -- {@link
+     * session.CalculationSession#calculateCoarseBinaryDiagram}/
+     * {@code calculateCoarseTernaryDiagram} both require a non-null
+     * composition vector to renormalize/distribute the non-swept
+     * components against; values for axis-swept components are
+     * overridden by the tracer anyway, so only the non-swept fields
+     * actually matter here.
+     */
+    private double[] readCoarseStartComposition(int numElements) {
+        if (numElements <= 0) {
+            numElements = 1;
+        }
+        if (compositionFields.size() == numElements) {
+            try {
+                double[] comp = new double[numElements];
+                for (int i = 0; i < numElements; i++) {
+                    comp[i] = Double.parseDouble(compositionFields.get(i).getText().trim());
+                }
+                return comp;
+            } catch (NumberFormatException ignored) {}
+        }
+        double[] uniform = new double[numElements];
+        java.util.Arrays.fill(uniform, 1.0 / numElements);
+        return uniform;
     }
 
     private AxisConfig buildAxisConfig(String typeStr, RangeField rf, String axisName) {
@@ -346,6 +587,20 @@ public class PhaseDiagramConfigPanel extends JPanel {
         if ("COMPOSITION".equalsIgnoreCase(typeStr))
             return new AxisConfig(axisName + " (X)", 0, min, max, step);  // index 0 = first component
         return null;
+    }
+
+    /**
+     * COARSE mode composition axis at a specific component index,
+     * labeled by the actual element symbol (e.g. "x(Zr)" for V-Zr's
+     * second, alphabetically-sorted element) rather than a generic
+     * index -- {@code elementSymbol} is null-safe: falls back to
+     * "x(comp N)" if the element list doesn't cover this index yet
+     * (e.g. before a database is fully selected).
+     */
+    private AxisConfig buildCompositionAxisConfig(RangeField rf, String elementSymbol, int componentIndex) {
+        if (rf == null || !rf.isValid()) return null;
+        String label = elementSymbol != null ? "x(" + elementSymbol + ")" : "x(comp " + componentIndex + ")";
+        return new AxisConfig(label, componentIndex, rf.getMin(), rf.getMax(), rf.getStep());
     }
 
     private void onCalculateClicked() {
@@ -377,7 +632,7 @@ public class PhaseDiagramConfigPanel extends JPanel {
             calculateButton.setText("Abort");
             calculateButton.setBackground(DarkTheme.ERROR_COLOR);
         } else {
-            calculateButton.setText(isStep ? "Calculate STEP" : "Calculate MAP Diagram");
+            calculateButton.setText(buttonText());
             calculateButton.setBackground(DarkTheme.ACCENT);
         }
     }

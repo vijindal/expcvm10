@@ -258,17 +258,17 @@ public class PropertyCalcConfigPanel extends JPanel {
         // ── Axis 0 ──────────────────────────────────────────────────
         row = addSection(p, g, row, isMap ? "AXIS 0  (X)" : "SCAN AXIS");
         axis0TypeCombo = axisTypeCombo(p, g, row++, isMap ? "COMPOSITION" : "TEMPERATURE");
-        axis0Range = rangeField(p, g, row++, "Range", isMap ? "0.0, 1.0, 0.1" : "500, 1500, 100");
+        axis0Range = rangeField(p, g, row++, "Range", isMap ? "0.0, 1.0, 0.1" : "300, 2500, 100");
         axis0TypeCombo.addItemListener(e -> axis0Range.setText(
-                "COMPOSITION".equals(axis0TypeCombo.getSelectedItem()) ? "0.0, 1.0, 0.1" : "500, 1500, 100"));
+                "COMPOSITION".equals(axis0TypeCombo.getSelectedItem()) ? "0.0, 1.0, 0.1" : "300, 2500, 100"));
 
         // ── Axis 1 (MAP) ─────────────────────────────────────────────
         if (isMap) {
             row = addSection(p, g, row, "AXIS 1  (Y)");
             axis1TypeCombo = axisTypeCombo(p, g, row++, "TEMPERATURE");
-            axis1Range = rangeField(p, g, row++, "Range", "500, 1500, 100");
+            axis1Range = rangeField(p, g, row++, "Range", "300, 2500, 100");
             axis1TypeCombo.addItemListener(e -> axis1Range.setText(
-                    "COMPOSITION".equals(axis1TypeCombo.getSelectedItem()) ? "0.0, 1.0, 0.1" : "500, 1500, 100"));
+                    "COMPOSITION".equals(axis1TypeCombo.getSelectedItem()) ? "0.0, 1.0, 0.1" : "300, 2500, 100"));
         }
 
         // ── Fixed conditions ─────────────────────────────────────────
