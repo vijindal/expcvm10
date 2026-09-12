@@ -224,7 +224,9 @@ assessment code is quarantined under `legacy/`.
     `calculate()`'s grid sampling (Halton sequence, endmembers, edges —
     `Halton.java`) and `lower_convex_hull()`'s tangent-hyperplane pivot
     search (`Hyperplane.java`), correctly representing a miscibility
-    gap as two independent stable slots of the same candidate phase.
+    gap as two independent stable slots of the same candidate phase,
+    with duplicate-composition-slot merging (`mergeDuplicateCompositions`,
+    ported from OpenCalphad's `same_composition()`).
   - *Newton iteration*: per-phase response coefficients
     (`PhaseMatrixAssembler`, Eq. 40) and the global equilibrium matrix
     (`GlobalEquilibriumMatrixAssembler`, Eq. 58) are stateless,
@@ -235,7 +237,13 @@ assessment code is quarantined under `legacy/`.
     stable phase once its amount hits the phase-amount floor and adds
     a metastable candidate once its driving force (Eq. 62) turns
     positive, following pycalphad's `Solver.solve()`/`add_new_phases()`
-    design including its composition-distinctness anti-thrashing guard.
+    design; also merges stable slots that converge to the same
+    composition mid-iteration.
+  - *ZPF boundary solve* (`solveBoundary`, Algorithm C2): fixes one
+    phase's amount at exactly zero via variable elimination (ported
+    from and verified against OpenCalphad's `matsmin.F90`/
+    `map_calcnode`) and solves for the exact boundary composition —
+    the numerical basis for `MapTracer`.
   - Validated against the V–Zr TDB (`data/VZR-re2.TDB`) for BCC_A2
     (vacancy sublattice), HCP_A3, LIQUID, and the ordered V2ZR,
     including converging two-phase equilibria, via pycalphad-referenced
@@ -245,6 +253,23 @@ assessment code is quarantined under `legacy/`.
     J. Cui et al. 2016 (CALPHAD 53): the V2ZR Gibbs-energy curve
     (Fig. 9) and all three Table 2 invariant reactions, each split
     into its adjacent two-phase fields.
+- **Phase-diagram tracing** (`calc/diagram`), Sundman Algorithm B:
+  - `StepTracer` (step branch): walks one axis, detects stable-phase-set
+    changes, locates crossings by black-box bisection.
+  - `MapTracer` (map branch): walks one axis in fixed increments (C1),
+    solves each boundary crossing exactly via `solveBoundary` (C2), and
+    checks three-phase nodes for genuine invariants via
+    `InvariantExitFinder` (D, combinatorial exit enumeration ported from
+    OpenCalphad's `find_inv_exits`). Currently traces one line per call —
+    the release axis must be a composition axis (no T/P release yet);
+    multi-line auto-discovery of a full diagram is not yet implemented.
+  - `CoarseDiagramTracer`: samples a binary/ternary T-x grid via
+    `GridMinimizer` only (no Newton solve per point) and reports the
+    stable phase set at each point, for scatter/dot rendering — distinct
+    from `StepTracer`/`MapTracer`'s precise line-following.
+  - Both `calculateStep` and `calculateMap` on `CalculationSession` are
+    implemented and wired into the GUI (Coarse Diagram tab; STEP/MAP
+    activities use the shared `PhaseDiagramConfigPanel`).
 - **`ThermodynamicSystem` / `CalculationSession`**: a build-once/reuse
   coordinator — parses a TDB and builds phase models once, then serves
   repeated calculations and database/element/phase browsing. All three
@@ -252,14 +277,11 @@ assessment code is quarantined under `legacy/`.
   results for the same scenario.
 - **REST/JSON API** (`src/ui/api`, `com.sun.net.httpserver` + Gson):
   explicit session lifecycle, per-session locking, `equilibrium` and
-  `phase-diagram` endpoints (`step`/`map` return 501). Launch via
-  `ui.api.ApiMain [port]`.
+  `phase-diagram` endpoints (`step`/`map` return 501 — not yet updated
+  for the new tracers). Launch via `ui.api.ApiMain [port]`.
 - A standalone RK (Redlich-Kister) model and a standalone CVM model
   (binary systems, parsed from Mathematica `.nb` output), implemented
   but not yet wired into the TDB → equilibrium pipeline.
-- A binary phase-diagram tracer (`calc/diagram`): ZPF line following,
-  phase-boundary bisection, invariant-reaction handling, wired to the
-  CLI/use-case layer.
 - A legacy Levenberg-Marquardt assessment pathway (`legacy/calbince`),
   used by the `opt`/`cal` CLI commands, kept separate from the new code.
 
@@ -269,12 +291,16 @@ assessment code is quarantined under `legacy/`.
   (`minimum_df=1e-4`, `COMP_DIFFERENCE_TOL=1e-4`, `MIN_PHASE_FRACTION=1e-6`)
   are engineering defaults borrowed from pycalphad, not derived from
   Sundman's paper (which gives no numbers).
-- Multiphase convergence is validated on the V–Zr binary only (all
-  pairwise combinations of V2ZR/BCC_A2/HCP_A3/LIQUID), including
-  phase-set changes. Ternary+ systems and larger phase counts are
-  untested.
-- `calculateStep`/`calculateMap` on `CalculationSession` are
-  unimplemented stubs — no plain property-sampling engine yet.
+- Multiphase convergence is validated on the V–Zr binary and a handful
+  of other binaries/quaternaries only. A known, unfixed gap remains:
+  two stable slots can converge to near-identical compositions
+  *during* Newton iteration (not just at `GridMinimizer` init) and
+  intermittently cause a singular global matrix — most visible on
+  quaternary systems and near-symmetric compositions.
+- `MapTracer` traces one line per call and requires the release axis
+  to be a composition axis (no T/P release — `PhaseMatrixAssembler`
+  has no `dG/dT`/`dG/dP` terms yet); it does not yet auto-discover and
+  stitch together every line/invariant a full diagram needs.
 - Two-state/Einstein and ordering/disordering (B2/L1₂-style)
   contributions are not implemented in `CefGibbs`. `VK` (isothermal
   compressibility) is detected and rejected explicitly rather than
@@ -290,12 +316,12 @@ assessment code is quarantined under `legacy/`.
   the Gradle/JUnit setup `build.gradle` declares. Only one JUnit test
   class exists (`src-test/calc/equil/`). No single command runs
   everything as a pass/fail gate.
-- Phase-diagram tracing has only been exercised for binary systems;
-  the grid-minimizer's convex-hull step is binary-only (ternary+ falls
-  back to a non-hull heuristic).
+- `InvariantExitFinder` (Algorithm D) is written for general component
+  counts but only verified against binary systems; the grid-minimizer's
+  convex-hull step itself is not similarly limited.
 - API/GUI hardening is out of scope: no authentication, TLS, or
-  session expiry on the REST API; the GUI has no phase-diagram or
-  property-scan wiring yet.
+  session expiry on the REST API; the REST API's `step`/`map` endpoints
+  have not been updated to use the new tracers.
 
 ### Long-term intended capabilities
 
