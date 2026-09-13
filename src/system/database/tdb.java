@@ -35,6 +35,24 @@ import util.Print;
 public class tdb {
 
     /**
+     * When {@code false} (the default), the "tdb method is called/ended"
+     * and separator-line diagnostics below are suppressed. A single
+     * calculation typically loads/extracts the database more than once
+     * (once to browse elements, again to build the model), so left
+     * unconditional this printed several lines of noise per call with
+     * nothing to do with the calculation result itself.
+     */
+    private static boolean verbose = false;
+
+    public static void setVerbose(boolean v) {
+        verbose = v;
+    }
+
+    private static void log(String message) {
+        if (verbose) System.out.println(message);
+    }
+
+    /**
      * Returns the names of all elements in the database.
      */
     public ArrayList<String> getElementNames() {
@@ -70,7 +88,7 @@ public class tdb {
 
     public tdb(String tdbFileName) throws FileNotFoundException, IOException {//Constructor for initiating datbase structure and filled with tdbFileName file
         printSepLine();
-        System.out.println("tdb method is called with: " + tdbFileName);
+        log("tdb method is called with: " + tdbFileName);
         this.tdbFileName = tdbFileName;
         this.elementList = new ArrayList<>();
         this.speciesList = new ArrayList<>();
@@ -119,7 +137,7 @@ public class tdb {
 //                }
 //            }
 //        }
-        System.out.println("tdb method is ended");
+        log("tdb method is ended");
         printSepLine();
     }
 
@@ -900,7 +918,21 @@ public class tdb {
             String[] temp = keywordString2[i + 1].trim().split(",");
             ArrayList<String> arrayList = new ArrayList<>();
             for (String temp1 : temp) {//trim % after element name, if present
-                arrayList.add(temp1.split("%")[0]);
+                /*
+                 * A multi-line CONST/CONSTITUENT statement is rejoined
+                 * across physical lines with an inserted space (see
+                 * readFile()'s "temp = temp + endmarkSpace + str"), so a
+                 * constituent name immediately after a mid-list line break
+                 * (e.g. "...,TA,\n TI,...") arrives here as " TI", not
+                 * "TI". Without trimming, that leading space made the name
+                 * never match any exact-string element/constituent lookup
+                 * elsewhere (isPresent(), equals()), silently dropping the
+                 * constituent from every phase whose CONST line happened
+                 * to wrap right before it -- with no warning, until a
+                 * calculation naming that element crashed downstream from
+                 * an unexpectedly narrowed degrees-of-freedom count.
+                 */
+                arrayList.add(temp1.trim().split("%")[0]);
             }
             constituentList.add(arrayList);
             //Print.f("consList[i]:", consList[i], 0);
@@ -1577,7 +1609,7 @@ public class tdb {
     }
 
     void printSepLine() {
-        System.out.println("----------------------------------------------------");
+        log("----------------------------------------------------");
     }
 
     /*

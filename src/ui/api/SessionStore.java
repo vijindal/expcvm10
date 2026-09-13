@@ -1,6 +1,8 @@
 package ui.api;
 
 import session.CalculationSession;
+import session.calctype.ModelSelection;
+import ui.layer.ModelBrowseService;
 
 import java.util.Map;
 import java.util.UUID;
@@ -21,7 +23,18 @@ public final class SessionStore {
     /** Pairs a session with the lock requests against it must hold. */
     public static final class Entry {
         public final CalculationSession session = new CalculationSession();
+        public final ModelBrowseService browse = new ModelBrowseService(session);
         public final Object lock = new Object();
+
+        /**
+         * The {@link ModelSelection} last passed to {@code PUT .../model},
+         * so a later {@code POST .../calculations/{kind}} can call {@link
+         * session.calctype.CalculationCatalog#runCalculating} without the
+         * caller resending tdb/elements/phases on every calculation
+         * request. {@code null} until the model endpoint has been called
+         * at least once.
+         */
+        public volatile ModelSelection modelSelection;
     }
 
     private final Map<String, Entry> sessions = new ConcurrentHashMap<>();

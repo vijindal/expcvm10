@@ -1,10 +1,14 @@
 package ui.api;
 
+import ui.api.dto.ElementsRequest;
+import ui.api.dto.ElementsResponse;
 import ui.api.dto.EquilibriumRequest;
 import ui.api.dto.EquilibriumResponse;
 import ui.api.dto.ErrorResponse;
 import ui.api.dto.PhaseDiagramRequest;
 import ui.api.dto.PhaseDiagramResponse;
+import ui.api.dto.PhasesRequest;
+import ui.api.dto.PhasesResponse;
 import ui.api.dto.SetModelRequest;
 import calc.diagram.AxisConfig;
 import calc.diagram.PhaseDiagram;
@@ -12,6 +16,12 @@ import com.google.gson.Gson;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
+import session.calctype.CalculationCatalog;
+import session.calctype.CalculationKind;
+import session.calctype.CalculationOutcome;
+import session.calctype.ModelSelection;
+import session.calctype.types.EquilibriumCalculationType;
+import session.calctype.types.PhaseDiagramCalculationType;
 import system.ports.EquilibriumResult;
 
 import java.io.IOException;
@@ -38,12 +48,35 @@ import java.util.regex.Pattern;
  * <pre>
  *   POST   /sessions                                   -> { "sessionId": "..." }
  *   PUT    /sessions/{id}/model                         -> 204
+ *   POST   /sessions/{id}/elements                      -> 200 ElementsResponse
+ *   POST   /sessions/{id}/phases                        -> 200 PhasesResponse
  *   POST   /sessions/{id}/calculations/equilibrium      -> 200 EquilibriumResponse
  *   POST   /sessions/{id}/calculations/phase-diagram    -> 200 PhaseDiagramResponse
+ *   POST   /sessions/{id}/calculations/assessment       -> 501 (opt -- not implemented yet)
  *   POST   /sessions/{id}/calculations/step             -> 501
  *   POST   /sessions/{id}/calculations/map              -> 501
  *   DELETE /sessions/{id}                                -> 204
  * </pre>
+ *
+ * <p>Every {@code /calculations/{kind}} request is routed through {@link
+ * session.calctype.CalculationCatalog}, never {@link
+ * session.CalculationSession#calculateEquilibrium}/{@code calculatePhaseDiagram}
+ * directly: {@code equilibrium}/{@code phase-diagram} call {@link
+ * session.calctype.CalculationCatalog#runCalculating} using the {@link
+ * session.calctype.ModelSelection} recorded by the most recent {@code PUT
+ * .../model} call (409 if none has been made yet); {@code assessment} calls
+ * {@link session.calctype.CalculationCatalog#runAssessing}, which never
+ * touches the session at all. The {@code cal}/{@code opt} group choice is
+ * therefore not a separate landing request -- each calculation kind already
+ * names its own group in the URL.
+ *
+ * <p>{@code /elements} and {@code /phases} are the browsing counterpart to
+ * {@code /model}: routed through {@link ui.layer.ModelBrowseService}, the
+ * same shared bridge to {@link session.CalculationSession#availableElements}/
+ * {@link session.CalculationSession#availablePhasesFor} the GUI and CLI
+ * use, so element/phase discovery (and its pseudo-element filtering)
+ * behaves identically across all three UIs rather than being
+ * reimplemented per UI.
  */
 public final class CalculationApiServer {
 
@@ -51,6 +84,10 @@ public final class CalculationApiServer {
 
     private static final Pattern SESSION_MODEL_PATH =
             Pattern.compile("^/sessions/([^/]+)/model$");
+    private static final Pattern SESSION_ELEMENTS_PATH =
+            Pattern.compile("^/sessions/([^/]+)/elements$");
+    private static final Pattern SESSION_PHASES_PATH =
+            Pattern.compile("^/sessions/([^/]+)/phases$");
     private static final Pattern SESSION_CALC_PATH =
             Pattern.compile("^/sessions/([^/]+)/calculations/([a-z-]+)$");
     private static final Pattern SESSION_PATH =
@@ -102,6 +139,18 @@ public final class CalculationApiServer {
             return;
         }
 
+        Matcher elementsMatch = SESSION_ELEMENTS_PATH.matcher(path);
+        if ("POST".equals(method) && elementsMatch.matches()) {
+            listElements(exchange, elementsMatch.group(1));
+            return;
+        }
+
+        Matcher phasesMatch = SESSION_PHASES_PATH.matcher(path);
+        if ("POST".equals(method) && phasesMatch.matches()) {
+            listPhases(exchange, phasesMatch.group(1));
+            return;
+        }
+
         Matcher calcMatch = SESSION_CALC_PATH.matcher(path);
         if ("POST".equals(method) && calcMatch.matches()) {
             runCalculation(exchange, calcMatch.group(1), calcMatch.group(2));
@@ -143,10 +192,49 @@ public final class CalculationApiServer {
         synchronized (entry.lock) {
             try {
                 entry.session.setModel(req.tdbFilePath, req.elements, req.phases);
+                entry.modelSelection = new ModelSelection(req.tdbFilePath, req.elements, req.phases);
                 exchange.sendResponseHeaders(204, -1);
                 exchange.getResponseBody().close();
             } catch (IOException e) {
                 sendJson(exchange, 400, new ErrorResponse("Could not load model: " + e.getMessage()));
+            }
+        }
+    }
+
+    private void listElements(HttpExchange exchange, String sessionId) throws IOException {
+        SessionStore.Entry entry = sessions.get(sessionId);
+        if (entry == null) {
+            sendJson(exchange, 404, new ErrorResponse("No such session: " + sessionId));
+            return;
+        }
+
+        ElementsRequest req = readJson(exchange, ElementsRequest.class);
+
+        synchronized (entry.lock) {
+            try {
+                List<String> elements = entry.browse.selectableElements(req.tdbFilePath);
+                sendJson(exchange, 200, new ElementsResponse(elements));
+            } catch (IOException e) {
+                sendJson(exchange, 400, new ErrorResponse("Could not read elements: " + e.getMessage()));
+            }
+        }
+    }
+
+    private void listPhases(HttpExchange exchange, String sessionId) throws IOException {
+        SessionStore.Entry entry = sessions.get(sessionId);
+        if (entry == null) {
+            sendJson(exchange, 404, new ErrorResponse("No such session: " + sessionId));
+            return;
+        }
+
+        PhasesRequest req = readJson(exchange, PhasesRequest.class);
+
+        synchronized (entry.lock) {
+            try {
+                List<String> phases = entry.browse.selectablePhases(req.tdbFilePath, req.elements);
+                sendJson(exchange, 200, new PhasesResponse(phases));
+            } catch (IOException e) {
+                sendJson(exchange, 400, new ErrorResponse("Could not read phases: " + e.getMessage()));
             }
         }
     }
@@ -168,6 +256,9 @@ public final class CalculationApiServer {
                     case "phase-diagram":
                         runPhaseDiagram(exchange, entry);
                         break;
+                    case "assessment":
+                        runAssessment(exchange);
+                        break;
                     case "step":
                     case "map":
                         sendJson(exchange, 501,
@@ -180,18 +271,30 @@ public final class CalculationApiServer {
                 sendJson(exchange, 409, new ErrorResponse(e.getMessage()));
             } catch (UnsupportedOperationException e) {
                 sendJson(exchange, 501, new ErrorResponse(e.getMessage()));
+            } catch (IllegalArgumentException e) {
+                sendJson(exchange, 400, new ErrorResponse(e.getMessage()));
             }
         }
     }
 
     private void runEquilibrium(HttpExchange exchange, SessionStore.Entry entry) throws IOException {
+        if (entry.modelSelection == null) {
+            sendJson(exchange, 409, new ErrorResponse("No model set -- PUT .../model first"));
+            return;
+        }
         EquilibriumRequest req = readJson(exchange, EquilibriumRequest.class);
-        entry.session.calculateEquilibrium(req.T, req.P, req.composition);
-        EquilibriumResult result = entry.session.currentEquilibriumResult();
+        EquilibriumCalculationType.Params params =
+                new EquilibriumCalculationType.Params(req.T, req.P, req.composition);
+        EquilibriumResult result = CalculationCatalog.runCalculating(
+                entry.session, CalculationKind.EQUILIBRIUM, entry.modelSelection, params);
         sendJson(exchange, 200, new EquilibriumResponse(result));
     }
 
     private void runPhaseDiagram(HttpExchange exchange, SessionStore.Entry entry) throws IOException {
+        if (entry.modelSelection == null) {
+            sendJson(exchange, 409, new ErrorResponse("No model set -- PUT .../model first"));
+            return;
+        }
         PhaseDiagramRequest req = readJson(exchange, PhaseDiagramRequest.class);
 
         AxisConfig[] axes = new AxisConfig[req.axes.size()];
@@ -200,9 +303,24 @@ public final class CalculationApiServer {
             axes[i] = toAxisConfig(spec);
         }
 
-        entry.session.calculatePhaseDiagram(axes, req.startAxes, req.fixedT, req.fixedP, req.composition);
-        PhaseDiagram diagram = entry.session.currentPhaseDiagram();
+        PhaseDiagramCalculationType.Params params = new PhaseDiagramCalculationType.Params(
+                axes, req.startAxes, req.fixedT, req.fixedP, req.composition);
+        PhaseDiagram diagram = CalculationCatalog.runCalculating(
+                entry.session, CalculationKind.PHASE_DIAGRAM, entry.modelSelection, params);
         sendJson(exchange, 200, new PhaseDiagramResponse(diagram));
+    }
+
+    /**
+     * {@link session.calctype.CalculationGroup#ASSESS} ("opt") -- not
+     * implemented yet. Never touches {@code entry.session}: {@link
+     * CalculationCatalog#runAssessing} dispatches to an {@link
+     * session.calctype.AssessingType}, which structurally has no {@code
+     * CalculationSession} parameter to reach.
+     */
+    private void runAssessment(HttpExchange exchange) throws IOException {
+        CalculationOutcome.NotImplemented<Void> outcome =
+                CalculationCatalog.runAssessing(CalculationKind.ASSESSMENT, null);
+        sendJson(exchange, 501, new ErrorResponse(outcome.message()));
     }
 
     private AxisConfig toAxisConfig(PhaseDiagramRequest.AxisSpec spec) {

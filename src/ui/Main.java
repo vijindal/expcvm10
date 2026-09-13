@@ -42,7 +42,10 @@ public class Main {
             gui.launch(guiArgs);
         } else {
             CliApp cli = new CliApp(optimizationUseCase);
-            cli.run(args);
+            int exitCode = cli.run(args);
+            if (exitCode != 0) {
+                System.exit(exitCode);
+            }
         }
     }
 }

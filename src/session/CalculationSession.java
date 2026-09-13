@@ -60,6 +60,16 @@ import java.util.List;
  * {@code docs/plan-gui-calculationsession-wiring.md}).
  *
  * <p>Not thread-safe; one session is intended for one sequential caller.
+ *
+ * <p>As of {@code session.calctype}, UI code (CLI/GUI/API) must not call
+ * these methods directly -- go through {@link
+ * session.calctype.CalculationCatalog} instead, which also enforces that
+ * TDB parsing only ever happens for {@link
+ * session.calctype.CalculationGroup#CALCULATE} calculations. This class's
+ * methods remain public only because {@code session.calctype}
+ * implementations and {@link ui.layer.ModelBrowseService} (which still
+ * calls {@link #availableElements}/{@link #availablePhasesFor}/{@link
+ * #setModel} directly for the pre-calculation browse flow) need them.
  */
 public final class CalculationSession {
 

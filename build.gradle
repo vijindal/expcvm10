@@ -46,6 +46,7 @@ tasks.named('test', Test) {
 
 tasks.named('run') {
     workingDir = project.projectDir
+    standardInput = System.in
 }
 
 tasks.register('fatJar', Jar) {

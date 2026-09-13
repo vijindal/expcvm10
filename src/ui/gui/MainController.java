@@ -3,11 +3,19 @@ package ui.gui;
 import ui.result.CalculationResult;
 import ui.result.ModelInfo;
 import ui.layer.OptimizationUseCase;
+import ui.layer.ModelBrowseService;
 import ui.request.PropertyScanRequest;
 import ui.result.PropertyScanResult;
 import ui.request.PhaseDiagramRequest;
 import ui.result.PhaseDiagramResult;
 import session.CalculationSession;
+import session.calctype.CalculationCatalog;
+import session.calctype.CalculationKind;
+import session.calctype.CalculationOutcome;
+import session.calctype.ModelSelection;
+import session.calctype.types.CoarseBinaryCalculationType;
+import session.calctype.types.CoarseTernaryCalculationType;
+import session.calctype.types.EquilibriumCalculationType;
 import util.AppLevel;
 import util.Trace;
 
@@ -23,19 +31,25 @@ import java.util.logging.Logger;
  *
  * <p>Per the target data flow (README "Structure" / {@code
  * docs/dataflow_target.png}), the GUI's only point of contact with the
- * System and Calculation layers is {@link CalculationSession}: browsing
- * (pre-calculation) and calculating both go through the one session this
- * controller holds. Paths that still reached around it -- phase diagram
- * via {@code PhaseDiagramUseCase}, property scan, the parameter-dump
- * inspector via {@code ModelInspectionService} -- have been reduced to
- * explicit "not yet wired through CalculationSession" stubs rather than
- * left bypassing the coordinator. See the TODO markers below.
+ * System and Calculation layers is {@link session.calctype.CalculationCatalog}:
+ * browsing (pre-calculation) still goes directly through the held {@link
+ * CalculationSession} (via {@link ModelBrowseService}, unchanged), but every
+ * calculation builds a {@link session.calctype.ModelSelection} and a
+ * calculation type's own typed params, then calls {@link
+ * CalculationCatalog#runCalculating}/{@link CalculationCatalog#runAssessing}
+ * rather than {@code calculationSession.calculate*}/{@code setModel}
+ * directly. Paths that still reached around it -- phase diagram via
+ * {@code PhaseDiagramUseCase}, property scan, the parameter-dump inspector
+ * via {@code ModelInspectionService} -- have been reduced to explicit
+ * "not yet wired through CalculationSession" stubs rather than left
+ * bypassing the coordinator. See the TODO markers below.
  */
 public class MainController {
 
     private static final Logger LOG = Logger.getLogger(MainController.class.getName());
     private final OptimizationUseCase optimizationUseCase;
     private final CalculationSession calculationSession = new CalculationSession();
+    private final ModelBrowseService modelBrowseService = new ModelBrowseService(calculationSession);
 
     public MainController(OptimizationUseCase optimizationUseCase) {
         this.optimizationUseCase = optimizationUseCase;
@@ -61,10 +75,12 @@ public class MainController {
             List<String> phaseList = Arrays.asList(phases);
             double[] compOverAll = extractComposition(compositions, elementList.size());
 
-            calculationSession.setModel(tdbPath, elementList, phaseList);
-            calculationSession.calculateEquilibrium(T, P, compOverAll);
+            ModelSelection model = new ModelSelection(tdbPath, elementList, phaseList);
+            EquilibriumCalculationType.Params params =
+                    new EquilibriumCalculationType.Params(T, P, compOverAll);
+            system.ports.EquilibriumResult r = CalculationCatalog.runCalculating(
+                    calculationSession, CalculationKind.EQUILIBRIUM, model, params);
 
-            system.ports.EquilibriumResult r = calculationSession.currentEquilibriumResult();
             Trace.exit(LOG, AppLevel.FLOW, "MainController", "runSinglePoint");
             return r;
         } catch (Exception e) {
@@ -131,25 +147,29 @@ public class MainController {
     public ui.result.CoarseDiagramResult runCoarseDiagram(PhaseDiagramRequest request) {
         Trace.enter(LOG, AppLevel.FLOW, "MainController", "runCoarseDiagram");
         try {
-            calculationSession.setModel(request.getTdbFilePath(), request.getElements(),
-                    request.getPhases());
+            ModelSelection model = new ModelSelection(request.getTdbFilePath(),
+                    request.getElements(), request.getPhases());
 
             List<calc.diagram.AxisConfig> axes = request.getAxes();
             calc.diagram.AxisConfig axisX = axes.get(0);
             calc.diagram.AxisConfig axisY = axes.get(1);
             double[] comp = request.getStartComposition();
 
+            ui.result.CoarseDiagramResult r;
             if (request.isTernary()) {
-                calculationSession.calculateCoarseTernaryDiagram(axisX, axisY,
-                        request.getFixedT(), request.getFixedP(), comp,
+                CoarseTernaryCalculationType.Params params = new CoarseTernaryCalculationType.Params(
+                        axisX, axisY, request.getFixedT(), request.getFixedP(), comp,
                         request.getProgressCallback());
+                r = CalculationCatalog.runCalculating(
+                        calculationSession, CalculationKind.COARSE_TERNARY, model, params);
             } else {
-                calculationSession.calculateCoarseBinaryDiagram(axisX, axisY,
-                        request.getFixedT(), request.getFixedP(), comp,
+                CoarseBinaryCalculationType.Params params = new CoarseBinaryCalculationType.Params(
+                        axisX, axisY, request.getFixedT(), request.getFixedP(), comp,
                         request.getProgressCallback());
+                r = CalculationCatalog.runCalculating(
+                        calculationSession, CalculationKind.COARSE_BINARY, model, params);
             }
 
-            ui.result.CoarseDiagramResult r = calculationSession.currentCoarseDiagramResult();
             Trace.exit(LOG, AppLevel.FLOW, "MainController", "runCoarseDiagram");
             return r;
         } catch (Exception e) {
@@ -191,6 +211,24 @@ public class MainController {
     }
 
     /**
+     * The {@link session.calctype.CalculationGroup#ASSESS} ("opt") landing
+     * choice: thermodynamic assessment / database creation. Not implemented
+     * yet -- routed through {@link CalculationCatalog#runAssessing} so the
+     * GUI surfaces the same message the CLI and API do, rather than its own
+     * ad hoc stub text.
+     */
+    public CalculationResult runAssessment() {
+        Trace.enter(LOG, AppLevel.FLOW, "MainController", "runAssessment");
+        CalculationOutcome.NotImplemented<Void> outcome =
+                CalculationCatalog.runAssessing(CalculationKind.ASSESSMENT, null);
+        CalculationResult result = new CalculationResult();
+        result.setSuccess(false);
+        result.setMessage(outcome.message());
+        Trace.exit(LOG, AppLevel.FLOW, "MainController", "runAssessment");
+        return result;
+    }
+
+    /**
      * Lists the {@code .tdb} database files available to choose from.
      * Routed through {@link CalculationSession#availableDatabases}, per
      * {@code docs/plan-gui-calculationsession-wiring.md} Fix 3 -- the GUI
@@ -229,10 +267,10 @@ public class MainController {
         }
 
         try {
-            info.setAvailableElements(calculationSession.availableElements(tdbPath));
+            info.setAvailableElements(modelBrowseService.selectableElements(tdbPath));
             if (elements != null && elements.length > 0) {
                 info.setAvailablePhases(
-                        calculationSession.availablePhasesFor(tdbPath, Arrays.asList(elements)));
+                        modelBrowseService.selectablePhases(tdbPath, Arrays.asList(elements)));
             }
             Trace.exit(LOG, AppLevel.FLOW, "MainController", "inspectModel");
             return info;
@@ -245,13 +283,13 @@ public class MainController {
     }
 
     /**
-     * Routed through {@link CalculationSession#availablePhasesFor} -- see
+     * Routed through {@link ModelBrowseService#selectablePhases} -- see
      * {@link #inspectModel} for why.
      */
     public List<String> getPhasesForElements(String tdbPath, List<String> elements) {
         Trace.enter(LOG, AppLevel.FLOW, "MainController", "getPhasesForElements");
         try {
-            List<String> phases = calculationSession.availablePhasesFor(tdbPath, elements);
+            List<String> phases = modelBrowseService.selectablePhases(tdbPath, elements);
             Trace.exit(LOG, AppLevel.FLOW, "MainController", "getPhasesForElements");
             return phases;
         } catch (Exception e) {

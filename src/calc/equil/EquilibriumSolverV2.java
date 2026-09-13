@@ -32,6 +32,33 @@ import util.SingularValueDecomposition;
  */
 public class EquilibriumSolverV2 {
 
+    /**
+     * When {@code false} (the default), the per-iteration diagnostic trace
+     * below (Sundman-equation matrices, lambda/DeltaY/DeltaOmega vectors,
+     * convergence-check breakdowns) is suppressed; only genuine callers
+     * that want to inspect the solve step-by-step should enable it via
+     * {@link #setVerbose}. Off by default so callers like the CLI aren't
+     * forced to scroll past ~100 lines of solver internals to find the
+     * actual result.
+     */
+    private boolean verbose = false;
+
+    public void setVerbose(boolean verbose) {
+        this.verbose = verbose;
+    }
+
+    private void log(String message) {
+        if (verbose) System.out.println(message);
+    }
+
+    private void log() {
+        if (verbose) System.out.println();
+    }
+
+    private void logf(String format, Object... args) {
+        if (verbose) System.out.printf(format, args);
+    }
+
     // ================================================================
     // Solver state
     // ================================================================
@@ -519,8 +546,8 @@ public class EquilibriumSolverV2 {
             // rather than by tuning a damping factor.
             // ========================================================
 
-            System.out.println();
-            System.out.println(
+            log();
+            log(
                     "=== Sundman iteration " + iteration + " ===");
 
             for (int k = 0;
@@ -530,12 +557,12 @@ public class EquilibriumSolverV2 {
                 PhaseWork w =
                         stableSlots.get(k);
 
-                System.out.println(
+                log(
                         "Phase " + k
                         + " (" + w.model.phaseName() + ")"
                         + " omega = " + phaseAmounts[k]);
 
-                System.out.println(
+                log(
                         "  G = " + w.G);
 
                 double maxAbsCG =
@@ -548,16 +575,16 @@ public class EquilibriumSolverV2 {
                                     Math.abs(v));
                 }
 
-                System.out.println(
+                log(
                         "  max|cG| = " + maxAbsCG);
             }
 
-            System.out.println("lambda:");
-            System.out.println(
+            log("lambda:");
+            log(
                     "  " + Arrays.toString(newLambda));
 
-            System.out.println("DeltaOmega:");
-            System.out.println(
+            log("DeltaOmega:");
+            log(
                     "  " + Arrays.toString(deltaPhaseAmounts));
 
             for (int k = 0;
@@ -567,10 +594,10 @@ public class EquilibriumSolverV2 {
                 PhaseWork w =
                         stableSlots.get(k);
 
-                System.out.println(
+                log(
                         "DeltaY (phase "
                         + w.model.phaseName() + "):");
-                System.out.println(
+                log(
                         "  " + Arrays.toString(
                                 deltaPhaseInternalVars[k]));
             }
@@ -594,7 +621,7 @@ public class EquilibriumSolverV2 {
                             * w.mA[A];
                 }
 
-                System.out.println(
+                log(
                         "Mass residual A=" + A
                         + " : "
                         + (targetAmounts[A] - represented));
@@ -2526,10 +2553,10 @@ public class EquilibriumSolverV2 {
                     "phaseWorks is null.");
         }
 
-        System.out.println();
-        System.out.println(
+        log();
+        log(
                 "Phase-indexed state");
-        System.out.println(
+        log(
                 "------------------");
 
         for (int p = 0;
@@ -2557,28 +2584,28 @@ public class EquilibriumSolverV2 {
                 totalM += value;
             }
 
-            System.out.printf(
+            logf(
                     "phase %d: %s%n",
                     p,
                     phaseModels.get(p).phaseName());
 
-            System.out.printf(
+            logf(
                     "  G      = %.15f%n",
                     work.G);
 
-            System.out.printf(
+            logf(
                     "  M      = %s%n",
                     Arrays.toString(work.mA));
 
-            System.out.printf(
+            logf(
                     "  sum(M) = %.15f%n",
                     totalM);
 
-            System.out.printf(
+            logf(
                     "  Y      = %s%n",
                     Arrays.toString(work.y));
 
-            System.out.printf(
+            logf(
                     "  cG norm = %.15e%n",
                     vectorNorm(work.equilData.cG));
 
@@ -2591,7 +2618,7 @@ public class EquilibriumSolverV2 {
             }
         }
 
-        System.out.println(
+        log(
                 "Phase-indexed state validation: PASS");
     }
 
@@ -2801,21 +2828,21 @@ public class EquilibriumSolverV2 {
          * Diagnostics
          * ------------------------------------------------------------
          */
-        System.out.println();
-        System.out.println(
+        log();
+        log(
                 "Multiphase Sundman equilibrium matrix");
-        System.out.println(
+        log(
                 "--------------------------------------");
 
-        System.out.println(
+        log(
                 "Number of stable phases = "
                 + np);
 
-        System.out.println(
+        log(
                 "Number of components    = "
                 + nc);
 
-        System.out.println(
+        log(
                 "Matrix size             = "
                 + n + " x " + n);
 
@@ -2823,7 +2850,7 @@ public class EquilibriumSolverV2 {
              i < n;
              i++) {
 
-            System.out.printf(
+            logf(
                     "row %d : ",
                     i);
 
@@ -2831,12 +2858,12 @@ public class EquilibriumSolverV2 {
                  j < n;
                  j++) {
 
-                System.out.printf(
+                logf(
                         "% .12e ",
                         A[i][j]);
             }
 
-            System.out.printf(
+            logf(
                     " | % .12e%n",
                     b[i]);
         }
@@ -2857,17 +2884,17 @@ public class EquilibriumSolverV2 {
                     "Equilibrium matrix has not been built.");
         }
 
-        System.out.println();
-        System.out.println(
+        log();
+        log(
                 "Sundman equilibrium matrix");
-        System.out.println(
+        log(
                 "--------------------------");
 
         for (int i = 0;
              i < equilibriumMatrix.length;
              i++) {
 
-            System.out.printf(
+            logf(
                     "row %d : ",
                     i);
 
@@ -2875,12 +2902,12 @@ public class EquilibriumSolverV2 {
                  j < equilibriumMatrix[i].length;
                  j++) {
 
-                System.out.printf(
+                logf(
                         "% .12e ",
                         equilibriumMatrix[i][j]);
             }
 
-            System.out.printf(
+            logf(
                     " | % .12e%n",
                     equilibriumRhs[i]);
         }
@@ -3124,30 +3151,30 @@ public class EquilibriumSolverV2 {
         // 7. Diagnostics
         // ------------------------------------------------------------
 
-        System.out.println();
-        System.out.println(
+        log();
+        log(
                 "Global Sundman solution");
-        System.out.println(
+        log(
                 "-----------------------");
 
-        System.out.println(
+        log(
                 "newLambda = "
                 + Arrays.toString(newLambda));
 
-        System.out.println(
+        log(
                 "DeltaOmega = "
                 + Arrays.toString(deltaPhaseAmounts));
 
-        System.out.println(
+        log(
                 "Solution = "
                 + Arrays.toString(equilibriumUnknowns));
 
-        System.out.printf(
+        logf(
                 "Linear-system residual = %.15e%n",
                 residual);
 
-        System.out.println();
-        System.out.println(
+        log();
+        log(
                 "Phase amount corrections");
 
         for (int k = 0;
@@ -3160,7 +3187,7 @@ public class EquilibriumSolverV2 {
             PhaseWork work =
                     stableSlots.get(k);
 
-            System.out.printf(
+            logf(
                     "  phase %d (%s): DeltaOmega = %.15e%n",
                     phaseIndex,
                     work.model.phaseName(),
@@ -3280,10 +3307,10 @@ public class EquilibriumSolverV2 {
         deltaPhaseInternalVars =
                 new double[np][];
 
-        System.out.println();
-        System.out.println(
+        log();
+        log(
                 "Multiphase internal-variable corrections");
-        System.out.println(
+        log(
                 "---------------------------------------");
 
         for (int k = 0;
@@ -3382,41 +3409,41 @@ public class EquilibriumSolverV2 {
                     work.model.isValid(
                             predictedY);
 
-            System.out.println();
-            System.out.println(
+            log();
+            log(
                     "Stable phase slot = "
                             + k);
 
-            System.out.println(
+            log(
                     "Candidate phase   = "
                             + phaseIndex);
 
-            System.out.println(
+            log(
                     "Phase             = "
                             + work.model.phaseName());
 
-            System.out.println(
+            log(
                     "newLambda         = "
                             + Arrays.toString(newLambda));
 
-            System.out.println(
+            log(
                     "cG                = "
                             + Arrays.toString(
                                     work.equilData.cG));
 
-            System.out.println(
+            log(
                     "DeltaY            = "
                             + Arrays.toString(deltaY));
 
-            System.out.printf(
+            logf(
                     "||DeltaY||        = %.15e%n",
                     norm);
 
-            System.out.println(
+            log(
                     "Predicted Y       = "
                             + Arrays.toString(predictedY));
 
-            System.out.println(
+            log(
                     "Predicted Y physically valid = "
                             + physicallyValid);
         }
@@ -3966,13 +3993,13 @@ public class EquilibriumSolverV2 {
         // 4. Diagnostics
         // ================================================================
 
-        System.out.println();
-        System.out.println(
+        log();
+        log(
                 "Accepted multiphase state update");
-        System.out.println(
+        log(
                 "---------------------------------");
 
-        System.out.println(
+        log(
                 "mu(new) = "
                 + Arrays.toString(mu));
 
@@ -3983,25 +4010,25 @@ public class EquilibriumSolverV2 {
             PhaseWork work =
                     stableSlots.get(k);
 
-            System.out.printf(
+            logf(
                     "phase slot %d (%s)%n",
                     k,
                     work.model.phaseName());
 
-            System.out.printf(
+            logf(
                     "  DeltaOmega      = %.15e%n",
                     deltaPhaseAmounts[k]);
 
-            System.out.printf(
+            logf(
                     "  omega(new)      = %.15e%n",
                     phaseAmounts[k]);
 
-            System.out.printf(
+            logf(
                     "  ||DeltaY||      = %.15e%n",
                     vectorNorm(
                             deltaPhaseInternalVars[k]));
 
-            System.out.println(
+            log(
                     "  Y(new)          = "
                     + Arrays.toString(work.y));
         }
@@ -4128,7 +4155,7 @@ public class EquilibriumSolverV2 {
                             maximum,
                             Math.abs(dN));
 
-            System.out.printf(
+            logf(
                     "First-order DeltaN[%d] = %.15e%n",
                     A,
                     dN);
@@ -4395,7 +4422,7 @@ public class EquilibriumSolverV2 {
          * the iteration. checkConvergence() is the genuine convergence
          * gate, so this is diagnostic only.
          */
-        System.out.printf(
+        logf(
                 "nonlinear target mass residual = %.6e%n",
                 maxTargetMassResidual);
 
@@ -4406,10 +4433,10 @@ public class EquilibriumSolverV2 {
          * this update), via calculateFirstOrderMassResidual().
          * ------------------------------------------------------------
          */
-        System.out.println();
-        System.out.println(
+        log();
+        log(
                 "First-order mass-balance check");
-        System.out.println(
+        log(
                 "-------------------------------");
 
         double maxFirstOrderMassResidual =
@@ -4428,57 +4455,57 @@ public class EquilibriumSolverV2 {
          * Report
          * ------------------------------------------------------------
          */
-        System.out.println();
-        System.out.println(
+        log();
+        log(
                 "Multiphase state validation");
-        System.out.println(
+        log(
                 "---------------------------");
 
-        System.out.println(
+        log(
                 "Previous total amounts = "
                 + Arrays.toString(
                         previousTotalAmounts));
 
-        System.out.println(
+        log(
                 "Current total amounts  = "
                 + Arrays.toString(
                         current.amounts));
 
-        System.out.println(
+        log(
                 "Target amounts         = "
                 + Arrays.toString(
                         targetAmounts));
 
-        System.out.printf(
+        logf(
                 "Previous total G       = %.15f%n",
                 previousG);
 
-        System.out.printf(
+        logf(
                 "Current total G        = %.15f%n",
                 current.totalG);
 
-        System.out.printf(
+        logf(
                 "Delta G                = %.15e%n",
                 current.totalG
                         - previousG);
 
-        System.out.printf(
+        logf(
                 "max exact Delta N_A    = %.6e%n",
                 maxMassChange);
 
-        System.out.printf(
+        logf(
                 "max target mass residual = %.6e%n",
                 maxTargetMassResidual);
 
-        System.out.printf(
+        logf(
                 "max 1st-order Delta N  = %.6e%n",
                 maxFirstOrderMassResidual);
 
-        System.out.printf(
+        logf(
                 "max normalization      = %.6e%n",
                 maxNormalizationResidual);
 
-        System.out.printf(
+        logf(
                 "max phase G relation   = %.6e%n",
                 maxGibbsResidual);
 
@@ -4490,7 +4517,7 @@ public class EquilibriumSolverV2 {
          * phase matrices/global matrix are rebuilt at the new state on
          * the next full iteration.
          */
-        System.out.printf(
+        logf(
                 "nonlinear post-step stationarity = %.6e%n",
                 maxStationarityResidual);
     }
@@ -5319,41 +5346,41 @@ public class EquilibriumSolverV2 {
                         && deltaOmegaConverged
                         && deltaMuConverged;
 
-        System.out.println();
-        System.out.println(
+        log();
+        log(
                 "Convergence check");
-        System.out.println(
+        log(
                 "-----------------");
 
-        System.out.printf(
+        logf(
                 "mass balance      = %.6e%n",
                 maxMassResidual);
 
-        System.out.printf(
+        logf(
                 "phase G relation  = %.6e%n",
                 maxGibbsResidual);
 
-        System.out.printf(
+        logf(
                 "sublattice        = %.6e%n",
                 maxSublatticeResidual);
 
-        System.out.printf(
+        logf(
                 "stationarity      = %.6e%n",
                 maxStationarity);
 
-        System.out.printf(
+        logf(
                 "DeltaY norm       = %.6e%n",
                 maxDeltaY);
 
-        System.out.printf(
+        logf(
                 "DeltaOmega        = %.6e%n",
                 maxDeltaOmega);
 
-        System.out.printf(
+        logf(
                 "DeltaMu           = %.6e%n",
                 maxDeltaMu);
 
-        System.out.println(
+        log(
                 "CONVERGED          = "
                 + converged);
 
