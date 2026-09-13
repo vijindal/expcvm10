@@ -5,21 +5,15 @@ import ui.layer.ValidateModelUseCase;
 import ui.layer.OptimizationUseCase;
 import ui.layer.ModelInspectionService;
 import ui.layer.ModelBrowseService;
+import ui.layer.CompositionUnits;
 import system.database.TdbParser;
 import system.ports.EquilibriumResult;
 import session.CalculationSession;
-import session.calctype.CalculationCatalog;
+import session.calctype.CalculationInterface;
 import session.calctype.CalculationGroup;
 import session.calctype.CalculationKind;
 import session.calctype.CalculationOutcome;
 import session.calctype.ModelSelection;
-import session.calctype.types.CoarseBinaryCalculationType;
-import session.calctype.types.CoarseTernaryCalculationType;
-import session.calctype.types.EquilibriumCalculationType;
-import session.calctype.types.InitialStateCalculationType;
-import session.calctype.types.MapCalculationType;
-import session.calctype.types.PhaseDiagramCalculationType;
-import session.calctype.types.StepCalculationType;
 import calc.diagram.AxisConfig;
 import calc.diagram.AxisConfig.Type;
 import calc.diagram.PhaseDiagram;
@@ -36,14 +30,14 @@ import java.util.logging.Logger;
  *
  * <p>Per the target data flow (README "Structure" / {@code
  * docs/dataflow_target.png}), the CLI's contact with the System and
- * Calculation layers is {@link session.calctype.CalculationCatalog}, never
+ * Calculation layers is {@link session.calctype.CalculationInterface}, never
  * {@link CalculationSession} directly: every calculation command below
  * builds a {@link ModelSelection} and a calculation type's own typed
- * params, then calls {@link CalculationCatalog#runCalculating} -- no
+ * params, then calls {@link CalculationInterface#runCalculating} -- no
  * command calls {@code CalculationSession.setModel}/{@code calculate*}
  * itself, and none reaches into {@code calc.equil}/{@code calc.diagram}'s
  * solver classes directly either. This mirrors the GUI and REST API, which
- * go through the same catalog the same way -- the CLI is a thin
+ * go through the same interface the same way -- the CLI is a thin
  * argument-parsing/printing shell over the Calculation layer's public
  * surface, exposing every {@code CalculationKind} as its own subcommand.
  * {@code opt}/{@code cal} (the menu's top-level group choice) are distinct
@@ -227,11 +221,23 @@ public class CliApp {
 
         if (group == CalculationGroup.ASSESS) {
             CalculationOutcome.NotImplemented<Void> outcome =
-                    CalculationCatalog.runAssessing(CalculationKind.ASSESSMENT, null);
+                    CalculationInterface.runAssessing(CalculationKind.ASSESSMENT, null);
             System.out.println();
             System.out.println(outcome.message());
             return;
         }
+
+        // Browse (tdb -> elements -> phases) once here, before the
+        // calculation-type choice -- every calculation type needs the same
+        // three answers, so ask once and reuse them, rather than each
+        // chosen type's own fromPrompts() re-browsing from scratch.
+        System.out.println();
+        System.out.println("Choose a database, elements, and phases:");
+        Prompter prompter = prompter(cwd);
+        String tdbPath = prompter.tdbPath("VZR-re2.TDB");
+        List<String> elements = prompter.pickElements(tdbPath);
+        List<String> phases = prompter.pickPhases(tdbPath, elements);
+        ModelSelection model = new ModelSelection(tdbPath, elements, phases);
 
         System.out.println();
         System.out.println("Choose a calculation:");
@@ -241,29 +247,23 @@ public class CliApp {
         System.out.println("  4. coarse-binary    2D grid of independent equilibrium samples");
         System.out.println("  5. coarse-ternary   2D grid over two composition axes");
         System.out.println("  6. map              Two-axis ZPF phase-diagram map");
-        System.out.println("  7. inspect          Browse a TDB database (elements / phases)");
         System.out.println("  0. quit");
         System.out.println();
 
-        String choice = prompter(cwd).str("Choice", "1");
+        String choice = prompter.str("Choice", "1");
 
-        String command;
+        System.out.println();
         switch (choice.trim()) {
-            case "1": command = "equilibrium";     break;
-            case "2": command = "initial-state";   break;
-            case "3": command = "step";            break;
-            case "4": command = "coarse-binary";   break;
-            case "5": command = "coarse-ternary";  break;
-            case "6": command = "map";             break;
-            case "7": command = "inspect";         break;
+            case "1": runEquilibriumViaSession(new String[]{"equilibrium", "-i"}, cwd, model); break;
+            case "2": runInitialState(new String[]{"initial-state", "-i"}, cwd, model);         break;
+            case "3": runStep(new String[]{"step", "-i"}, cwd, model);                          break;
+            case "4": runCoarseBinary(new String[]{"coarse-binary", "-i"}, cwd, model);         break;
+            case "5": runCoarseTernary(new String[]{"coarse-ternary", "-i"}, cwd, model);       break;
+            case "6": runMap(new String[]{"map", "-i"}, cwd, model);                            break;
             case "0": return;
             default:
                 System.out.println("Unrecognized choice: " + choice);
-                return;
         }
-
-        System.out.println();
-        dispatch(command, new String[]{command, "-i"}, cwd, null, null, null);
     }
 
     private void printCommandUsage(String command) {
@@ -424,13 +424,13 @@ public class CliApp {
         Arrays.fill(comp, 1.0 / nc);
 
         ModelSelection model = new ModelSelection(tdbPath, elementList, phaseList);
-        PhaseDiagramCalculationType.Params params = new PhaseDiagramCalculationType.Params(
+        CalculationInterface.PhaseDiagramParams params = new CalculationInterface.PhaseDiagramParams(
                 axes.toArray(new AxisConfig[0]), startAxes,
                 /* fixedT */ 1000.0, /* fixedP */ 101325.0, comp);
 
         PhaseDiagram diagram;
         try {
-            diagram = CalculationCatalog.runCalculating(
+            diagram = CalculationInterface.runCalculating(
                     session, CalculationKind.PHASE_DIAGRAM, model, params);
         } catch (IllegalStateException | UnsupportedOperationException | IllegalArgumentException e) {
             System.out.println("Error: " + e.getMessage());
@@ -459,11 +459,24 @@ public class CliApp {
      * </pre>
      */
     private void runEquilibriumViaSession(String[] args, String cwd) throws IOException {
+        runEquilibriumViaSession(args, cwd, null);
+    }
+
+    /**
+     * As {@link #runEquilibriumViaSession(String[], String)}, but if
+     * {@code preSelected} is non-null (the interactive menu already browsed
+     * a model before this calculation type was chosen), skips the
+     * tdb/elements/phases prompts and only asks for T/P/composition.
+     */
+    private void runEquilibriumViaSession(String[] args, String cwd, ModelSelection preSelected)
+            throws IOException {
         boolean interactive = isInteractive(args);
 
-        EquilibriumParams p = interactive
-                ? EquilibriumParams.fromPrompts(prompter(cwd))
-                : EquilibriumParams.fromArgs(args, cwd, this::resolvePath);
+        EquilibriumParams p = preSelected != null
+                ? EquilibriumParams.fromPrompts(prompter(cwd), preSelected)
+                : interactive
+                        ? EquilibriumParams.fromPrompts(prompter(cwd))
+                        : EquilibriumParams.fromArgs(args, cwd, this::resolvePath);
 
         System.out.println("--- Single-Point Equilibrium (via CalculationSession) ---");
         System.out.println("TDB:         " + p.tdbPath);
@@ -475,29 +488,67 @@ public class CliApp {
         System.out.println("--------------------------------------------------------");
 
         ModelSelection model = new ModelSelection(p.tdbPath, p.elements, p.phases);
-        EquilibriumCalculationType.Params params =
-                new EquilibriumCalculationType.Params(p.T, p.P, p.composition);
+        CalculationInterface.EquilibriumParams params =
+                new CalculationInterface.EquilibriumParams(p.T, p.P, p.composition);
 
         EquilibriumResult result;
         try {
-            result = CalculationCatalog.runCalculating(
+            result = CalculationInterface.runCalculating(
                     session, CalculationKind.EQUILIBRIUM, model, params);
         } catch (IllegalStateException | UnsupportedOperationException | IllegalArgumentException e) {
             System.out.println("Error: " + e.getMessage());
             return;
         }
 
-        printEquilibriumResult(result);
+        printEquilibriumResult(result, p.elements);
     }
 
-    private static void printEquilibriumResult(EquilibriumResult result) {
+    /**
+     * Prints each stable phase's amount (formula units and real atoms --
+     * see {@link EquilibriumResult.PhaseResult#atoms()}), Gibbs energy,
+     * internal composition (mole fraction {@code x}), and its RELATIVE
+     * share of the whole system -- both atomic% (real atoms of this
+     * phase / total real atoms across all stable phases) and mass%
+     * (real mass of this phase / total real mass), the lever-rule split
+     * of the system between phases. Mass is computed via {@link
+     * CompositionUnits#averageAtomicMass} on each phase's own {@code x};
+     * relative mass% is omitted (for every phase) if any phase's
+     * composition includes an element with no known standard atomic
+     * mass, since a partial mass balance would be misleading.
+     */
+    private void printEquilibriumResult(EquilibriumResult result, List<String> elements) {
         System.out.println("Converged:   " + result.isConverged()
                 + "  (iterations=" + result.getIterations() + ")");
         System.out.println("mu:          " + Arrays.toString(result.getMu()));
         System.out.println("Stable phases:");
-        for (EquilibriumResult.PhaseResult pr : result.getStablePhases()) {
-            System.out.printf("  %-10s amount=%-12.6f G=%.4f J/mol.f.u.%n",
-                    pr.phaseName, pr.amount, pr.G);
+
+        List<EquilibriumResult.PhaseResult> stable = result.getStablePhases();
+        double totalAtoms = 0.0;
+        double totalMass = 0.0;
+        double[] phaseMass = new double[stable.size()];
+        boolean massKnown = true;
+        for (int i = 0; i < stable.size(); i++) {
+            EquilibriumResult.PhaseResult pr = stable.get(i);
+            totalAtoms += pr.atoms();
+            double avgMass = CompositionUnits.averageAtomicMass(pr.x, elements);
+            if (Double.isNaN(avgMass)) {
+                massKnown = false;
+            } else {
+                phaseMass[i] = pr.atoms() * avgMass;
+                totalMass += phaseMass[i];
+            }
+        }
+
+        for (int i = 0; i < stable.size(); i++) {
+            EquilibriumResult.PhaseResult pr = stable.get(i);
+            System.out.printf("  %-10s %.6f f.u. (%.6f atoms)  G=%.4f J/mol.f.u.  x=%s",
+                    pr.phaseName, pr.amount, pr.atoms(), pr.G, Arrays.toString(pr.x));
+            double atomicPct = totalAtoms > 0.0 ? 100.0 * pr.atoms() / totalAtoms : Double.NaN;
+            System.out.printf("  atomic%%=%.4f", atomicPct);
+            if (massKnown && totalMass > 0.0) {
+                System.out.printf("  mass%%=%.4f", 100.0 * phaseMass[i] / totalMass);
+            }
+            System.out.println();
         }
     }
 
@@ -512,11 +563,18 @@ public class CliApp {
      * the same (tdb, elements, phases, T, P, composition) inputs.
      */
     private void runInitialState(String[] args, String cwd) throws IOException {
+        runInitialState(args, cwd, null);
+    }
+
+    /** As {@link #runInitialState(String[], String)}, but skips re-browsing if {@code preSelected} is non-null -- see {@link #runEquilibriumViaSession(String[], String, ModelSelection)}. */
+    private void runInitialState(String[] args, String cwd, ModelSelection preSelected) throws IOException {
         boolean interactive = isInteractive(args);
 
-        EquilibriumParams p = interactive
-                ? EquilibriumParams.fromPrompts(prompter(cwd))
-                : EquilibriumParams.fromArgs(args, cwd, this::resolvePath);
+        EquilibriumParams p = preSelected != null
+                ? EquilibriumParams.fromPrompts(prompter(cwd), preSelected)
+                : interactive
+                        ? EquilibriumParams.fromPrompts(prompter(cwd))
+                        : EquilibriumParams.fromArgs(args, cwd, this::resolvePath);
 
         System.out.println("--- Grid-Minimizer Initial State (via CalculationSession) ---");
         System.out.println("TDB:         " + p.tdbPath);
@@ -528,19 +586,19 @@ public class CliApp {
         System.out.println("---------------------------------------------------------------");
 
         ModelSelection model = new ModelSelection(p.tdbPath, p.elements, p.phases);
-        InitialStateCalculationType.Params params =
-                new InitialStateCalculationType.Params(p.T, p.P, p.composition);
+        CalculationInterface.InitialStateParams params =
+                new CalculationInterface.InitialStateParams(p.T, p.P, p.composition);
 
         EquilibriumResult result;
         try {
-            result = CalculationCatalog.runCalculating(
+            result = CalculationInterface.runCalculating(
                     session, CalculationKind.INITIAL_STATE, model, params);
         } catch (IllegalStateException | UnsupportedOperationException | IllegalArgumentException e) {
             System.out.println("Error: " + e.getMessage());
             return;
         }
 
-        printEquilibriumResult(result);
+        printEquilibriumResult(result, p.elements);
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -552,11 +610,18 @@ public class CliApp {
      * step branch), routed through {@link CalculationSession#calculateStep}.
      */
     private void runStep(String[] args, String cwd) throws IOException {
+        runStep(args, cwd, null);
+    }
+
+    /** As {@link #runStep(String[], String)}, but skips re-browsing if {@code preSelected} is non-null -- see {@link #runEquilibriumViaSession(String[], String, ModelSelection)}. */
+    private void runStep(String[] args, String cwd, ModelSelection preSelected) throws IOException {
         boolean interactive = isInteractive(args);
 
-        StepParams p = interactive
-                ? StepParams.fromPrompts(prompter(cwd))
-                : StepParams.fromArgs(args, cwd, this::resolvePath);
+        StepParams p = preSelected != null
+                ? StepParams.fromPrompts(prompter(cwd), preSelected)
+                : interactive
+                        ? StepParams.fromPrompts(prompter(cwd))
+                        : StepParams.fromArgs(args, cwd, this::resolvePath);
 
         System.out.println("--- Step Calculation (via CalculationSession) ---");
         System.out.println("TDB:         " + p.tdbPath);
@@ -569,12 +634,12 @@ public class CliApp {
         System.out.println("---------------------------------------------------");
 
         ModelSelection model = new ModelSelection(p.tdbPath, p.elements, p.phases);
-        StepCalculationType.Params params =
-                new StepCalculationType.Params(p.axis, p.T, p.P, p.composition);
+        CalculationInterface.StepParams params =
+                new CalculationInterface.StepParams(p.axis, p.T, p.P, p.composition);
 
         ui.result.PhaseDiagramResult result;
         try {
-            result = CalculationCatalog.runCalculating(
+            result = CalculationInterface.runCalculating(
                     session, CalculationKind.STEP, model, params);
         } catch (IllegalStateException | UnsupportedOperationException | IllegalArgumentException e) {
             System.out.println("Error: " + e.getMessage());
@@ -639,13 +704,25 @@ public class CliApp {
             String tdbPath = p.tdbPath("agcu.TDB");
             List<String> elements = p.pickElements(tdbPath);
             List<String> phases = p.pickPhases(tdbPath, elements);
+            return fromPromptsRemaining(p, tdbPath, elements, phases);
+        }
+
+        /** As {@link #fromPrompts(Prompter)}, but skips the tdb/elements/phases prompts -- see {@link EquilibriumParams#fromPrompts(Prompter, ModelSelection)}. */
+        static StepParams fromPrompts(Prompter p, ModelSelection preSelected) throws IOException {
+            return fromPromptsRemaining(p, preSelected.tdbFilePath(), preSelected.elements(),
+                    preSelected.phases());
+        }
+
+        private static StepParams fromPromptsRemaining(Prompter p, String tdbPath,
+                List<String> elements, List<String> phases) throws IOException {
             AxisConfig axis = p.axis("Axis (TYPE,min,max,step)", "TEMPERATURE,1000,1200,5");
             double T = p.num("Fixed T (K, used if axis type != TEMPERATURE)", 1000.0);
             double P = p.num("Fixed P (Pa, used if axis type != PRESSURE)", 101325.0);
-            String compositionStr = p.str(
-                    "Overall composition (mole fractions, used if axis type != COMPOSITION)", "0.5,0.5");
+            double[] composition = p.compositionMoleFractions(
+                    "Overall composition (used if axis type != COMPOSITION)", "0.5,0.5",
+                    elements);
             return new StepParams(tdbPath, elements, phases,
-                    axis, T, P, parseDoubleCsv(compositionStr));
+                    axis, T, P, composition);
         }
     }
 
@@ -735,13 +812,33 @@ public class CliApp {
             String tdbPath = p.tdbPath(defaultTdbRelPath.substring(defaultTdbRelPath.lastIndexOf('/') + 1));
             List<String> elements = p.pickElements(tdbPath);
             List<String> phases = p.pickPhases(tdbPath, elements);
+            return fromPromptsRemaining(p, tdbPath, elements, phases,
+                    axis1Label, defaultAxis1Spec, axis2Label, defaultAxis2Spec, defaultT, defaultComposition);
+        }
+
+        /** As the other {@code fromPrompts}, but skips the tdb/elements/phases prompts -- see {@link EquilibriumParams#fromPrompts(Prompter, ModelSelection)}. */
+        static CoarseGridParams fromPrompts(Prompter p, ModelSelection preSelected,
+                                             String axis1Label, String defaultAxis1Spec,
+                                             String axis2Label, String defaultAxis2Spec,
+                                             double defaultT, String defaultComposition) throws IOException {
+            return fromPromptsRemaining(p, preSelected.tdbFilePath(), preSelected.elements(),
+                    preSelected.phases(), axis1Label, defaultAxis1Spec, axis2Label, defaultAxis2Spec,
+                    defaultT, defaultComposition);
+        }
+
+        private static CoarseGridParams fromPromptsRemaining(Prompter p, String tdbPath,
+                List<String> elements, List<String> phases,
+                String axis1Label, String defaultAxis1Spec,
+                String axis2Label, String defaultAxis2Spec,
+                double defaultT, String defaultComposition) throws IOException {
             AxisConfig axis1 = p.axis(axis1Label + " (TYPE,min,max,step)", defaultAxis1Spec);
             AxisConfig axis2 = p.axis(axis2Label + " (TYPE,min,max,step)", defaultAxis2Spec);
             double T = p.num("Fixed T (K)", defaultT);
             double P = p.num("Fixed P (Pa)", 101325.0);
-            String compositionStr = p.str("Overall composition (mole fractions)", defaultComposition);
+            double[] composition = p.compositionMoleFractions(
+                    "Overall composition", defaultComposition, elements);
             return new CoarseGridParams(tdbPath, elements, phases,
-                    axis1, axis2, T, P, parseDoubleCsv(compositionStr));
+                    axis1, axis2, T, P, composition);
         }
     }
 
@@ -754,27 +851,36 @@ public class CliApp {
      * through {@link CalculationSession#calculateCoarseBinaryDiagram}.
      */
     private void runCoarseBinary(String[] args, String cwd) throws IOException {
+        runCoarseBinary(args, cwd, null);
+    }
+
+    /** As {@link #runCoarseBinary(String[], String)}, but skips re-browsing if {@code preSelected} is non-null -- see {@link #runEquilibriumViaSession(String[], String, ModelSelection)}. */
+    private void runCoarseBinary(String[] args, String cwd, ModelSelection preSelected) throws IOException {
         boolean interactive = isInteractive(args);
 
-        CoarseGridParams p = interactive
-                ? CoarseGridParams.fromPrompts(prompter(cwd), "data/VZR-re2.TDB",
-                        "V,ZR", "V2ZR,BCC_A2", "AxisX", "COMPOSITION:1,0.02,0.20,0.01",
-                        "AxisY", "TEMPERATURE,1200,1600,50", 1500.0, "1.0,0.0")
-                : CoarseGridParams.fromArgs(args, cwd, this::resolvePath, "data/VZR-re2.TDB",
-                        "V,ZR", "V2ZR,BCC_A2", "--axisX", "COMPOSITION:1,0.02,0.20,0.01",
-                        "--axisY", "TEMPERATURE,1200,1600,50", 1500.0, "1.0,0.0");
+        CoarseGridParams p = preSelected != null
+                ? CoarseGridParams.fromPrompts(prompter(cwd), preSelected,
+                        "AxisX", "COMPOSITION:1,0.02,0.20,0.01", "AxisY", "TEMPERATURE,1200,1600,50",
+                        1500.0, "1.0,0.0")
+                : interactive
+                        ? CoarseGridParams.fromPrompts(prompter(cwd), "data/VZR-re2.TDB",
+                                "V,ZR", "V2ZR,BCC_A2", "AxisX", "COMPOSITION:1,0.02,0.20,0.01",
+                                "AxisY", "TEMPERATURE,1200,1600,50", 1500.0, "1.0,0.0")
+                        : CoarseGridParams.fromArgs(args, cwd, this::resolvePath, "data/VZR-re2.TDB",
+                                "V,ZR", "V2ZR,BCC_A2", "--axisX", "COMPOSITION:1,0.02,0.20,0.01",
+                                "--axisY", "TEMPERATURE,1200,1600,50", 1500.0, "1.0,0.0");
 
         System.out.println("--- Coarse Binary Diagram (via CalculationSession) ---");
         p.printSummary("Axis X", "Axis Y");
         System.out.println("-------------------------------------------------------");
 
         ModelSelection model = new ModelSelection(p.tdbPath, p.elements, p.phases);
-        CoarseBinaryCalculationType.Params params =
-                new CoarseBinaryCalculationType.Params(p.axis1, p.axis2, p.T, p.P, p.composition);
+        CalculationInterface.CoarseBinaryParams params =
+                new CalculationInterface.CoarseBinaryParams(p.axis1, p.axis2, p.T, p.P, p.composition);
 
         ui.result.CoarseDiagramResult result;
         try {
-            result = CalculationCatalog.runCalculating(
+            result = CalculationInterface.runCalculating(
                     session, CalculationKind.COARSE_BINARY, model, params);
         } catch (IllegalStateException | UnsupportedOperationException | IllegalArgumentException e) {
             System.out.println("Error: " + e.getMessage());
@@ -789,27 +895,36 @@ public class CliApp {
      * routed through {@link CalculationSession#calculateCoarseTernaryDiagram}.
      */
     private void runCoarseTernary(String[] args, String cwd) throws IOException {
+        runCoarseTernary(args, cwd, null);
+    }
+
+    /** As {@link #runCoarseTernary(String[], String)}, but skips re-browsing if {@code preSelected} is non-null -- see {@link #runEquilibriumViaSession(String[], String, ModelSelection)}. */
+    private void runCoarseTernary(String[] args, String cwd, ModelSelection preSelected) throws IOException {
         boolean interactive = isInteractive(args);
 
-        CoarseGridParams p = interactive
-                ? CoarseGridParams.fromPrompts(prompter(cwd), "data/Cr-Fe-Mo.TDB",
-                        "CR,FE,MO", "LIQUID,A2", "AxisI", "COMPOSITION:1,0.0,0.6,0.1",
-                        "AxisJ", "COMPOSITION:2,0.0,0.6,0.1", 1800.0, "1.0,0.0,0.0")
-                : CoarseGridParams.fromArgs(args, cwd, this::resolvePath, "data/Cr-Fe-Mo.TDB",
-                        "CR,FE,MO", "LIQUID,A2", "--axisI", "COMPOSITION:1,0.0,0.6,0.1",
-                        "--axisJ", "COMPOSITION:2,0.0,0.6,0.1", 1800.0, "1.0,0.0,0.0");
+        CoarseGridParams p = preSelected != null
+                ? CoarseGridParams.fromPrompts(prompter(cwd), preSelected,
+                        "AxisI", "COMPOSITION:1,0.0,0.6,0.1", "AxisJ", "COMPOSITION:2,0.0,0.6,0.1",
+                        1800.0, "1.0,0.0,0.0")
+                : interactive
+                        ? CoarseGridParams.fromPrompts(prompter(cwd), "data/Cr-Fe-Mo.TDB",
+                                "CR,FE,MO", "LIQUID,A2", "AxisI", "COMPOSITION:1,0.0,0.6,0.1",
+                                "AxisJ", "COMPOSITION:2,0.0,0.6,0.1", 1800.0, "1.0,0.0,0.0")
+                        : CoarseGridParams.fromArgs(args, cwd, this::resolvePath, "data/Cr-Fe-Mo.TDB",
+                                "CR,FE,MO", "LIQUID,A2", "--axisI", "COMPOSITION:1,0.0,0.6,0.1",
+                                "--axisJ", "COMPOSITION:2,0.0,0.6,0.1", 1800.0, "1.0,0.0,0.0");
 
         System.out.println("--- Coarse Ternary Diagram (via CalculationSession) ---");
         p.printSummary("Axis I", "Axis J");
         System.out.println("--------------------------------------------------------");
 
         ModelSelection model = new ModelSelection(p.tdbPath, p.elements, p.phases);
-        CoarseTernaryCalculationType.Params params =
-                new CoarseTernaryCalculationType.Params(p.axis1, p.axis2, p.T, p.P, p.composition);
+        CalculationInterface.CoarseTernaryParams params =
+                new CalculationInterface.CoarseTernaryParams(p.axis1, p.axis2, p.T, p.P, p.composition);
 
         ui.result.CoarseDiagramResult result;
         try {
-            result = CalculationCatalog.runCalculating(
+            result = CalculationInterface.runCalculating(
                     session, CalculationKind.COARSE_TERNARY, model, params);
         } catch (IllegalStateException | UnsupportedOperationException | IllegalArgumentException e) {
             System.out.println("Error: " + e.getMessage());
@@ -849,27 +964,36 @@ public class CliApp {
      * solved for exactly at each boundary) must be COMPOSITION.
      */
     private void runMap(String[] args, String cwd) throws IOException {
+        runMap(args, cwd, null);
+    }
+
+    /** As {@link #runMap(String[], String)}, but skips re-browsing if {@code preSelected} is non-null -- see {@link #runEquilibriumViaSession(String[], String, ModelSelection)}. */
+    private void runMap(String[] args, String cwd, ModelSelection preSelected) throws IOException {
         boolean interactive = isInteractive(args);
 
-        CoarseGridParams p = interactive
-                ? CoarseGridParams.fromPrompts(prompter(cwd), "data/agcu.TDB",
-                        "AG,CU", "LIQUID,FCC_A1", "Axis0", "TEMPERATURE,1000,1200,5",
-                        "Axis1", "COMPOSITION:1,0.0,1.0,0.01", 1000.0, "0.5,0.5")
-                : CoarseGridParams.fromArgs(args, cwd, this::resolvePath, "data/agcu.TDB",
-                        "AG,CU", "LIQUID,FCC_A1", "--axis0", "TEMPERATURE,1000,1200,5",
-                        "--axis1", "COMPOSITION:1,0.0,1.0,0.01", 1000.0, "0.5,0.5");
+        CoarseGridParams p = preSelected != null
+                ? CoarseGridParams.fromPrompts(prompter(cwd), preSelected,
+                        "Axis0", "TEMPERATURE,1000,1200,5", "Axis1", "COMPOSITION:1,0.0,1.0,0.01",
+                        1000.0, "0.5,0.5")
+                : interactive
+                        ? CoarseGridParams.fromPrompts(prompter(cwd), "data/agcu.TDB",
+                                "AG,CU", "LIQUID,FCC_A1", "Axis0", "TEMPERATURE,1000,1200,5",
+                                "Axis1", "COMPOSITION:1,0.0,1.0,0.01", 1000.0, "0.5,0.5")
+                        : CoarseGridParams.fromArgs(args, cwd, this::resolvePath, "data/agcu.TDB",
+                                "AG,CU", "LIQUID,FCC_A1", "--axis0", "TEMPERATURE,1000,1200,5",
+                                "--axis1", "COMPOSITION:1,0.0,1.0,0.01", 1000.0, "0.5,0.5");
 
         System.out.println("--- Map Calculation (via CalculationSession) ---");
         p.printSummary("Axis 0", "Axis 1");
         System.out.println("-------------------------------------------------");
 
         ModelSelection model = new ModelSelection(p.tdbPath, p.elements, p.phases);
-        MapCalculationType.Params params =
-                new MapCalculationType.Params(p.axis1, p.axis2, p.T, p.P, p.composition);
+        CalculationInterface.MapParams params =
+                new CalculationInterface.MapParams(p.axis1, p.axis2, p.T, p.P, p.composition);
 
         ui.result.PhaseDiagramResult result;
         try {
-            result = CalculationCatalog.runCalculating(
+            result = CalculationInterface.runCalculating(
                     session, CalculationKind.MAP, model, params);
         } catch (IllegalStateException | UnsupportedOperationException | IllegalArgumentException e) {
             System.out.println("Error: " + e.getMessage());
@@ -1014,27 +1138,45 @@ public class CliApp {
          * {@code available} (not whatever case the user typed) if every
          * entry matches, or {@code null} (after printing which entries
          * didn't match) so the caller re-prompts.
+         *
+         * <p>Returned in {@code available}'s order (which {@link
+         * ModelBrowseService#selectableElements} already sorts
+         * alphabetically), not whatever order the user typed -- e.g.
+         * typing {@code "FE,C"} still returns {@code [C, FE]}. Element/
+         * phase order defines the composition-vector index order for the
+         * whole calculation (see {@code ThermodynamicSystem.build}), so
+         * this must be a fixed, predictable order regardless of typed
+         * order -- otherwise a composition the user types immediately
+         * afterward could silently mean something different from what
+         * they intended (see {@link ModelBrowseService#selectableElements}'s
+         * Javadoc for the failure this caused).
          */
         private List<String> matchAgainst(List<String> chosen, List<String> available) {
-            List<String> matched = new ArrayList<>(chosen.size());
             List<String> unknown = new ArrayList<>();
             for (String entry : chosen) {
-                String canonical = null;
+                boolean found = false;
                 for (String candidate : available) {
                     if (candidate.equalsIgnoreCase(entry)) {
-                        canonical = candidate;
+                        found = true;
                         break;
                     }
                 }
-                if (canonical != null) {
-                    matched.add(canonical);
-                } else {
+                if (!found) {
                     unknown.add(entry);
                 }
             }
             if (!unknown.isEmpty()) {
                 System.out.println("  Not available: " + unknown + " -- try again.");
                 return null;
+            }
+            List<String> matched = new ArrayList<>(chosen.size());
+            for (String candidate : available) {
+                for (String entry : chosen) {
+                    if (candidate.equalsIgnoreCase(entry)) {
+                        matched.add(candidate);
+                        break;
+                    }
+                }
             }
             return matched;
         }
@@ -1047,6 +1189,44 @@ public class CliApp {
                 System.out.println("  Could not parse '" + spec + "' -- expected TYPE,min,max,step "
                         + "or COMPOSITION:i,min,max,step");
             }
+        }
+
+        /**
+         * Prompts for the overall composition, in the caller's choice of
+         * mole fraction (default) or weight percent -- always returns mole
+         * fractions, in {@code elements} order, since that is the only
+         * unit {@code CalculationSession}/{@code CalculationInterface}
+         * understand. wt.% input is converted here, immediately, using
+         * {@link CompositionUnits}'s standard atomic-weight table; the
+         * converted mole-fraction vector is echoed back so the conversion
+         * is visible, not a silent black box.
+         *
+         * @param label              prompt label, e.g. "Overall composition"
+         * @param defaultMoleCsv     default comma-separated MOLE fractions,
+         *                           shown as the default when mole units are chosen
+         * @param elements           element order the returned array must match
+         */
+        double[] compositionMoleFractions(String label, String defaultMoleCsv,
+                                           List<String> elements) throws IOException {
+            String units = str("Units (mole / wt%)", "mole");
+            if (!"wt%".equalsIgnoreCase(units.trim()) && !"wt".equalsIgnoreCase(units.trim())) {
+                String compositionStr = str(label + " (mole fractions, comma-separated)", defaultMoleCsv);
+                return parseDoubleCsv(compositionStr);
+            }
+
+            String defaultWtPctCsv = CompositionUnits.moleFractionsToWeightPercentCsv(
+                    parseDoubleCsv(defaultMoleCsv), elements);
+            if (defaultWtPctCsv == null) {
+                defaultWtPctCsv = defaultMoleCsv;
+            }
+            String compositionStr = str(label + " (weight percent, comma-separated)", defaultWtPctCsv);
+            double[] weightFractions = parseDoubleCsv(compositionStr);
+            for (int i = 0; i < weightFractions.length; i++) {
+                weightFractions[i] /= 100.0;
+            }
+            double[] moleFractions = CompositionUnits.weightToMoleFractions(weightFractions, elements);
+            System.out.println("  -> mole fractions: " + Arrays.toString(moleFractions));
+            return moleFractions;
         }
     }
 
@@ -1101,11 +1281,27 @@ public class CliApp {
             String tdbPath = p.tdbPath("VZR-re2.TDB");
             List<String> elements = p.pickElements(tdbPath);
             List<String> phases = p.pickPhases(tdbPath, elements);
+            return fromPromptsRemaining(p, tdbPath, elements, phases);
+        }
+
+        /**
+         * As {@link #fromPrompts(Prompter)}, but skips the tdb/elements/phases
+         * prompts -- used when {@code runMenu} already browsed a {@link
+         * ModelSelection} before the calculation-type choice, so this type's
+         * own prompts only ask for its remaining (T, P, composition) fields.
+         */
+        static EquilibriumParams fromPrompts(Prompter p, ModelSelection preSelected) throws IOException {
+            return fromPromptsRemaining(p, preSelected.tdbFilePath(), preSelected.elements(),
+                    preSelected.phases());
+        }
+
+        private static EquilibriumParams fromPromptsRemaining(Prompter p, String tdbPath,
+                List<String> elements, List<String> phases) throws IOException {
             double T = p.num("Temperature (K)", 1000.0);
             double P = p.num("Pressure (Pa)", 10000.0);
-            String compositionStr = p.str("Overall composition (mole fractions, comma-separated)",
-                    "0.6666666666666666,0.3333333333333333");
-            return new EquilibriumParams(tdbPath, elements, phases, T, P, parseDoubleCsv(compositionStr));
+            double[] composition = p.compositionMoleFractions("Overall composition",
+                    "0.6666666666666666,0.3333333333333333", elements);
+            return new EquilibriumParams(tdbPath, elements, phases, T, P, composition);
         }
 
         private static EquilibriumParams build(String tdbPath, String elementsStr, String phasesStr,

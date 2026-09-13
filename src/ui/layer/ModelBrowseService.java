@@ -36,7 +36,22 @@ public class ModelBrowseService {
     /**
      * Elements a user can actually pick from {@code tdbFilePath} --
      * {@link CalculationSession#availableElements} with the reserved
-     * pseudo-elements ({@code /-}, {@code VA}) removed.
+     * pseudo-elements ({@code /-}, {@code VA}) removed, sorted
+     * alphabetically.
+     *
+     * <p>{@link CalculationSession#availableElements} returns elements in
+     * raw TDB declaration order (e.g. {@code [FE, C]}), which then becomes
+     * the composition-index order for the whole calculation (see {@code
+     * ThermodynamicSystem.build}'s {@code elements} parameter). A user
+     * typing a composition against that list has no way to know the
+     * declaration order without re-reading the prompt every time, and a
+     * mismatch is not just cosmetic -- e.g. typing {@code 0.05,0.95}
+     * expecting alphabetical (C, Fe) against a Fe-then-C list silently
+     * requests 95% carbon steel instead of 5%, which then fails deep
+     * inside the solver ("CEF phase could not generate an initial
+     * constitution") rather than at input time. Sorting here fixes it for
+     * every caller (CLI/GUI/API) at once, since this is the one shared
+     * bridge all three already use for element discovery.
      */
     public List<String> selectableElements(String tdbFilePath) throws IOException {
         List<String> all = session.availableElements(tdbFilePath);
@@ -46,6 +61,7 @@ public class ModelBrowseService {
                 real.add(element);
             }
         }
+        real.sort(String::compareTo);
         return real;
     }
 

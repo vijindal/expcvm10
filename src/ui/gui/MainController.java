@@ -9,13 +9,10 @@ import ui.result.PropertyScanResult;
 import ui.request.PhaseDiagramRequest;
 import ui.result.PhaseDiagramResult;
 import session.CalculationSession;
-import session.calctype.CalculationCatalog;
+import session.calctype.CalculationInterface;
 import session.calctype.CalculationKind;
 import session.calctype.CalculationOutcome;
 import session.calctype.ModelSelection;
-import session.calctype.types.CoarseBinaryCalculationType;
-import session.calctype.types.CoarseTernaryCalculationType;
-import session.calctype.types.EquilibriumCalculationType;
 import util.AppLevel;
 import util.Trace;
 
@@ -31,12 +28,12 @@ import java.util.logging.Logger;
  *
  * <p>Per the target data flow (README "Structure" / {@code
  * docs/dataflow_target.png}), the GUI's only point of contact with the
- * System and Calculation layers is {@link session.calctype.CalculationCatalog}:
+ * System and Calculation layers is {@link session.calctype.CalculationInterface}:
  * browsing (pre-calculation) still goes directly through the held {@link
  * CalculationSession} (via {@link ModelBrowseService}, unchanged), but every
  * calculation builds a {@link session.calctype.ModelSelection} and a
  * calculation type's own typed params, then calls {@link
- * CalculationCatalog#runCalculating}/{@link CalculationCatalog#runAssessing}
+ * CalculationInterface#runCalculating}/{@link CalculationInterface#runAssessing}
  * rather than {@code calculationSession.calculate*}/{@code setModel}
  * directly. Paths that still reached around it -- phase diagram via
  * {@code PhaseDiagramUseCase}, property scan, the parameter-dump inspector
@@ -76,9 +73,9 @@ public class MainController {
             double[] compOverAll = extractComposition(compositions, elementList.size());
 
             ModelSelection model = new ModelSelection(tdbPath, elementList, phaseList);
-            EquilibriumCalculationType.Params params =
-                    new EquilibriumCalculationType.Params(T, P, compOverAll);
-            system.ports.EquilibriumResult r = CalculationCatalog.runCalculating(
+            CalculationInterface.EquilibriumParams params =
+                    new CalculationInterface.EquilibriumParams(T, P, compOverAll);
+            system.ports.EquilibriumResult r = CalculationInterface.runCalculating(
                     calculationSession, CalculationKind.EQUILIBRIUM, model, params);
 
             Trace.exit(LOG, AppLevel.FLOW, "MainController", "runSinglePoint");
@@ -157,16 +154,16 @@ public class MainController {
 
             ui.result.CoarseDiagramResult r;
             if (request.isTernary()) {
-                CoarseTernaryCalculationType.Params params = new CoarseTernaryCalculationType.Params(
+                CalculationInterface.CoarseTernaryParams params = new CalculationInterface.CoarseTernaryParams(
                         axisX, axisY, request.getFixedT(), request.getFixedP(), comp,
                         request.getProgressCallback());
-                r = CalculationCatalog.runCalculating(
+                r = CalculationInterface.runCalculating(
                         calculationSession, CalculationKind.COARSE_TERNARY, model, params);
             } else {
-                CoarseBinaryCalculationType.Params params = new CoarseBinaryCalculationType.Params(
+                CalculationInterface.CoarseBinaryParams params = new CalculationInterface.CoarseBinaryParams(
                         axisX, axisY, request.getFixedT(), request.getFixedP(), comp,
                         request.getProgressCallback());
-                r = CalculationCatalog.runCalculating(
+                r = CalculationInterface.runCalculating(
                         calculationSession, CalculationKind.COARSE_BINARY, model, params);
             }
 
@@ -213,14 +210,14 @@ public class MainController {
     /**
      * The {@link session.calctype.CalculationGroup#ASSESS} ("opt") landing
      * choice: thermodynamic assessment / database creation. Not implemented
-     * yet -- routed through {@link CalculationCatalog#runAssessing} so the
+     * yet -- routed through {@link CalculationInterface#runAssessing} so the
      * GUI surfaces the same message the CLI and API do, rather than its own
      * ad hoc stub text.
      */
     public CalculationResult runAssessment() {
         Trace.enter(LOG, AppLevel.FLOW, "MainController", "runAssessment");
         CalculationOutcome.NotImplemented<Void> outcome =
-                CalculationCatalog.runAssessing(CalculationKind.ASSESSMENT, null);
+                CalculationInterface.runAssessing(CalculationKind.ASSESSMENT, null);
         CalculationResult result = new CalculationResult();
         result.setSuccess(false);
         result.setMessage(outcome.message());

@@ -1501,6 +1501,11 @@ public class EquilibriumSolverV2 {
 
             if (!isStable[i]) {
 
+                double metaTotalMoles = 0.0;
+                for (double value : mA) {
+                    metaTotalMoles += value;
+                }
+
                 metastableResults.add(
                         new EquilibriumResult.PhaseResult(
                                 model.phaseName(),
@@ -1509,7 +1514,8 @@ public class EquilibriumSolverV2 {
                                 x,
                                 y,
                                 g,
-                                drivingForce));
+                                drivingForce,
+                                metaTotalMoles));
             }
         }
 
@@ -1585,7 +1591,8 @@ public class EquilibriumSolverV2 {
                                 slotX,
                                 work.y.clone(),
                                 work.G,
-                                slotDrivingForce));
+                                slotDrivingForce,
+                                slotTotalM));
             }
         }
 

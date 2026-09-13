@@ -29,7 +29,7 @@ public final class SessionStore {
         /**
          * The {@link ModelSelection} last passed to {@code PUT .../model},
          * so a later {@code POST .../calculations/{kind}} can call {@link
-         * session.calctype.CalculationCatalog#runCalculating} without the
+         * session.calctype.CalculationInterface#runCalculating} without the
          * caller resending tdb/elements/phases on every calculation
          * request. {@code null} until the model endpoint has been called
          * at least once.

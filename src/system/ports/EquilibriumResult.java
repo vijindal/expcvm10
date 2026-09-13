@@ -68,10 +68,11 @@ public final class EquilibriumResult {
         public final double[] y;             // internal parameters
         public final double   G;             // Gibbs energy per formula unit
         public final double   drivingForce;  // γ = G + Σ μ_A · x_A
+        public final double   totalMoles;    // real atoms per formula unit at y (see GibbsEnergyModel#totalMoles)
 
         public PhaseResult(String phaseName, String modelType,
                            double amount, double[] x, double[] y,
-                           double G, double drivingForce) {
+                           double G, double drivingForce, double totalMoles) {
             this.phaseName    = phaseName;
             this.modelType    = modelType;
             this.amount       = amount;
@@ -79,6 +80,20 @@ public final class EquilibriumResult {
             this.y            = y.clone();
             this.G            = G;
             this.drivingForce = drivingForce;
+            this.totalMoles   = totalMoles;
+        }
+
+        /**
+         * Real moles of atoms this phase contributes to the system --
+         * {@code amount} (formula units) times {@code totalMoles} (atoms
+         * per formula unit at this constitution) -- NOT {@code amount}
+         * alone. The lever rule balances on this quantity, not on raw
+         * {@code amount}: two phases with different formula-unit sizes
+         * (e.g. CEMENTITE's Fe3C, 4 atoms/f.u., vs BCC_A2's Fe, 1 atom/f.u.)
+         * cannot be compared or summed as formula-unit amounts directly.
+         */
+        public double atoms() {
+            return amount * totalMoles;
         }
     }
 }

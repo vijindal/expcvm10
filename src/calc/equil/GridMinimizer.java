@@ -246,14 +246,14 @@ public class GridMinimizer {
         for (PhaseRecord pr : state.stablePhases()) {
             stableResults.add(new EquilibriumResult.PhaseResult(
                     pr.phaseName(), pr.modelType(), pr.amount, pr.x, pr.y,
-                    pr.G, pr.drivingForce));
+                    pr.G, pr.drivingForce, pr.model.totalMoles(pr.y)));
         }
 
         List<EquilibriumResult.PhaseResult> metastableResults = new ArrayList<>();
         for (PhaseRecord pr : state.metastablePhases()) {
             metastableResults.add(new EquilibriumResult.PhaseResult(
                     pr.phaseName(), pr.modelType(), pr.amount, pr.x, pr.y,
-                    pr.G, pr.drivingForce));
+                    pr.G, pr.drivingForce, pr.model.totalMoles(pr.y)));
         }
 
         return new EquilibriumResult(

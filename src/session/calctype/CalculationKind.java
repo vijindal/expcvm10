@@ -1,7 +1,7 @@
 package session.calctype;
 
 /**
- * Every calculation a caller can run through {@link CalculationCatalog},
+ * Every calculation a caller can run through {@link CalculationInterface},
  * each tied to exactly one {@link CalculationGroup} so the two-level choice
  * (group, then kind) can never desync.
  */

@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * The "Gibbs energy model parameters selected" bundle a caller passes to
- * {@link CalculationCatalog#runCalculating} before a {@link CalculationKind}'s
+ * {@link CalculationInterface#runCalculating} before a {@link CalculationKind}'s
  * own parameters are collected/run -- mirrors {@code CalculationSession
  * .ModelKey}'s fields deliberately, but is a distinct, public-facing type so
  * this package's API surface never leaks {@code CalculationSession}'s

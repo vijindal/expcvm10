@@ -16,12 +16,10 @@ import com.google.gson.Gson;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
-import session.calctype.CalculationCatalog;
+import session.calctype.CalculationInterface;
 import session.calctype.CalculationKind;
 import session.calctype.CalculationOutcome;
 import session.calctype.ModelSelection;
-import session.calctype.types.EquilibriumCalculationType;
-import session.calctype.types.PhaseDiagramCalculationType;
 import system.ports.EquilibriumResult;
 
 import java.io.IOException;
@@ -59,13 +57,13 @@ import java.util.regex.Pattern;
  * </pre>
  *
  * <p>Every {@code /calculations/{kind}} request is routed through {@link
- * session.calctype.CalculationCatalog}, never {@link
+ * session.calctype.CalculationInterface}, never {@link
  * session.CalculationSession#calculateEquilibrium}/{@code calculatePhaseDiagram}
  * directly: {@code equilibrium}/{@code phase-diagram} call {@link
- * session.calctype.CalculationCatalog#runCalculating} using the {@link
+ * session.calctype.CalculationInterface#runCalculating} using the {@link
  * session.calctype.ModelSelection} recorded by the most recent {@code PUT
  * .../model} call (409 if none has been made yet); {@code assessment} calls
- * {@link session.calctype.CalculationCatalog#runAssessing}, which never
+ * {@link session.calctype.CalculationInterface#runAssessing}, which never
  * touches the session at all. The {@code cal}/{@code opt} group choice is
  * therefore not a separate landing request -- each calculation kind already
  * names its own group in the URL.
@@ -283,9 +281,9 @@ public final class CalculationApiServer {
             return;
         }
         EquilibriumRequest req = readJson(exchange, EquilibriumRequest.class);
-        EquilibriumCalculationType.Params params =
-                new EquilibriumCalculationType.Params(req.T, req.P, req.composition);
-        EquilibriumResult result = CalculationCatalog.runCalculating(
+        CalculationInterface.EquilibriumParams params =
+                new CalculationInterface.EquilibriumParams(req.T, req.P, req.composition);
+        EquilibriumResult result = CalculationInterface.runCalculating(
                 entry.session, CalculationKind.EQUILIBRIUM, entry.modelSelection, params);
         sendJson(exchange, 200, new EquilibriumResponse(result));
     }
@@ -303,9 +301,9 @@ public final class CalculationApiServer {
             axes[i] = toAxisConfig(spec);
         }
 
-        PhaseDiagramCalculationType.Params params = new PhaseDiagramCalculationType.Params(
+        CalculationInterface.PhaseDiagramParams params = new CalculationInterface.PhaseDiagramParams(
                 axes, req.startAxes, req.fixedT, req.fixedP, req.composition);
-        PhaseDiagram diagram = CalculationCatalog.runCalculating(
+        PhaseDiagram diagram = CalculationInterface.runCalculating(
                 entry.session, CalculationKind.PHASE_DIAGRAM, entry.modelSelection, params);
         sendJson(exchange, 200, new PhaseDiagramResponse(diagram));
     }
@@ -313,13 +311,12 @@ public final class CalculationApiServer {
     /**
      * {@link session.calctype.CalculationGroup#ASSESS} ("opt") -- not
      * implemented yet. Never touches {@code entry.session}: {@link
-     * CalculationCatalog#runAssessing} dispatches to an {@link
-     * session.calctype.AssessingType}, which structurally has no {@code
-     * CalculationSession} parameter to reach.
+     * CalculationInterface#runAssessing} takes no {@code CalculationSession}
+     * parameter at all, so nothing on this path can reach one.
      */
     private void runAssessment(HttpExchange exchange) throws IOException {
         CalculationOutcome.NotImplemented<Void> outcome =
-                CalculationCatalog.runAssessing(CalculationKind.ASSESSMENT, null);
+                CalculationInterface.runAssessing(CalculationKind.ASSESSMENT, null);
         sendJson(exchange, 501, new ErrorResponse(outcome.message()));
     }
 
