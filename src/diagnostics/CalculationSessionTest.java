@@ -1,4 +1,4 @@
-package test;
+package diagnostics;
 
 import session.CalculationSession;
 import system.ThermodynamicSystem;

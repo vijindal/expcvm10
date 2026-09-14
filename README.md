@@ -186,7 +186,7 @@ clone.
 ```
 
 Most validation is still standalone diagnostic `main()` programs under
-`src/test/` run directly, not through the Gradle test task.
+`src/diagnostics/` run directly, not through the Gradle test task.
 
 ## Running the CLI
 
@@ -279,8 +279,8 @@ assessment code is quarantined under `legacy/`.
   `d2G_dydP` — reference, ideal, excess, magnetic (Inden-Hillert-Jarl),
   and volume/pressure contributions, all sharing one `AD2`
   (second-order automatic differentiation) construction so gradients
-  and Hessians cannot silently diverge. `CefContractTest` (`src/test/`)
-  verifies every quantity against pycalphad 0.11.1, plus structural
+  and Hessians cannot silently diverge. `CefContractTest`
+  (`src/diagnostics/`) verifies every quantity against pycalphad 0.11.1, plus structural
   invariants (Hessian symmetry, `dMoles_dy` y-independence,
   composition/mole consistency, `isValid` accept/reject).
 - **Newton phase-matrix assembly** (`calc/equil/PhaseMatrixAssembler`)
@@ -322,9 +322,9 @@ assessment code is quarantined under `legacy/`.
   - Validated against the V–Zr TDB (`data/VZR-re2.TDB`) for BCC_A2
     (vacancy sublattice), HCP_A3, LIQUID, and the ordered V2ZR,
     including converging two-phase equilibria, via pycalphad-referenced
-    contract tests (`src/test/`) and JUnit end-to-end tests
+    contract tests (`src/diagnostics/`) and JUnit end-to-end tests
     (`src-test/calc/equil/`). `EquilibriumSolverV2BaselineTest`
-    (`src/test/`) additionally checks the solver itself against
+    (`src/diagnostics/`) additionally checks the solver itself against
     J. Cui et al. 2016 (CALPHAD 53): the V2ZR Gibbs-energy curve
     (Fig. 9) and all three Table 2 invariant reactions, each split
     into its adjacent two-phase fields.
@@ -398,11 +398,11 @@ assessment code is quarantined under `legacy/`.
   vocabulary for now, pending a second (CVM) implementation to
   validate what generalization fits both.
 - Most of the test suite is standalone diagnostic `main()` programs
-  under `src/test/` (including pycalphad-referenced contract tests —
-  run via `java -cp build/classes/java/main test.<ClassName>`), not
-  the Gradle/JUnit setup `build.gradle` declares. Only one JUnit test
-  class exists (`src-test/calc/equil/`). No single command runs
-  everything as a pass/fail gate.
+  under `src/diagnostics/` (including pycalphad-referenced contract
+  tests — run via `java -cp build/classes/java/main diagnostics.<ClassName>`),
+  not the Gradle/JUnit setup `build.gradle` declares. A few JUnit test
+  classes exist under `src-test/` (`./gradlew test` runs all of them).
+  No single command runs everything as a pass/fail gate.
 - API/GUI hardening is out of scope: no authentication, TLS, or
   session expiry on the REST API; the REST API's `step`/`map` endpoints
   have not been updated to use the new tracers.

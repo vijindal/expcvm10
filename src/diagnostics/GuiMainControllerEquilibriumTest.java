@@ -1,4 +1,4 @@
-package test;
+package diagnostics;
 
 import system.ports.EquilibriumResult;
 import ui.gui.MainController;

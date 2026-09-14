@@ -1,4 +1,4 @@
-package test;
+package diagnostics;
 
 import calc.equil.GlobalEquilibriumMatrixAssembler;
 import calc.equil.PhaseMatrixAssembler;

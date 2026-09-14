@@ -25,8 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *     BCC  : xZr = 0.55, omega = 1/2
  *
  * These are exactly the parameters already used by the fixed two-phase
- * matrix baseline ({@code test.VzrFixedTwoPhaseSundmanBaseline} /
- * {@code test.VzrTwoPhaseSundmanMatrixBaselineTest}), reused here rather
+ * matrix baseline ({@code diagnostics.VzrFixedTwoPhaseSundmanBaseline} /
+ * {@code diagnostics.VzrTwoPhaseSundmanMatrixBaselineTest}), reused here rather
  * than introducing another test problem.
  *
  * Unlike those baselines, this test does NOT call any private solver

@@ -1,4 +1,4 @@
-package test;
+package diagnostics;
 
 import calc.diagram.AxisConfig;
 import session.CalculationSession;

@@ -1,4 +1,4 @@
-package test;
+package diagnostics;
 
 import system.database.TdbParser;
 import system.model.cef.CefGibbs;

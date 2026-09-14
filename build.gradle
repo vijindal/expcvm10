@@ -35,9 +35,6 @@ dependencies {
 
 tasks.named('test', Test) {
     useJUnitPlatform()
-    filter {
-        includeTestsMatching 'calc.equil.EquilibriumSolverV2TwoPhaseEndToEndTest'
-    }
     workingDir = project.projectDir
     systemProperties System.properties.findAll { k, v ->
         k.toString().startsWith('sgte.') || k.toString().startsWith('tdb.')

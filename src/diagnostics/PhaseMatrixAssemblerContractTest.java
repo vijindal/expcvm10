@@ -1,4 +1,4 @@
-package test;
+package diagnostics;
 
 import calc.equil.PhaseMatrixAssembler;
 import system.database.TdbParser;
