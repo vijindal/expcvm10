@@ -56,6 +56,17 @@ public final class Line {
     /** Node this line terminates at, once {@link State#TERMINATED} with a real endpoint. */
     private Node endNode;
 
+    /**
+     * Matches OC's {@code EXCLUDEDLINE} status bit ({@code smp2.F90},
+     * checked at every point a line is drawn/used): set when the node
+     * this line reaches fails the global stability check ({@link
+     * PhaseDiagramEngine#isGloballyStable}) -- the line is still {@link
+     * State#TERMINATED} (a real endpoint was found), but abandoned and
+     * excluded from the diagram, per §2.3.3: "the automatic procedure
+     * is to abandon this line and suppress it in a subsequent plot."
+     */
+    private boolean excluded = false;
+
     /** Equilibria sampled along this line, in walk order. */
     private final List<EquilibriumResult> points = new ArrayList<>();
 
@@ -106,6 +117,19 @@ public final class Line {
     /** The node this line ends at, or {@code null} if terminated at an axis limit or not yet terminated. */
     public Node getEndNode() {
         return endNode;
+    }
+
+    /** Marks this line excluded -- see {@link #excluded}'s javadoc. Only valid once {@link State#TERMINATED}. */
+    public void markExcluded() {
+        if (state != State.TERMINATED) {
+            throw new IllegalStateException("Cannot exclude a line before it is TERMINATED: " + state);
+        }
+        this.excluded = true;
+    }
+
+    /** True if this line was abandoned by the global stability check -- see {@link #excluded}'s javadoc. */
+    public boolean isExcluded() {
+        return excluded;
     }
 
     public List<EquilibriumResult> getPoints() {

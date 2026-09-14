@@ -40,6 +40,17 @@ import java.util.Map;
  * "select the fastest-varying axis" reselection during a walk is not
  * implemented here.
  *
+ * <p><b>Global stability check (Step 6b, §2.3.3).</b> Every newly
+ * created {@code CROSSING}/{@code INVARIANT} node is checked via
+ * {@link PhaseDiagramEngine#isGloballyStable}, matching OC's {@code
+ * global_equil_check1} at node creation; a failing node gets no exits
+ * and its arriving {@link Line} is {@link Line#markExcluded marked
+ * excluded} rather than terminated normally. NOT checked: the START
+ * node (no arriving line to exclude if it fails -- a separate, smaller
+ * follow-up) and every ordinary walked point mid-line (OC's own
+ * cheaper, off-by-default {@code check_all_phases} interval check,
+ * confirmed unrelated to line abandonment -- see the roadmap doc).
+ *
  * <p><b>On the flowchart's "attach exits along the OTHER axis"
  * language (Step 3b analysis):</b> for a binary T-x map -- this
  * version's only supported case -- there are exactly 2 axes total, one
@@ -184,6 +195,17 @@ public final class MapDiagramTracer {
                     compositionByNodeId.putIfAbsent(endNode.id, seg.endComposition);
                     line.terminateAtNode(endNode);
                     if (endNode.getLines().isEmpty()) {
+                        if (!PhaseDiagramEngine.isGloballyStable(seg.lastResult, candidates)) {
+                            // Global stability check (Step 6b, §2.3.3):
+                            // matches OC's global_equil_check1 at node
+                            // creation -- "the automatic procedure is to
+                            // abandon this line and suppress it." No
+                            // exits attached; the node exists (visible/
+                            // inspectable) but this arriving line is
+                            // excluded.
+                            line.markExcluded();
+                            break;
+                        }
                         // Newly created: classify via Eq. 8 and attach
                         // exits accordingly (Step 5d) -- see NodeGeometry.
                         // c=1: this codebase's binary map fixes P as a
@@ -210,6 +232,10 @@ public final class MapDiagramTracer {
                     compositionByNodeId.putIfAbsent(endNode.id, seg.endComposition);
                     line.terminateAtNode(endNode);
                     if (endNode.getLines().isEmpty()) {
+                        if (!PhaseDiagramEngine.isGloballyStable(seg.lastResult, candidates)) {
+                            line.markExcluded();
+                            break;
+                        }
                         NodeGeometry.attachExits(endNode, PhaseDiagramEngine.NodeClass.INVARIANT,
                                 seg.changedPhase, 0);
                     }

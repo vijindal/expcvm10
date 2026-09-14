@@ -543,13 +543,27 @@ FCC_A1 phase instead of splitting across its real miscibility gap —
 G/atom -28521 forced vs. -31585 from `GridMinimizer`, ~10.7% off, far
 past tolerance (`PhaseDiagramEngineGlobalStabilityTest`, in
 `calc.equil` since the test hook is package-private there).
-**Not yet wired into the walk loop** — `MapTracer.walkOneSegment`
-doesn't call this yet, so a walked point is still accepted the moment
-it converges. The paper's full described behavior (abandon and
-suppress the WHOLE line, not just the one bad point) is separate
-walk-loop control-flow work, deliberately deferred until this check
-was proven correct in isolation first.
-Full JUnit suite and both critical diagnostics confirmed unchanged.
+**6b (done):** wired into `MapDiagramTracer.drain` at node creation
+(`CROSSING`/`INVARIANT` cases) — a failing node gets no exits and its
+arriving `Line` is marked excluded (`Line#markExcluded`/`#isExcluded`,
+new, matching OC's `EXCLUDEDLINE` status bit). Frequency grounded in a
+full search of OC's actual source (not guessed): OC has TWO distinct
+mechanisms, not one — `global_equil_check1` (the true, expensive
+gridminimizer-equivalent search, what `isGloballyStable` corresponds
+to) runs at EVERY node point, unconditionally, and on failure marks
+the arriving line `EXCLUDEDLINE`; a SEPARATE, cheaper `check_all_phases`
+per-phase-grid recheck runs mid-line on a fixed-count interval
+(`mapglobalcheck`, default 10, but disabled by default — `=0`) to
+un-stick metastable constitutions, unrelated to line abandonment. So
+"every node point, not mid-line" is OC's real behavior for the
+line-abandoning check, not merely a cheaper approximation of it.
+NOT checked: the START node (no arriving line to exclude if it fails —
+smaller, separate follow-up) and ordinary mid-line points (matches
+OC's own off-by-default interval check, deliberately not ported since
+it isn't what abandons lines there either).
+Full JUnit suite and both critical diagnostics confirmed unchanged —
+every node across all 5 already-validated diagram types is genuinely
+globally stable, as expected.
 
 ## Non-goals for this effort
 
