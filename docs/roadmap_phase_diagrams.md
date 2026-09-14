@@ -369,11 +369,78 @@ detail; summarized here for tracking):
   `EquilibriumSolverV2BaselineTest`, and `MapDiagramTracerAgCuTest`
   (which exercises the exact drain-loop code path modified here) all
   confirmed unchanged.
-- **5e (planned):** ternary isopleth — new `Condition.Variable
-  .COMPOSITION_RATIO` (additive), new OC macro
-  (`docs/oc_reference_tests/crfemo_isopleth.OCM`, no existing OC example
-  covers this). Isopleth's 3-exit node case accepted as OC's hard-coded
-  constant, not re-derived (neither source formalizes it).
+- **5e (done):** ternary isopleth — Al-Mg-Zn/`data/cost507R.TDB`, the
+  same system/database Step 5c already validated.
+  **Design corrected against a full re-read of Sundman 2021, per
+  explicit direction this session ("refer to 2021 paper of sundman for
+  isopleth").** The original plan (a new `COMPOSITION_RATIO` condition
+  type, two simultaneously-free composition axes with a ratio
+  constraint) was wrong. The paper's own worked isopleth figure (Fig.
+  3(c): "Iso-pleth in the Al-Mg-Zn system at x_Zn = 0.05 calculated
+  using the COST 507 database" — the EXACT system/database already
+  vendored here for Step 5c) shows an isopleth's two axes are T and ONE
+  composition, with every other composition held FIXED — a fixed value
+  (the paper's own example) or a fixed ratio (also paper-sanctioned:
+  "a constant ratio between two elements or more generally a linear
+  equation between several compositions", but not what its own figure
+  actually uses). A fixed-composition isopleth is therefore structurally
+  IDENTICAL to today's binary map (T walked, one composition released)
+  applied to a ternary+ system with the extra composition(s) pinned —
+  confirmed directly this session to need **zero new production code**:
+  `ConditionSet#initialComposition()` already handles a FIXED
+  composition condition correctly (only AXIS/unspecified components get
+  computed); `StepTracer#applyCompositionAxis` only ever writes the
+  WALKED composition's own index (moot here since T, not a composition,
+  is walked); `EquilibriumSolverV2#solveBoundaryInternal` only ever
+  writes `targetAmounts[releasedComponentIndex]` each Newton iteration
+  (confirmed by direct code reading) — every other component, including
+  a genuinely fixed third one, is left exactly as passed in, with no
+  implicit sum-to-one renormalization inside that method.
+  `MapTracerTernaryIsopletTest` (sic on the plan's naming — actual file
+  is `MapTracerTernaryIsoplethTest`) calls the EXISTING `AxisConfig`
+  -based `walkOneSegment` directly (T=`walkAxis`, x(Zn)=`releaseAxis`,
+  x(Mg)=0.05 baked into `compAtStart`'s constant, never-written entry),
+  proving the walk mechanism generalizes with no new plumbing — matching
+  Step 5c's own precedent of proving generality before building new
+  scaffolding for it.
+  **OC reference** (pty-driven against the real `oc7C` binary,
+  `docs/oc_reference_tests/almgzn_isopleth_xmg05.txt`): at x(Mg)=0.05
+  fixed, T=700K, x(Zn)=0.052 gives FCC_A1 (0.9976 f.u.) + MGZN2 (0.00080
+  f.u., barely two-phase) and x(Zn)=0.058 gives FCC_A1 (0.9895 f.u.) +
+  MGZN2 (0.00349 f.u.) — both matched closely by direct
+  `EquilibriumSolverV2` calls. A direct T/x(Zn) grid scan (no tracer)
+  confirmed the FCC_A1 / FCC_A1+MGZN2 boundary curves from x(Zn)~0.02 at
+  T=630K up to x(Zn)~0.052 at T=700K, and that at x(Zn)=0.05 exactly the
+  boundary sits between T=698K (two-phase) and T=700K (single-phase) —
+  consistent with OC's own T=700K/x(Zn)=0.052 point being already
+  (barely) two-phase. `walkOneSegment` (T walked from 630K with
+  x(Zn)=0.05 as the starting two-phase composition, released as the
+  walk proceeds) finds this exact crossing at T=700.0K, confirming both
+  the walk mechanism and the OC-derived bracket agree.
+  **Correction to `docs/phase_diagram_engine_flowchart.md`'s "Open
+  implementation choices" note, also made this session per the same
+  paper re-read:** the isopleth 3-exit node case (§3.3: "In iso-pleths
+  ... most node points correspond to two crossing lines ... Such a node
+  requires the creation of 3 exits when they are found") is a
+  PAPER-STATED fact (via prose/geometric reasoning about two lines
+  crossing, not a numbered formula), not merely OC's own hardcoded,
+  unprincipled constant as the flowchart doc previously (incorrectly)
+  characterized it. This case remains unimplemented (`NodeGeometry`
+  still throws `UnsupportedOperationException` for
+  `ISOPLETH_CROSSING`, and `PhaseDiagramEngine#classifyNode` cannot
+  produce that class yet) — this step only traces a single ordinary
+  (`TIE_LINE_IN_PLANE`, 2-exit) isopleth boundary line, not a full
+  isopleth diagram's node network; the 3-exit crossing geometry is
+  deferred, not silently dropped.
+  **Also confirmed (re-read, not previously verified):** isopleth
+  sections have NO tie-lines in the plane (unlike binary T-x and
+  ternary isothermal sections, which both do) — noted here since it
+  affects how a future full isopleth diagram's regions would be
+  interpreted/plotted, though it does not affect this step's single-
+  line-tracing scope.
+  Full JUnit suite and both critical diagnostics
+  (`CalculationSessionMapTracerTest`, `EquilibriumSolverV2BaselineTest`)
+  confirmed unchanged.
 - **5f (planned):** the 5-diagram-type test set (binary, ternary
   isothermal, ternary isopleth, property/step at fixed composition,
   binary activity/μ representation), each with 3 strictness tiers

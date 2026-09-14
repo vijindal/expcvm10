@@ -352,10 +352,22 @@ decision rather than translate a formula.
   tie-line-in-plane=2, generic=3) with a comment flagging the generic
   case as not fully principled ("Unknown type of node create exit
   lines"). Algorithm D (Eq. 8/9) only formally derives the exit count
-  for the *invariant* (`f=0`) case. The non-invariant exit count is
-  reasoned informally in the paper's prose (§3.2/3.3) rather than
-  derived from a numbered equation — treat OC's case constants as a
-  reference implementation to match, not as a formula to re-derive.
+  for the *invariant* (`f=0`) case. **Correction (confirmed via a full
+  re-read of the paper this session, prompted by isopleth design work):
+  the 3-exit ISOPLETH-CROSSING case specifically is NOT merely OC's own
+  unprincipled generic-case constant** — §3.3 states it directly in
+  prose, via geometric reasoning about two lines crossing rather than a
+  numbered formula: "In iso-pleths, with extensive or normalized
+  properties as conditions, in addition to T most node points correspond
+  to two crossing lines... Such a node requires the creation of 3 exits
+  when they are found." So this specific case (tie-line-in-plane=2,
+  isopleth-crossing=3) is paper-derived, just not paper-*formalized* as
+  an equation the way Eq. 8/9 formalize the invariant case — treat OC's
+  matching constants here as confirmation of the paper's own stated
+  geometry, not as an independent, unprincipled implementation choice.
+  Any OTHER non-invariant node topology beyond these two named cases
+  remains reasoned informally in the paper's prose and should still be
+  treated as "match OC's constant, not a formula to re-derive."
 
 ## Data structures (grounded in OC's `ocsmp` module, `smp2.F90:83-234`)
 
