@@ -441,13 +441,52 @@ detail; summarized here for tracking):
   Full JUnit suite and both critical diagnostics
   (`CalculationSessionMapTracerTest`, `EquilibriumSolverV2BaselineTest`)
   confirmed unchanged.
-- **5f (planned):** the 5-diagram-type test set (binary, ternary
-  isothermal, ternary isopleth, property/step at fixed composition,
-  binary activity/μ representation), each with 3 strictness tiers
-  (topology / exact-value / multi-point-along-a-line) — the multi-point
-  tier is designed specifically to catch the "boundary only re-solved
-  AT a crossing" defect two sections above, which endpoint-only tests
-  cannot see.
+- **5f (done):** `MultiDiagramTypeSuiteTest` — the 5-diagram-type test
+  set (binary T-x, ternary isothermal, ternary isopleth, property/step
+  at fixed composition, binary activity/μ representation), each with 3
+  strictness tiers (topology / exact-value / multi-point-along-a-line).
+  The multi-point tier samples at least 3 INTERIOR points of a traced
+  line/segment (not just its endpoints) and independently re-solves/
+  re-checks each — this is what would catch "the boundary is only
+  re-solved exactly AT a crossing, points along the line are never
+  re-validated," a defect endpoint-only tests cannot see.
+  **Types 1-3 (binary T-x, ternary isothermal, ternary isopleth)** reuse
+  the exact systems/OC references already validated in Steps 3b/5c/5e
+  (`MapDiagramTracerAgCuTest`, `MapTracerTernaryIsothermalTest`,
+  `MapTracerTernaryIsoplethTest`), adding only the new tier-3 multi-
+  point assertions this suite introduces — no new OC captures needed.
+  **Type 4 (property/step at fixed composition)** is new: exercises
+  `StepTracer` (Algorithm B's STEP branch) directly, previously
+  untested against a real OC reference in this project's diagram-engine
+  test suite. New OC capture (`docs/oc_reference_tests/agcu_step_xcu05.txt`,
+  pty-driven against the real `oc7C` binary): Ag-Cu, x(Cu)=0.05, T=1176K
+  gives FCC_A1-only, T=1177K gives FCC_A1 (0.9882 f.u.) + LIQUID (0.0118
+  f.u.) — confirms both the transition bracket and the two-phase point
+  values closely.
+  **Type 5 (binary activity/μ representation)** proves the flowchart's
+  "same stored data, different plot" claim with zero new tracing,
+  reinterpreting the exact single-phase point (T=1150K, x(Cu)=0.05)
+  `MapDiagramTracerAgCuTest` already starts its own search from.
+  **Found and fixed a stale, unreproducible number while building this
+  test**: `MapDiagramTracerAgCuTest`'s javadoc cited `mu(Ag)=-71761.7`
+  from an earlier session's compiled-TQ-example capture that no longer
+  exists anywhere in this repo to verify against. Re-captured fresh,
+  directly from OC's own console this session (pty-driven,
+  `docs/oc_reference_tests/agcu_mu_1150.txt`): Chem.pot/RT = -7.1104
+  (Ag) / -6.8921 (Cu), RT=9561.7 J/mol at T=1150K, giving
+  mu(Ag)=-67987.5, mu(Cu)=-65900.2 J/mol — which matches this project's
+  own solver closely (mu(Ag)=-67987.17, mu(Cu)=-65900.04) and does NOT
+  match the old, now-corrected citation. `MapDiagramTracerAgCuTest`'s
+  javadoc updated to the verified, reproducible number.
+  **Also confirmed while writing this suite**: `PhaseDiagramEngine
+  .classifyPlot` still throws `UnsupportedOperationException` for
+  EVERY `PlotType`, including `ACTIVITY_OR_CHEMICAL_POTENTIAL` (the
+  type this suite's Type-5 case targets) — asserted directly here too,
+  since `PhaseDiagramEngineTest` only exercises that same "not yet
+  implemented" guarantee for `BINARY_T_X`, a different enum constant.
+  Full JUnit suite and both critical diagnostics
+  (`CalculationSessionMapTracerTest`, `EquilibriumSolverV2BaselineTest`)
+  confirmed unchanged.
 
 None of 5c-5f depend on fixing the still-open node-dedup bug above —
 every new test asserts "the expected node/assemblage appears in the

@@ -33,16 +33,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * sessions). Direct {@code EquilibriumSolverV2} scanning (no tracer)
  * at x(Cu)=0.05 found a clean single-phase FCC_A1 field from at least
  * T=1150K up to T=1175K, then FCC_A1+LIQUID from T=1180K -- narrowed to
- * that 5K bracket this session. OC's own {@code tqex_agcu} (a clone of
- * {@code examples/TQ4lib/F90/crfe/TQ1-crfe.F90} pointed at {@code
- * agcu.TDB}, run via the pty driver, see {@code
- * docs/oc_reference_tests/run_pty.py}) confirms FCC_A1 alone stable at
- * T=1150K, x(Cu)=0.05 (mu(Ag)=-71761.7, mu(Cu)=-65900.2 J/mol, SER
- * reference; note the compiled example asks for "Mole fraction of AG",
- * so x(Ag)=0.95 was the input for x(Cu)=0.05) -- confirming the
- * qualitative single-phase starting condition, with this project's own
- * solver providing the exact crossing bracket, per Steps 1-3a's
- * precedent.
+ * that 5K bracket this session. OC's own console (driven via the pty
+ * pattern, {@code docs/oc_reference_tests/run_pty.py} against the real
+ * {@code oc7C} binary, capture in {@code
+ * docs/oc_reference_tests/agcu_mu_1150.txt}) confirms FCC_A1 alone
+ * stable at T=1150K, x(Cu)=0.05, with Chem.pot/RT = -7.1104 (Ag) /
+ * -6.8921 (Cu) and RT=9561.7 J/mol at this T -- i.e. mu(Ag)=-67987.5,
+ * mu(Cu)=-65900.2 J/mol, SER reference. (An earlier session's citation
+ * here of mu(Ag)=-71761.7 from a since-unreproducible compiled TQ
+ * example capture was a stale/incorrect transcription -- corrected
+ * this session against a fresh, reproducible OC console capture, which
+ * matches this project's own solver closely: mu(Ag)=-67987.17,
+ * mu(Cu)=-65900.04, see {@code MultiDiagramTypeSuiteTest}'s Type-5
+ * binary activity/mu-representation case.)
  */
 public class MapDiagramTracerAgCuTest {
 
