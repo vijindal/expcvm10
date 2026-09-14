@@ -38,10 +38,15 @@ diagrams, and supports parameter assessment against experimental data.
   heat capacity, activities, driving forces) computed from converged
   equilibria.
 - **Parameter assessment / optimization** — fitting model parameters against
-  experimental data (currently the legacy Levenberg-Marquardt pathway).
+  experimental data, integrated with the new model/equilibrium architecture
+  (currently only the legacy Levenberg-Marquardt pathway).
 - **API / CLI / GUI and production infrastructure** — stable programmatic
   interfaces, scriptable CLI, and a usable GUI, backed by proper packaging,
   testing, and documentation.
+
+Phase-diagram tracing (binary, ternary isothermal/isopleth/pseudo-isothermal,
+fixed-composition stability plots) is the current top priority — see
+[docs/roadmap_phase_diagrams.md](docs/roadmap_phase_diagrams.md).
 
 ### Design principle: the equilibrium kernel is central
 
@@ -375,16 +380,14 @@ assessment code is quarantined under `legacy/`.
   *during* Newton iteration (not just at `GridMinimizer` init) and
   intermittently cause a singular global matrix — most visible on
   quaternary systems and near-symmetric compositions.
-- `MapTracer` traces one line per call and does not yet auto-discover
-  and stitch together every line/invariant a full diagram needs.
-  Ordinary boundary crossings release a composition axis only; T-release
-  (needed for invariant nodes) works for TEMPERATURE walk axes but
-  converges too slowly when seeding a genuinely new phase to reliably
-  locate an invariant yet (`CalculationSessionMapTracerTest` Section C
-  documents this against a real peritectic). P-release is not
-  implemented (`PhaseMatrixAssembler` computes `dG/dP`-based
-  coefficients per phase, but they are not yet threaded through the
-  global matrix the way T now is).
+- Full, automated phase-diagram calculation (binary, ternary isothermal /
+  isopleth / pseudo-isothermal, and fixed-composition stability plots) is
+  the current top priority and not yet done — see
+  [docs/roadmap_phase_diagrams.md](docs/roadmap_phase_diagrams.md) for the
+  target diagram types, what `StepTracer`/`MapTracer`/`CoarseDiagramTracer`
+  already provide toward it, and the specific gaps (multi-line stitching,
+  T-release convergence, missing P-release, ternary invariant validation)
+  standing in the way.
 - Two-state/Einstein and ordering/disordering (B2/L1₂-style)
   contributions are not implemented in `CefGibbs`. `VK` (isothermal
   compressibility) is detected and rejected explicitly rather than
@@ -400,23 +403,9 @@ assessment code is quarantined under `legacy/`.
   the Gradle/JUnit setup `build.gradle` declares. Only one JUnit test
   class exists (`src-test/calc/equil/`). No single command runs
   everything as a pass/fail gate.
-- `InvariantExitFinder` (Algorithm D) is written for general component
-  counts but only verified against binary systems; the grid-minimizer's
-  convex-hull step itself is not similarly limited.
 - API/GUI hardening is out of scope: no authentication, TLS, or
   session expiry on the REST API; the REST API's `step`/`map` endpoints
   have not been updated to use the new tracers.
-
-### Long-term intended capabilities
-
-- Robust single-phase through general multicomponent, multiphase
-  equilibrium for arbitrary combinations of unary, RK, CEF, and CVM
-  phases.
-- Binary, ternary, and general multicomponent phase-diagram calculation.
-- A stable, documented API/CLI usable for scripting and integration, and a
-  GUI sufficient for interactive exploration.
-- Parameter assessment against experimental data integrated with the new
-  model/equilibrium architecture (not only the legacy pathway).
 
 See [Structure](#structure) above for the architecture and layer
 boundaries.
