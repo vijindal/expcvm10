@@ -89,10 +89,23 @@ public class PhaseDiagramEngineTest {
         PhaseDiagramEngine.validateConditionCount(2, 4);
     }
 
+    /**
+     * See {@code calc.equil.PhaseDiagramEngineGlobalStabilityTest} for
+     * the real calibration cases -- those need package-private access
+     * to {@code EquilibriumSolverV2.setInitialStateForTest} to force a
+     * genuinely-converged-but-globally-unstable point, unavailable from
+     * this package.
+     */
     @Test
-    void isGloballyStableIsNotYetImplemented() {
-        assertThrows(UnsupportedOperationException.class,
-                () -> PhaseDiagramEngine.isGloballyStable(null));
+    void isGloballyStableAcceptsAGenuinelyStablePoint() throws Exception {
+        List<GibbsEnergyModel> candidates = ThermodynamicSystem.build(
+                "data/agcu.TDB", List.of("AG", "CU"), List.of("LIQUID", "FCC_A1")).phaseModels();
+        double[] comp = { 0.95, 0.05 };
+
+        var result = new calc.equil.EquilibriumSolverV2().solve(1150.0, 101325.0, comp, candidates);
+
+        assertTrue(result.isConverged());
+        assertTrue(PhaseDiagramEngine.isGloballyStable(result, candidates));
     }
 
     /**

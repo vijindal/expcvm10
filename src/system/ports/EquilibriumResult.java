@@ -53,6 +53,30 @@ public final class EquilibriumResult {
         return g;
     }
 
+    /**
+     * Total system Gibbs energy per mole of real atoms -- {@link
+     * #totalG()} divided by the total {@link PhaseResult#atoms()} across
+     * every stable phase, not {@link #totalG()} divided by total {@code
+     * amount} (formula units). This is the quantity comparable across
+     * different candidate phase sets with different formula-unit sizes
+     * (e.g. this result's own phases vs. {@code GridMinimizer}'s, which
+     * reports G per mole of real atoms internally -- see that class's
+     * own javadoc) -- {@link #totalG()} alone is NOT comparable across
+     * phase sets whose formula units represent different atom counts.
+     */
+    public double totalGPerAtom() {
+        double totalAtoms = 0;
+        for (PhaseResult ph : stablePhases) {
+            totalAtoms += ph.atoms();
+        }
+        if (totalAtoms <= 0.0) {
+            throw new IllegalStateException(
+                    "Cannot compute totalGPerAtom(): no real atoms in the stable phase set "
+                    + "(totalAtoms=" + totalAtoms + ").");
+        }
+        return totalG() / totalAtoms;
+    }
+
     // ------------------------------------------------------------------
     // Per-phase result
     // ------------------------------------------------------------------

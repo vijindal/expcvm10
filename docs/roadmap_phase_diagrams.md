@@ -526,6 +526,31 @@ None of 5c-5f depend on fixing the still-open node-dedup bug above —
 every new test asserts "the expected node/assemblage appears in the
 registry," never an exact node count.
 
+### Step 6 — Global stability check (§2.3.3)
+
+**6a (done):** `PhaseDiagramEngine.isGloballyStable` implemented —
+re-runs `GridMinimizer`'s independent global search at a converged
+point's (T, P, overall composition) and flags it unstable if another
+candidate phase set is lower in G per real atom (`EquilibriumResult
+.totalGPerAtom()`, new; per-formula-unit `totalG()` isn't comparable
+across phase sets with different formula-unit sizes) by more than a
+1e-4 relative tolerance (an order of magnitude above `GridMinimizer`'s
+own ~1e-5 sampling noise on a correct point, confirmed directly).
+Calibrated against a genuine, non-invented failure case rather than a
+synthetic one: Ag-Cu at T=700K, x(Cu)=0.5, forced via
+`EquilibriumSolverV2#setInitialStateForTest` to converge as a single
+FCC_A1 phase instead of splitting across its real miscibility gap —
+G/atom -28521 forced vs. -31585 from `GridMinimizer`, ~10.7% off, far
+past tolerance (`PhaseDiagramEngineGlobalStabilityTest`, in
+`calc.equil` since the test hook is package-private there).
+**Not yet wired into the walk loop** — `MapTracer.walkOneSegment`
+doesn't call this yet, so a walked point is still accepted the moment
+it converges. The paper's full described behavior (abandon and
+suppress the WHOLE line, not just the one bad point) is separate
+walk-loop control-flow work, deliberately deferred until this check
+was proven correct in isolation first.
+Full JUnit suite and both critical diagnostics confirmed unchanged.
+
 ## Non-goals for this effort
 
 - General multicomponent (4+) full-diagram auto-discovery — pseudo-

@@ -1,7 +1,9 @@
 package calc.diagram;
 
+import calc.equil.GridMinimizer;
 import system.ThermodynamicSystem;
 import system.model.GibbsEnergyModel;
+import system.ports.EquilibriumResult;
 
 import java.io.IOException;
 import java.util.List;
@@ -219,25 +221,63 @@ public final class PhaseDiagramEngine {
     // ------------------------------------------------------------------
 
     /**
-     * The C1 walk loop's {@code GLOBAL STABILITY CHECK} (flowchart,
-     * §2.3.3, general form): at each successfully solved walk point, is
-     * there another phase set representing a MORE STABLE equilibrium?
-     * If so, the whole line is abandoned and suppressed (not merely
-     * terminated) -- distinct from the narrower, gridpoint-specific
-     * initial-equilibrium grid test in {@link #drainC1Loop}'s javadoc.
-     *
-     * <p><b>Not yet implemented.</b> Neither {@link MapTracer#trace}
-     * nor {@link MapTracer#walkOneSegment} performs this check today --
-     * a walked point is accepted as soon as {@code
-     * EquilibriumSolverV2} reports convergence, with no check against
-     * other candidate phase sets that might be cheaper. See {@code
-     * docs/phase_diagram_engine_flowchart.md}'s walk-loop box.
+     * Relative G/atom tolerance -- above {@code GridMinimizer}'s own
+     * ~1e-5 sampling noise on a correct point, well below a genuine
+     * miscibility-gap-scale violation (~1e-1); see {@code
+     * PhaseDiagramEngineTest} for the calibration case.
      */
-    public static boolean isGloballyStable(system.ports.EquilibriumResult candidateEquilibrium) {
-        throw new UnsupportedOperationException(
-                "Global stability check (is a cheaper phase set available?) not yet "
-                + "implemented -- walkOneSegment currently accepts any converged point. "
-                + "See docs/phase_diagram_engine_flowchart.md's walk-loop box.");
+    private static final double GLOBAL_STABILITY_RELATIVE_TOLERANCE = 1.0e-4;
+
+    /**
+     * The C1 walk loop's {@code GLOBAL STABILITY CHECK} (§2.3.3): does
+     * another candidate phase set give a lower G at this equilibrium's
+     * (T, P, overall composition)? Re-runs {@link GridMinimizer}'s
+     * independent global search and compares G per mole of real atoms
+     * ({@link EquilibriumResult#totalGPerAtom()}, not {@link
+     * EquilibriumResult#totalG()} -- not comparable across phase sets
+     * with different formula-unit sizes).
+     *
+     * <p>Not yet wired into the walk loop -- {@link
+     * MapTracer#walkOneSegment} doesn't call this yet, so a converged
+     * point is still accepted unconditionally today. The paper's full
+     * behavior (abandon and suppress the whole line) is separate,
+     * follow-up walk-loop work.
+     *
+     * @param candidates the SAME candidate list {@code candidateEquilibrium} was solved with
+     */
+    public static boolean isGloballyStable(
+            EquilibriumResult candidateEquilibrium,
+            List<GibbsEnergyModel> candidates) {
+
+        double[] overallComposition = overallComposition(candidateEquilibrium);
+
+        EquilibriumResult gridResult = new GridMinimizer().solve(
+                candidates, candidateEquilibrium.getT(), candidateEquilibrium.getP(), overallComposition);
+
+        double candidateGPerAtom = candidateEquilibrium.totalGPerAtom();
+        double gridGPerAtom = gridResult.totalGPerAtom();
+
+        double relativeDifference = (candidateGPerAtom - gridGPerAtom) / Math.abs(candidateGPerAtom);
+        return relativeDifference <= GLOBAL_STABILITY_RELATIVE_TOLERANCE;
+    }
+
+    /** Overall composition (mole fractions) implied by a converged result's stable phases. */
+    private static double[] overallComposition(EquilibriumResult result) {
+        int nc = result.getMu().length;
+        double[] atomsPerComponent = new double[nc];
+        double totalAtoms = 0.0;
+        for (EquilibriumResult.PhaseResult pr : result.getStablePhases()) {
+            double phaseAtoms = pr.atoms();
+            totalAtoms += phaseAtoms;
+            for (int i = 0; i < nc; i++) {
+                atomsPerComponent[i] += phaseAtoms * pr.x[i];
+            }
+        }
+        double[] comp = new double[nc];
+        for (int i = 0; i < nc; i++) {
+            comp[i] = atomsPerComponent[i] / totalAtoms;
+        }
+        return comp;
     }
 
     // ------------------------------------------------------------------
