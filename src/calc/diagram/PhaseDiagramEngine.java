@@ -1,0 +1,338 @@
+package calc.diagram;
+
+import system.ThermodynamicSystem;
+import system.model.GibbsEnergyModel;
+
+import java.io.IOException;
+import java.util.List;
+
+/**
+ * Single top-to-bottom entry point matching {@code
+ * docs/phase_diagram_engine_flowchart.md} -- one method per flowchart
+ * stage, in the same order the flowchart lists them. Every target
+ * diagram type in {@code docs/roadmap_phase_diagrams.md} (binary,
+ * ternary isothermal, ternary isopleth, pseudo-isothermal, property/
+ * step) runs through this SAME sequence; what differs per diagram type
+ * is only the axis/condition setup passed into {@link #defineSystem}
+ * and the choice passed to {@link #classifyPlot} at the end -- see
+ * {@code docs/roadmap_phase_diagrams.md}'s "One engine, not one tracer
+ * per diagram type" section.
+ *
+ * <p><b>Purpose of this class.</b> Before this, each flowchart stage
+ * existed only as a paragraph in the flowchart doc plus, for the stages
+ * already built, scattered methods on {@link MapTracer} / {@link
+ * MapDiagramTracer} / {@link NodeRegistry} with no single place showing
+ * the whole sequence or which stages remain unimplemented. This class
+ * is that single place: implemented stages delegate to the classes
+ * above; unimplemented stages throw {@link UnsupportedOperationException}
+ * naming the exact gap and pointing at the roadmap doc, rather than
+ * silently doing nothing or being absent entirely. Nothing in the
+ * implemented stages below was rewritten to make this skeleton --
+ * {@link #generateStartingPoints}/{@link #drainC1Loop} are thin
+ * delegations to already-tested code (Steps 1-4).
+ *
+ * <p><b>Not yet wired into any UI.</b> {@code
+ * CalculationSession#calculatePhaseDiagram} still throws its own
+ * "not yet implemented" -- this class is the engine {@code
+ * calculatePhaseDiagram} will eventually call once enough of the
+ * pipeline below is real, not a replacement for it yet.
+ */
+public final class PhaseDiagramEngine {
+
+    private PhaseDiagramEngine() {
+    }
+
+    // ------------------------------------------------------------------
+    // DATABASE -> DEFINE SYSTEM + CONDITIONS + AXES + LIMITS
+    // ------------------------------------------------------------------
+
+    /**
+     * {@code DATABASE} + {@code DEFINE SYSTEM + CONDITIONS + AXES +
+     * LIMITS} (flowchart top). Parses the TDB and builds a {@link
+     * GibbsEnergyModel} for each of {@code candidatePhases} -- the
+     * SET OF CANDIDATE PHASES the flowchart's initialization box
+     * discusses (stable vs. "metastable" diagrams are just different
+     * candidate-phase selections at this stage, per that box's note;
+     * this method does not itself have a stable/metastable mode).
+     *
+     * <p><b>Implemented</b>: delegates directly to {@link
+     * ThermodynamicSystem#build}, already used by every other
+     * calculation path in this codebase ({@code CalculationSession},
+     * the CLI/GUI/API).
+     */
+    public static ThermodynamicSystem defineSystem(
+            String tdbFilePath,
+            List<String> elements,
+            List<String> candidatePhases) throws IOException {
+
+        return ThermodynamicSystem.build(tdbFilePath, elements, candidatePhases);
+    }
+
+    // ------------------------------------------------------------------
+    // VALIDATE n + 2 EQUILIBRIUM CONDITIONS
+    // ------------------------------------------------------------------
+
+    /**
+     * {@code VALIDATE n + 2 EQUILIBRIUM CONDITIONS} (flowchart, §2.3.2):
+     * an n-component system needs exactly n+2 conditions for a single
+     * Algorithm-A equilibrium call (T, P, composition by default, or an
+     * allowed substitute -- chemical potential/activity, S, H, V, a
+     * phase held stable, x in a phase, a constituent fraction, a
+     * state-variable expression). Distinct from the Gibbs phase rule
+     * (Eq. 8) used later at node classification -- see {@link
+     * #classifyNode}.
+     *
+     * <p><b>Not yet implemented.</b> No caller in this codebase
+     * currently builds an arbitrary condition set this general
+     * (today's {@code AxisConfig}/{@code CalculationSession} paths only
+     * ever use T, P, and overall composition) -- there is nothing to
+     * validate against yet beyond that fixed shape. See {@code
+     * docs/roadmap_phase_diagrams.md}.
+     */
+    public static void validateConditionCount(int numComponents, int numConditionsSupplied) {
+        throw new UnsupportedOperationException(
+                "General n+2 condition validation not yet implemented -- "
+                + "every current caller uses the fixed T/P/composition shape only. "
+                + "See docs/roadmap_phase_diagrams.md.");
+    }
+
+    // ------------------------------------------------------------------
+    // GENERATE STARTING POINT(S)
+    // ------------------------------------------------------------------
+
+    /**
+     * {@code GENERATE STARTING POINT(S)} (flowchart): usually one, but
+     * a full diagram can have components disconnected from the first
+     * (the paper's own Fe-Mo γ-loop example, §3).
+     *
+     * <p><b>Partially implemented.</b> A single starting point is
+     * exactly what every {@link #drainC1Loop} caller supplies today
+     * (Steps 1-4) -- this method exists so multi-start-point discovery
+     * has a named place to be added, but generating anything beyond
+     * the one caller-supplied point is NOT yet implemented. See {@code
+     * docs/roadmap_phase_diagrams.md}'s `GENERATE STARTING POINTS` row.
+     */
+    public static List<double[]> generateStartingPoints(double singleStartWalkValue) {
+        // Single starting point: the trivial, currently-sufficient case.
+        return List.of(new double[] { singleStartWalkValue });
+    }
+
+    // ------------------------------------------------------------------
+    // FOR EACH STARTING POINT: initial estimate, Algorithm A, initial
+    // search, START node -- then C1 DRAIN LOOP
+    // ------------------------------------------------------------------
+
+    /**
+     * The flowchart's "FOR EACH STARTING POINT" box (initial estimate
+     * via GridMinimizer, Algorithm A, the initial-equilibrium grid test,
+     * the ONE-AXIS-vs-TWO-AXES branch, and locating the true START
+     * {@link Node}) followed immediately by the {@code C1 : DRAIN LOOP}
+     * box -- together, "drain the diagram from one starting point."
+     *
+     * <p><b>Implemented for the TWO-AXES (map) branch only, ordinary
+     * tie-line-in-plane nodes only.</b> Delegates to {@link
+     * MapDiagramTracer#drain}, which internally:
+     * <ul>
+     *   <li>solves the starting condition (Algorithm A) -- no separate
+     *       GridMinimizer-vs-Algorithm-A staging or initial-equilibrium
+     *       grid test (§2.3.3) is done first; {@code
+     *       EquilibriumSolverV2} always runs its own grid-minimizer
+     *       initialization internally, so this is effectively covered,
+     *       just not as a separately callable step;</li>
+     *   <li>runs the TWO-AXES initial search ({@link
+     *       MapTracer#findInitialBoundary}, Step 3a/3b) to locate the
+     *       true START node;</li>
+     *   <li>drains the C1 loop (Step 2), attaching 2 exit lines per
+     *       ordinary crossing.</li>
+     * </ul>
+     *
+     * <p><b>NOT implemented within this delegation:</b>
+     * <ul>
+     *   <li>the ONE-AXIS (step) branch's own node/exit bookkeeping --
+     *       {@link StepTracer} exists and is used elsewhere in this
+     *       codebase, but is not wired into a {@link Node}/{@link
+     *       NodeRegistry}-based drain loop the way the map branch is;</li>
+     *   <li>Algorithm D / invariant exit generation -- a node where
+     *       {@link MapTracer.SegmentEnd#INVARIANT} or {@code
+     *       UNRESOLVED_MULTI_PHASE_CHANGE} is reached is registered
+     *       with no exit lines (see {@link MapDiagramTracer}'s own
+     *       javadoc);</li>
+     *   <li>the "fastest-varying axis" reselection during a walk;</li>
+     *   <li>multi-start-point stitching -- see {@link
+     *       #generateStartingPoints}.</li>
+     * </ul>
+     *
+     * @throws IllegalStateException if the initial search finds no
+     *         crossing anywhere in {@code walkAxis}'s range (propagated
+     *         from {@link MapDiagramTracer#drain})
+     */
+    public static NodeRegistry drainC1Loop(
+            AxisConfig walkAxis,
+            AxisConfig releaseAxis,
+            double fixedT,
+            double fixedP,
+            double startWalkValue,
+            double[] compOverall,
+            List<GibbsEnergyModel> candidates) {
+
+        return new MapDiagramTracer().drain(
+                walkAxis, releaseAxis, fixedT, fixedP, startWalkValue, compOverall, candidates);
+    }
+
+    // ------------------------------------------------------------------
+    // (Inside the C1 loop) GLOBAL STABILITY CHECK
+    // ------------------------------------------------------------------
+
+    /**
+     * The C1 walk loop's {@code GLOBAL STABILITY CHECK} (flowchart,
+     * §2.3.3, general form): at each successfully solved walk point, is
+     * there another phase set representing a MORE STABLE equilibrium?
+     * If so, the whole line is abandoned and suppressed (not merely
+     * terminated) -- distinct from the narrower, gridpoint-specific
+     * initial-equilibrium grid test in {@link #drainC1Loop}'s javadoc.
+     *
+     * <p><b>Not yet implemented.</b> Neither {@link MapTracer#trace}
+     * nor {@link MapTracer#walkOneSegment} performs this check today --
+     * a walked point is accepted as soon as {@code
+     * EquilibriumSolverV2} reports convergence, with no check against
+     * other candidate phase sets that might be cheaper. See {@code
+     * docs/phase_diagram_engine_flowchart.md}'s walk-loop box.
+     */
+    public static boolean isGloballyStable(system.ports.EquilibriumResult candidateEquilibrium) {
+        throw new UnsupportedOperationException(
+                "Global stability check (is a cheaper phase set available?) not yet "
+                + "implemented -- walkOneSegment currently accepts any converged point. "
+                + "See docs/phase_diagram_engine_flowchart.md's walk-loop box.");
+    }
+
+    // ------------------------------------------------------------------
+    // (Inside the C1 loop, at a stable-set change) GIBBS PHASE RULE /
+    // node classification, Algorithm D
+    // ------------------------------------------------------------------
+
+    /** Result of {@link #classifyNode}. */
+    public enum NodeClass {
+        /** f &gt; 0, tie-line-in-plane geometry: 2 exits. */
+        TIE_LINE_IN_PLANE,
+        /** f &gt; 0, isopleth-style crossing geometry: 3 exits. */
+        ISOPLETH_CROSSING,
+        /** f = 0: a genuine invariant, exits found via Algorithm D. */
+        INVARIANT
+    }
+
+    /**
+     * Node classification at a stable-set change (flowchart): first the
+     * GIBBS PHASE RULE (Eq. 8, {@code f = n+2-p-c}) distinguishes
+     * invariant ({@code f=0}) from ordinary ({@code f>0}); for the
+     * ordinary case, exit count comes from NODE GEOMETRY, not from
+     * {@code f} itself (tie-line-in-plane = 2, isopleth-style = 3 --
+     * see the flowchart's explicit correction on this point).
+     *
+     * <p><b>Partially implemented.</b> {@link MapDiagramTracer}
+     * implicitly always takes the {@code TIE_LINE_IN_PLANE} branch (2
+     * exits) for any resolved crossing, matching this scope's only
+     * target diagram type so far -- it does not compute {@code f} via
+     * Eq. 8, distinguish {@code ISOPLETH_CROSSING}, or call {@link
+     * InvariantExitFinder} from within the drain loop (that class
+     * exists and is exercised inside {@link MapTracer} directly, but
+     * not reachable through this classification step). See {@code
+     * docs/phase_diagram_engine_flowchart.md}'s GIBBS PHASE RULE box.
+     */
+    public static NodeClass classifyNode(int numComponents, int numStablePhases, int numPotentialConditions) {
+        throw new UnsupportedOperationException(
+                "Explicit Eq. 8 node classification (and the ISOPLETH_CROSSING branch) "
+                + "not yet implemented -- MapDiagramTracer always assumes TIE_LINE_IN_PLANE. "
+                + "See docs/phase_diagram_engine_flowchart.md's GIBBS PHASE RULE box.");
+    }
+
+    // ------------------------------------------------------------------
+    // MERGE / DEDUP NETWORK
+    // ------------------------------------------------------------------
+
+    /**
+     * {@code MERGE / DEDUP NETWORK} (flowchart): collapse nodes reached
+     * from two directions via node matching, remove/suppress lines
+     * rejected by the global stability check, and remove duplicate
+     * representations (implementation cleanup, not paper-sourced).
+     *
+     * <p><b>Partially implemented.</b> {@link NodeRegistry#findOrCreate}
+     * (Step 1/2) performs node-matching dedup INLINE, at creation time,
+     * for the ordinary case -- there is no separate post-hoc merge pass.
+     * Step 4's investigation found this inline dedup does not catch
+     * every case: independent walks reaching the "same" physical
+     * boundary from different directions can converge to meaningfully
+     * different equilibria (chemical potentials differing well beyond
+     * solver tolerance), which {@link Node#matches} then correctly
+     * treats as distinct nodes even though they represent one physical
+     * point -- see {@code docs/roadmap_phase_diagrams.md}'s "STILL
+     * OPEN" entry. A true post-hoc merge pass, and global-stability-
+     * check-based line suppression, are NOT implemented.
+     */
+    public static void mergeDedupNetwork(NodeRegistry registry) {
+        throw new UnsupportedOperationException(
+                "Post-hoc node merge / line suppression not yet implemented -- "
+                + "NodeRegistry only dedups inline at creation time, which Step 4 found "
+                + "is not sufficient for nodes reached from different walk directions. "
+                + "See docs/roadmap_phase_diagrams.md's \"STILL OPEN\" node-duplication entry.");
+    }
+
+    // ------------------------------------------------------------------
+    // IDENTIFY / LABEL PHASE REGIONS
+    // ------------------------------------------------------------------
+
+    /**
+     * {@code IDENTIFY / LABEL PHASE REGIONS} (flowchart, §2.4): ZPF
+     * lines separate regions where a phase is present from regions
+     * where it is not. The paper states this defining property but
+     * gives no computational-geometry algorithm, and neither does OC's
+     * source (confirmed: {@code smp2A.F90}/{@code smp2B.F90} mention
+     * "region" only in comments, never as a data structure or
+     * algorithm) -- this is genuinely new implementation work, not a
+     * port from either source.
+     *
+     * <p><b>Not implemented.</b> No region/polygon construction exists
+     * anywhere in this codebase yet.
+     */
+    public static void identifyPhaseRegions(NodeRegistry registry) {
+        throw new UnsupportedOperationException(
+                "Phase-region identification/labeling not yet implemented -- this is new "
+                + "implementation work with no algorithm to port from the paper or OC. "
+                + "See docs/phase_diagram_engine_flowchart.md's IDENTIFY/LABEL PHASE REGIONS box.");
+    }
+
+    // ------------------------------------------------------------------
+    // CLASSIFY REQUESTED PLOT / VALIDATE PLOT
+    // ------------------------------------------------------------------
+
+    /** The plot types the flowchart's CLASSIFY REQUESTED PLOT box lists. */
+    public enum PlotType {
+        BINARY_T_X,
+        ACTIVITY_OR_CHEMICAL_POTENTIAL,
+        H_X_S_X_G_X,
+        TERNARY_ISOTHERMAL,
+        TERNARY_ISOPLETH,
+        MULTICOMPONENT_ISOPLETH_OR_PSEUDO_ISOTHERMAL,
+        PROPERTY_OR_STEP_DIAGRAM
+    }
+
+    /**
+     * {@code CLASSIFY REQUESTED PLOT} + {@code VALIDATE PLOT}
+     * (flowchart): render the same stored {@link Node}/{@link Line}
+     * data as whichever plot type was requested; may overlay results
+     * from separate {@link #defineSystem} runs with different candidate
+     * -phase sets (Fig. 2c's stable-vs-"metastable" overlay) -- each
+     * run is a full, independent pass through this whole engine, the
+     * overlay itself is a plotting-stage step only.
+     *
+     * <p><b>Not implemented.</b> No rendering/plot-classification layer
+     * exists for this engine yet (the GUI's existing {@code
+     * PhaseDiagramPanel}/{@code CoarseDiagramPanel} render {@link
+     * StepTracer}/{@link CoarseDiagramTracer} output directly, not this
+     * class's {@link Node}/{@link Line} graph).
+     */
+    public static void classifyPlot(NodeRegistry registry, PlotType requestedType) {
+        throw new UnsupportedOperationException(
+                "Plot classification/rendering not yet implemented for the Node/Line engine -- "
+                + "see docs/phase_diagram_engine_flowchart.md's CLASSIFY REQUESTED PLOT box.");
+    }
+}

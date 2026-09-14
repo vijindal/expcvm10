@@ -6,6 +6,15 @@ lines to trace or where invariants are. Today's tracers (`StepTracer`,
 `MapTracer`) each follow **one line per call**, chosen and configured by the
 caller; nothing auto-discovers a complete diagram yet.
 
+**`calc.diagram.PhaseDiagramEngine`** is the single skeleton class mirroring
+[phase_diagram_engine_flowchart.md](phase_diagram_engine_flowchart.md)
+top-to-bottom, one method per flowchart stage — implemented stages delegate
+to `MapDiagramTracer`/`MapTracer`/`NodeRegistry`, unimplemented ones throw
+`UnsupportedOperationException` naming the exact gap. `PhaseDiagramEngineTest`
+keeps it honest: each "not yet implemented" stage has an `assertThrows` that
+must be intentionally updated (not silently left stale) once that stage is
+actually built. Check that class first when picking up the next step below.
+
 ## Target diagram types
 
 1. **Binary phase diagram** (T vs. composition, full diagram)
