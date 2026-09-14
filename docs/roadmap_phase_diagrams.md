@@ -2,575 +2,187 @@
 
 **Priority: first.** Goal — fully automated calculation of the phase-diagram
 types users actually ask for, without manually specifying which boundary
-lines to trace or where invariants are. Today's tracers (`StepTracer`,
-`MapTracer`) each follow **one line per call**, chosen and configured by the
-caller; nothing auto-discovers a complete diagram yet.
+lines to trace or where invariants are.
 
-**`calc.diagram.PhaseDiagramEngine`** is the single skeleton class mirroring
+**`calc.diagram.PhaseDiagramEngine`** is the single entry point mirroring
 [phase_diagram_engine_flowchart.md](phase_diagram_engine_flowchart.md)
 top-to-bottom, one method per flowchart stage — implemented stages delegate
 to `MapDiagramTracer`/`MapTracer`/`NodeRegistry`, unimplemented ones throw
 `UnsupportedOperationException` naming the exact gap. `PhaseDiagramEngineTest`
 keeps it honest: each "not yet implemented" stage has an `assertThrows` that
-must be intentionally updated (not silently left stale) once that stage is
-actually built. Check that class first when picking up the next step below.
+must be intentionally updated once that stage is built.
 
 ## Target diagram types
 
-1. **Binary phase diagram** (T vs. composition, full diagram)
-   Auto-discover every ZPF line and invariant reaction (eutectic,
-   peritectic, congruent, etc.) across the whole composition range — not
-   one line per `map` call as today.
-2. **Ternary isothermal section** (fixed T, composition triangle)
-   Auto-trace all two-phase and three-phase region boundaries at a given
-   temperature.
-3. **Ternary isopleth** (fixed ratio of two components, T vs. third
-   component — a vertical section through the ternary prism)
-   Same auto-discovery, on a 2D slice defined by a composition constraint
-   instead of a free ternary plane.
-4. **Pseudo-isothermal section** (fixed T, but for higher-order systems —
-   an isothermal cut through a quaternary+ system projected/fixed onto
-   two composition axes)
-   Generalization of (2) beyond strict ternaries.
-5. **Property/stability-vs-variable plot at fixed composition** (e.g. phase
-   fraction, or which phases are stable, vs. T — or vs. P, or any other
-   state variable — for one fixed alloy composition)
-   This is largely `StepTracer` already (single-axis scan + stable-set
-   change detection) but packaged as a first-class "stability diagram"
-   output (phase-fraction-vs-T stacked plot) rather than raw ZPF-crossing
-   data.
+1. **Binary phase diagram** (T vs. composition) — auto-discover every ZPF
+   line and invariant reaction across the whole composition range.
+2. **Ternary isothermal section** (fixed T, composition triangle) —
+   auto-trace all two- and three-phase region boundaries.
+3. **Ternary isopleth** (fixed composition/ratio, T vs. one remaining
+   composition) — a vertical section through the ternary prism.
+4. **Pseudo-isothermal section** — (2) generalized to a quaternary+ system
+   with the extra components fixed.
+5. **Property/stability-vs-variable plot at fixed composition** — largely
+   `StepTracer` already, packaged as a first-class output.
 
 ## One engine, not one tracer per diagram type
 
-Sundman, Dupin & Hallstedt 2021 (`docs/2021-calphad-sundman-Algorithms
-useful for calculating multi-component equilibria, phase diagrams and
-other kinds of diagrams.pdf`) is explicit about this and it settles the
-question directly: OpenCalphad uses **one mapping engine**, not separate
-code per diagram shape.
+Sundman, Dupin & Hallstedt 2021 (`docs/2021-calphad-sundman-*.pdf`) is
+explicit: OpenCalphad uses **one mapping engine**, not separate code per
+diagram shape. Algorithm A (single equilibrium) is generic over any
+condition set; Algorithm B branches only on axis *count* (1=step, 2=map);
+Algorithms C1/C2 (line following, node/exit handling) and D (invariant
+exit-finding) are identical machinery regardless of diagram type — what
+differs is only **which conditions are held fixed as axes** (T+composition
+for binary, two compositions for ternary isothermal, a fixed composition/
+ratio+T for isopleth). Confirmed at the implementation level too: OC's
+`smp2.F90` dispatches diagram type as a mode flag on one engine.
 
-- **Algorithm A** (single equilibrium, our `EquilibriumSolverV2`) is
-  generic over any condition set — T/P/composition fixed, or a phase
-  fixed at zero amount, or a composition ratio fixed, etc.
-- **Algorithm B** (step vs. map) is one flowchart with two branches
-  (1 axis = step, 2 axes = map) — the branch point is the *number of
-  axes*, not the diagram's shape.
-- **Algorithm C1** (follow a line, incrementing axes) and **C2** (handle
-  a stable-set change: fix the appearing/disappearing phase at zero,
-  release an axis, spawn a node with exits) are identical machinery
-  whether the line being followed is a binary T-x boundary, a ternary
-  isothermal boundary, or an isopleth boundary. What changes between
-  diagram *types* is only **which conditions are held fixed as axes**:
-  T & one composition (binary), T fixed & two compositions (ternary
-  isothermal), a composition ratio fixed & T (isopleth), or the same
-  ternary-isothermal setup lifted to fixed mole fractions of the extra
-  components in a 4+-component system (pseudo-isothermal).
-- **Algorithm D** (invariant exit-finding, our `InvariantExitFinder`) is
-  written for general *n* components and reused unchanged whether the
-  invariant is a 3-phase binary eutectic or the 6-phase invariant in the
-  paper's 5-component HSS isopleth example (Section 4.3) — same
-  algorithm, no per-diagram-type variant.
-- Section 4 of the paper demonstrates binary, ternary isothermal, ternary
-  isopleth, and a 5-component isopleth all coming out of **the same
-  mapping run**, just plotted/labeled with different axis choices
-  afterward.
-
-**Conclusion for this codebase:** `MapTracer` + `InvariantExitFinder`
-should stay one generic engine (our Algorithm C1/C2/D), extended with:
-1. the outer multi-line/node-stitching loop (Algorithm B/C1's "search
-   for unresolved exits, generate lines until none remain") that doesn't
-   exist yet — this is the actual missing piece, not a per-diagram-type
-   tracer;
-2. generalized axis/condition setup so a caller can select *which two
-   things* are held fixed as plot axes (T+composition, two compositions,
-   or a composition-ratio+T), which is what actually distinguishes a
-   binary diagram from a ternary isothermal section from an isopleth —
-   not new solver logic;
-3. `InvariantExitFinder` validated beyond binary systems, since its
-   algorithm is already general but only tested on binaries so far.
-
-A single `CalculationSession` method (something like
-`calculatePhaseDiagram(axisSpecs...)`, already stubbed as `diagram` in
-the CLI but "not yet implemented upstream") is the right long-term
-shape — **not** four separate `calculate*Diagram` methods — once the
-axis-selection generalization above is done. `calculateCoarseBinaryDiagram`
-/ `calculateCoarseTernaryDiagram` remain a separate, legitimately
-different code path (`CoarseDiagramTracer`, grid-sampling only, no
-precise boundaries) — that's a different algorithm (Sundman's grid
-minimizer alone, no Algorithm C1/C2/D), not a diagram-type split of the
-same one.
+**Conclusion for this codebase:** `MapTracer` + `InvariantExitFinder` stay
+one generic engine, extended with (a) the outer multi-line/node-stitching
+loop, (b) generalized axis/condition setup (`Condition`/`ConditionSet`,
+done — see Step 5 below), and (c) `InvariantExitFinder` validated beyond
+binary systems.
 
 ## Verification reference: OpenCalphad
 
-`D:\codes\opencalphad` is a working OpenCalphad build/checkout, to be
-used as the step-by-step reference implementation for testing this
-engine — the same role the V–Zr TDB + Cui et al. 2016 paper already play
-for the equilibrium solver. Relevant OpenCalphad source:
+`D:\codes\opencalphad` is a working OpenCalphad build, used as the
+step-by-step reference implementation — the same role the V–Zr TDB + Cui
+et al. 2016 play for the equilibrium solver. Every OC-referenced test in
+this project is captured via the pty-based driver
+(`docs/oc_reference_tests/run_pty.py`) against the real `oc7C` binary,
+since OC's console needs a real pseudo-terminal (plain piped stdin hangs
+or garbles input) — never invented numbers.
 
-- `src/stepmapplot/smp2.F90`, `smp2A.F90`, `smp2B.F90` — the actual
-  step/map implementation. `smp2.F90` documents the diagram-type
-  dispatch as a mode flag on one engine (`map_tieline_inplane`,
-  `map_isotherm`, `map_isopleth`, ...), confirming the "one engine, mode
-  selected by axis/condition choice" architecture above at the
-  implementation level, not just in the paper.
-- `examples/macros/*.OCM` — runnable macro scripts exercising step/map
-  on real systems; useful as input/output pairs to test our tracer
-  against, the same way `data/VZR-re2.TDB` is used for the equilibrium
-  solver today.
-
-Suggested verification approach: pick one OpenCalphad macro per target
-diagram type (binary, ternary isothermal, isopleth), run it against
-OpenCalphad to get reference line/node/invariant output, then drive the
-same TDB + conditions through our engine once the multi-line stitching
-above exists, and diff.
-
-## What already exists (from `calc/diagram`)
+## What already exists (`calc/diagram`)
 
 - **`StepTracer`** — walks one axis, detects stable-phase-set changes,
-  locates crossings by black-box bisection. This is the numerical core of
-  target (5) above.
-- **`MapTracer`** — walks one axis in fixed increments, solves each
-  ordinary boundary crossing exactly (`solveBoundary`, composition
-  release), and locates genuine invariant nodes (stable-set jump by more
-  than one phase) via `solveBoundaryReleasingT`, confirmed by
-  `InvariantExitFinder`'s combinatorial exit enumeration (Sundman
-  Algorithm D). This is the numerical core of target (1), but only traces
-  **one line** per invocation today.
-- **`CoarseDiagramTracer`** — grid-samples a binary/ternary T-x space via
-  `GridMinimizer` only (no Newton solve per point), reporting the stable
-  phase set at each sample point. Good for a fast scatter/dot preview, not
-  precise boundaries. Already wired into the GUI's Coarse Diagram tab.
-- **`InvariantExitFinder`** (Algorithm D) — enumerates which lines exit an
-  invariant node and in which direction; verified against pycalphad's
-  binary-mapper combinatorics, but only for binaries so far.
+  locates crossings by bisection. Numerical core of target 5.
+- **`MapTracer`** — walks one axis, solves each boundary crossing exactly
+  (`solveBoundary`), locates invariant nodes via `solveBoundaryReleasingT`,
+  confirmed by `InvariantExitFinder` (Algorithm D). Numerical core of
+  target 1; traces one line per invocation.
+- **`CoarseDiagramTracer`** — grid-samples via `GridMinimizer` only (no
+  Newton solve per point) for fast scatter/dot preview; wired into the
+  GUI's Coarse Diagram tab.
+- **`InvariantExitFinder`** (Algorithm D) — enumerates invariant exits;
+  verified against pycalphad's binary-mapper combinatorics, binary-only
+  so far.
+- **`Node`/`Line`/`NodeRegistry`/`MapDiagramTracer`** — the C1 drain loop:
+  given a starting equilibrium, repeatedly walks pending lines, classifies
+  each resolved crossing (Eq. 8), attaches exits (ordinary or Algorithm D),
+  until no pending lines remain.
+- **`Condition`/`ConditionSet`** — engine-internal generalization of the
+  n+2 condition set (`calc/diagram` only; `AxisConfig` and its CLI/GUI/
+  API/session callers untouched), letting one walk primitive handle
+  binary, ternary isothermal, and ternary isopleth condition shapes.
+- **`PhaseDiagramEngine.isGloballyStable`** — the global stability check
+  (§2.3.3), wired into the drain loop at node creation.
 
-## Known gaps standing between here and full automation
+## Known gaps
 
-Carried over from the main README's "Current limitations" (removed there
-now that this doc is the tracking location):
-
-- **No multi-line stitching.** `MapTracer` does not yet auto-discover and
-  stitch together every line/invariant a full diagram needs — it needs to
-  be driven line-by-line externally today.
-- **T-release convergence.** Ordinary boundary crossings release a
-  composition axis only. T-release (needed to land exactly on an
-  invariant node) works when the walk axis is TEMPERATURE but converges
-  too slowly when seeding a genuinely new phase from a generic initial
-  guess — confirmed against V-Zr's own 1586 K peritectic
-  (`CalculationSessionMapTracerTest` Section C documents this). This has
-  to be solved before binary auto-discovery (target 1) can be trusted
-  end-to-end.
-- **P-release is not implemented.** `PhaseMatrixAssembler` already
-  computes `dG/dP`-based per-phase coefficients, but they aren't threaded
-  through the global equilibrium matrix the way T-release now is. Needed
-  for any diagram type where pressure (not composition or temperature) is
-  a free axis.
-- **`InvariantExitFinder` is binary-only in practice.** Written for general
-  component counts but only verified against binary systems so far — the
-  ternary isothermal/isopleth/pseudo-isothermal targets (2–4) will need
-  this validated for 3+ component invariants (e.g. ternary eutectics,
-  quasi-peritectics).
-- **No post-hoc grid retest (paper §2.3.3's alternate path).**
-  `EquilibriumSolverV2` always runs `GridMinimizer.initialize`
-  unconditionally up front; it never skips the grid minimizer and
-  retests afterward the way the paper describes for when T isn't
-  itself a condition. Not a gap today — every caller here always
-  supplies T as a condition — but would need building if a future
-  caller ever releases T (see the T-release entry above).
-- **REST API is stale here.** `step`/`map` endpoints return 501 — not
-  updated for the new tracers. Any UI-facing automated diagram feature
-  needs the API layer brought current too.
-- **Ternary/pseudo-isothermal auto-tracing doesn't exist yet at all** —
-  `CoarseDiagramTracer` covers ternary *sampling*, but there is no
-  ternary analogue of `MapTracer`'s precise boundary-following +
-  invariant-node logic yet. This is new work, not a gap in an existing
-  tracer.
+- **No multi-line stitching.** `MapDiagramTracer` drains one connected
+  component from one starting point; multiple disconnected components
+  (e.g. Fe-Mo's γ-loop) need separate starting points, and — per a full
+  paper + OC source check — neither source has a working algorithm for
+  discovering those automatically either (OC's only attempt,
+  `auto_startpoints` in `smp2A.F90`, is disabled dead code, never called).
+  Not a gap relative to either source; `generateStartingPoints` reflects
+  this.
+- **T-release convergence.** Works when the walk axis is TEMPERATURE but
+  converges too slowly seeding a genuinely new phase from a generic guess
+  (confirmed against V-Zr's 1586K peritectic). Blocks trusting invariant
+  discovery end-to-end.
+- **P-release is not implemented.** `PhaseMatrixAssembler` computes the
+  per-phase coefficients but they aren't threaded through the global
+  matrix the way T-release is.
+- **`InvariantExitFinder` is binary-only in practice** — written for
+  general component counts, not yet validated for 3+ component invariants.
+- **No post-hoc grid retest** (paper §2.3.3's alternate path, used only
+  when T isn't itself a condition) — `EquilibriumSolverV2` always runs
+  `GridMinimizer` unconditionally up front instead. Not a live gap since
+  every caller here always supplies T.
+- **REST API is stale** — `step`/`map` endpoints return 501.
 - **The moving phase boundary is only re-solved AT a detected crossing,
-  not continuously.** Discovered while building Step 2's drain loop
-  (`MapDiagramTracer`) and cross-checking against a real OpenCalphad
-  `map` run on Ag-Cu: OC's mapper re-solves the exact boundary
-  composition via Algorithm C2 at EVERY walk step, continuously
-  tracking the moving boundary, so its release-axis composition value
-  changes smoothly across the whole line. `MapTracer.walkOneSegment`
-  (and the `trace()` it's refactored from) instead holds the
-  release-axis composition FIXED at its last value between crossings,
-  only invoking the exact boundary solve when a stable-set change is
-  first detected. Confirmed directly: scanning `EquilibriumSolverV2` at
-  a fixed x(Cu) across a wide T range on Ag-Cu shows genuine phase-set
-  changes purely as a side effect of holding composition fixed while T
-  moves — the tracer is answering "what phases are stable at this
-  fixed composition as T varies," not "where does the 2-phase boundary
-  sit as T varies," even though the latter is what a map is supposed to
-  trace. This did not block Step 2 (its test was redesigned around
-  genuinely crossing-free/crossing windows found by direct solver
-  scanning rather than assuming continuous tracking), but it needs
-  fixing before binary full-diagram auto-discovery (target 1) can trace
-  a real liquidus/solidus pair the way OC's Fig. 2(a) does — likely by
-  calling something like `solveBoundary` at every ordinary walk point,
-  not only at a detected crossing, mirroring OC's own per-step
-  Algorithm C2 usage.
-- **Two drain-loop bugs surfaced by Step 3b's testing (start-node search
-  wiring) — one fixed, one open:**
-  - **FIXED: an out-of-range composition value.** Draining Ag-Cu from a
-    single-phase FCC_A1 start (T=1150K, x(Cu)=0.05) over T∈[1150,1230]K
-    produced a node with `x(Cu) = 3.15330` — physically impossible.
-    Root cause: `EquilibriumSolverV2.solveBoundaryInternal`'s Newton
-    update applied NO physical bound to the released composition
-    variable, unlike phase amounts (floored at `MIN_PHASE_AMOUNT`) and
-    site fractions (clamped to `[1e-14, 1.0]`) a few lines above it in
-    the same loop — a poorly-seeded boundary solve (confirmed
-    reproducible in isolation: fixing FCC_A1 at zero and releasing
-    x(Cu) at T=1205K from a seed converged at a different point,
-    T=1210K) could walk the released value arbitrarily far outside
-    `[0, 1]` while everything else stayed bounded, letting the
-    iteration falsely "converge." Fixed by clamping the same way;
-    regression test `EquilibriumSolverV2SolveBoundaryClampTest`
-    confirms the exact reproduction case now correctly throws instead
-    of returning a nonsensical value. Full solver test suite (including
-    the Cui et al. 2016 literature baseline) still passes unchanged.
-  - **STILL OPEN: nodes at the same physical point don't merge, and the
-    drain loop over-produces nodes.** Re-running the same drain case
-    after the fix above (no more out-of-range values) still produced
-    18 nodes for a small T range, several visibly near-duplicate.
-    Directly comparing one such pair confirmed this is NOT a
-    `NodeRegistry`/tolerance bug: their chemical potentials genuinely
-    differ by ~0.3% (μ(Cu): -79360 vs. -79621 J/mol) — four orders of
-    magnitude past the solver's own `1e-10` convergence tolerance, i.e.
-    each individual solve legitimately converged to a different
-    self-consistent point. This points to either a physically
-    shallow/ill-conditioned region near this particular LIQUID
-    boundary, or a real design gap: nothing in the drain loop reuses or
-    refines against an already-found node when a line re-approaches the
-    same physical boundary from a different walk direction — every line
-    solves its own crossing fresh from its own local seed. Needs a
-    dedicated investigation (likely: either seed boundary solves from
-    the nearest known node's equilibrium rather than purely local
-    walk history, or accept looser node-identity tolerance and instead
-    snap/merge near-matches after the fact) before `NodeRegistry`'s
-    dedup can be trusted beyond Step 1's simplest same-point test.
-- ~~**`GENERATE STARTING POINTS` is a gap.**~~ **Corrected this
-  session (paper re-read + a full source search of OC's actual
-  Fortran, per explicit direction to fix this using both sources):
-  this is NOT a gap relative to either source, so it is removed from
-  this list.** The paper (§3, page 5) names the disconnected-diagram
-  problem (Fe-Mo's γ-loop) but explicitly declines to give an
-  algorithm: "Such issues will not be considered in the algorithms
-  presented here." OC's own source has exactly one attempt,
-  `auto_startpoints` (`smp2A.F90:9342-9498`, a hardcoded 5-point
-  corner/center scheme for exactly 2 axes) — but it is gated behind a
-  status bit named `GSNOAUTOSP` ("no auto start point"), its own header
-  comment admits it is incomplete ("the rest here works but not
-  converting the startpoint to lines"), and every call site to it is
-  commented out (`smp2A.F90:81`, `pmon6.F90:6810`) — it is unreachable
-  dead code in the shipped program. A separate author comment
-  (`smp2A.F90:112-113`) states plainly: "I have not really implemented
-  several startpoint." `PhaseDiagramEngine#generateStartingPoints`'s
-  single-caller-supplied-point behavior therefore already matches both
-  sources' real behavior; its javadoc (previously mischaracterizing
-  this as "NOT yet implemented," implying an unfinished corner of this
-  codebase specifically) has been corrected to state this finding.
-  Any future multi-start-point search here would be genuinely NEW
-  implementation work with no validated algorithm or reference output
-  to test against, not a missing port — OC's disabled `auto_startpoints`
-  scheme is a plausible reference DESIGN if that work is ever
-  undertaken, but must stay labeled as an unvalidated dead-code
-  prototype.
+  not continuously** — OC's mapper re-solves the exact boundary at every
+  walk step; this codebase holds the release-axis composition fixed
+  between crossings. Needs fixing before a real liquidus/solidus pair
+  traces the way OC's Fig. 2(a) does.
+- **STILL OPEN: node dedup doesn't catch every case.** Independent walks
+  reaching the same physical boundary from different directions can
+  converge to meaningfully different equilibria (chemical potentials
+  differing well beyond solver tolerance — confirmed: ~0.3% difference,
+  four orders of magnitude past the `1e-10` convergence tolerance), which
+  `Node#matches` then treats as distinct nodes. Needs a dedicated
+  investigation (seed boundary solves from the nearest known node, or
+  merge near-matches post-hoc). None of Steps 5c onward depend on this
+  being fixed — every test asserts "the expected node/assemblage
+  appears," never an exact count.
+- **`ISOPLETH_CROSSING` (3-exit node) unimplemented.** Paper-stated
+  (§3.3: "two crossing lines... requires the creation of 3 exits"), not
+  merely OC's own constant, but `NodeGeometry`/`classifyNode` can't
+  produce this case yet — only a single ordinary isopleth boundary line
+  is traced today, not a full isopleth node network. Isopleth sections
+  also have no tie-lines in the plane, unlike binary/ternary-isothermal.
+- **`MERGE/DEDUP NETWORK`, `IDENTIFY/LABEL PHASE REGIONS`,
+  `CLASSIFY REQUESTED PLOT`** — all still throw `UnsupportedOperationException`
+  in `PhaseDiagramEngine`; no algorithm exists to port for phase-region
+  identification (paper/OC both only define the property, not a
+  computational-geometry algorithm).
+- **Global stability check not checked at the START node**, and not on
+  ordinary mid-line points (matches OC's own behavior — its mid-line
+  interval check is a separate, cheaper, off-by-default mechanism for
+  un-sticking metastable constitutions, unrelated to line abandonment).
 
 ## Suggested build order
 
-Each step below extends the **same** `MapTracer`/`InvariantExitFinder`
-engine rather than adding a parallel tracer; "new tracer" language from
-earlier drafts of this doc is replaced with "new axis/condition
-configuration" throughout.
+1. Fix T-release convergence (blocks reliable invariant closing).
+2. Multi-line/node-stitching loop — the single missing piece for binary
+   full-diagram auto-discovery (target 1).
+3. Stability-vs-variable plot (target 5) — lowest new-numerics risk.
+4. Generalize axis/condition configuration for ternary isothermal (2) and
+   isopleth (3) — **done, Step 5 below**.
+5. Pseudo-isothermal / higher-order sections (target 4).
+6. Bring the REST API (`step`/`map`, a new `diagram` endpoint) current.
 
-1. **Fix T-release convergence** (blocks everything downstream that
-   needs to close an invariant node reliably — target 1 in particular).
-2. **Multi-line/node-stitching loop** (Algorithm B/C1's outer loop):
-   given one starting equilibrium, keep searching unresolved exits and
-   generating lines until none remain. This is the single missing piece
-   for **binary full-diagram auto-discovery** (target 1) — verify against
-   an OpenCalphad binary macro (e.g. Ag-Cu, matching the paper's Fig. 2a).
-3. **Stability-vs-variable plot** (target 5): packaging work over
-   `StepTracer` at fixed composition — lowest new-numerics risk, good
-   near-term deliverable in parallel with (2).
-4. **Generalize axis/condition configuration** to support two
-   composition axes at fixed T (ternary isothermal, target 2) and one
-   composition-ratio condition + T axis (ternary isopleth, target 3),
-   reusing the stitching loop from (2) unchanged. Validate
-   `InvariantExitFinder` against ternary invariants using an OpenCalphad
-   ternary macro as reference.
-5. **Pseudo-isothermal / higher-order sections** (target 4): same
-   configuration generalization extended to fixing the extra
-   components' composition in a 4+-component system — no new algorithm,
-   just more fixed conditions alongside the two free axes.
-6. Bring REST API `step`/`map` (and a new `diagram` endpoint) up to date
-   once the engine stabilizes — no point wiring an API to a tracer still
-   under active change.
+## Progress log
 
-### Step 5 progress (item 4 above, broken into sub-steps)
+**Step 5 — ternary generalization** (all done): `Condition`/`ConditionSet`
+(5a); a `ConditionSet`-driven `walkOneSegment` overload sharing one walk
+body with the `AxisConfig` overloads (5b, `MapTracerConditionSetEquivalenceTest`);
+ternary isothermal tracing on Al-Mg-Zn/`cost507R.TDB`, needing zero walk-
+loop changes beyond 5b's plumbing (5c, `MapTracerTernaryIsothermalTest`);
+`InvariantExitFinder` wired into the drain loop via `NodeGeometry` and a
+real `classifyNode` (Eq. 8) (5d, `NodeGeometryTest`); ternary isopleth
+tracing, also on Al-Mg-Zn (a fixed-composition isopleth turned out
+structurally identical to the binary map, needing no new production code
+— matches the paper's own Fig. 3(c) worked example) (5e,
+`MapTracerTernaryIsoplethTest`); the 5-diagram-type test set with three
+strictness tiers — topology, exact-value, and multi-point-along-a-line,
+the last specifically to catch "boundary only re-solved at a crossing"
+defects endpoint-only tests miss (5f, `MultiDiagramTypeSuiteTest`).
 
-Item 4's ternary generalization is being built as a sequence of smaller,
-individually-committable sub-steps (see the approved plan for full
-detail; summarized here for tracking):
+**Step 6 — global stability check** (§2.3.3, done): `isGloballyStable`
+re-runs `GridMinimizer`'s independent search at a converged point and
+flags it unstable if another candidate phase set is lower in G per real
+atom (`EquilibriumResult.totalGPerAtom()`) by more than a 1e-4 relative
+tolerance; calibrated against a genuine failure case (Ag-Cu forced to
+converge as a single FCC_A1 phase instead of splitting across its real
+miscibility gap) (6a, `PhaseDiagramEngineGlobalStabilityTest`). Wired
+into `MapDiagramTracer.drain` at node creation — checking every node
+point, not a mid-line interval, per a full OC source search showing that
+is exactly OC's own real behavior for the line-abandoning check (6b,
+`LineTest`, `Line#markExcluded`/`#isExcluded`).
 
-- **5a (done):** `Condition`/`ConditionSet` — engine-internal-only
-  generalization of the n+2 condition set (`calc/diagram` package only;
-  `AxisConfig` and its 19 existing callers across CLI/GUI/API/session
-  untouched). Confirmed structurally to represent both the binary map
-  shape (T=AXIS, P=FIXED, N=FIXED, x(B)=AXIS) and a genuine ternary
-  isothermal shape (T=FIXED, P=FIXED, N=FIXED, x(B)=AXIS, x(C)=AXIS).
-- **5b (done):** `MapTracer.walkOneSegment` gained a `ConditionSet`
-  -driven overload sharing one walk body (`walkOneSegmentInternal`)
-  with the existing `AxisConfig` overloads — verified behaviorally
-  identical via `MapTracerConditionSetEquivalenceTest`. Also
-  generalized `retryWithHalvedSteps` (previously hard-restricted to a
-  TEMPERATURE walk axis) to work for any walk-axis type, needed because
-  a ternary's walk axis is always a composition, never T. Full suite
-  and both critical diagnostics (`CalculationSessionMapTracerTest`,
-  `EquilibriumSolverV2BaselineTest`) confirmed unchanged.
-- **5c (done):** ternary isothermal single-line tracing. Confirmed
-  directly (`MapTracerTernaryIsothermalTest`): walking one composition
-  axis while releasing a DIFFERENT composition axis works with **zero
-  changes** to `walkOneSegment`/`walkOneSegmentInternal` beyond Step
-  5b's `ConditionSet` plumbing — `solveBoundary` already indexes
-  `targetAmounts[releasedComponentIndex]` generically, and the walk
-  loop's `COMPOSITION` case already used `StepTracer.applyCompositionAxis`
-  with no binary-specific assumption. `AxisSelector` (dynamically
-  picking which axis to walk per step) is deferred to 5d, since it is
-  only needed once a full drain loop walks a line without the caller
-  pre-choosing walk/release axes -- not needed for a single explicit
-  `walkOneSegment` call.
-  **Reference system changed from the original plan:** the planned
-  Cr-Fe-Mo/`steel1.TDB`/`map14.OCM` target turned out to need `SIGMA`
-  (present almost everywhere interesting near `map14`'s own starting
-  point) for a physically correct answer, and `SIGMA` converges too
-  slowly in this codebase's solver (very close to OC's answer but not
-  within 100 iterations at `T=1400K, x(Cr)=0.3, x(Mo)=0.05` -- a new,
-  separate finding, not investigated further here). Switched to
-  Al-Mg-Zn on `data/cost507R.TDB` (OpenCalphad's own bundled COST 507
-  database, copied byte-identical into this repo) instead, which traces
-  a clean FCC_A1 -> FCC_A1+MGZN2 crossing with no convergence issues.
-  **Also found:** this project's OTHER pre-existing file with a similar
-  name, `data/cost507.tdb`, is a DIFFERENT, incompatible assessment for
-  this system (gives FCC_A1+LIQUID where `cost507R.TDB` gives
-  FCC_A1+MGZN2 at the same conditions) -- do not use it interchangeably
-  with `cost507R.TDB` for OC cross-checking. Also found `cost507R.TDB`'s
-  `GridMinimizer`/`Hyperplane` initialization fails when LIQUID or
-  HCP_A3 are included as extra candidates alongside FCC_A1 (works fine
-  with a correctly-curated candidate list) -- a minor, separate
-  robustness gap, not investigated further.
-- **5d (done):** wired `InvariantExitFinder` into `MapDiagramTracer`'s
-  drain loop via a new `NodeGeometry` class and `PhaseDiagramEngine
-  .classifyNode`'s real implementation (Eq. 8) — closes the "invariant
-  nodes get zero exit lines" gap. `PhaseDiagramEngineTest`'s placeholder
-  updated per the project's own rule (an `assertThrows` for a stage that
-  becomes implemented must be intentionally rewritten, not silently left
-  stale).
-  **Important correction made while implementing Eq. 8:** `c` (Eq. 8's
-  "potential conditions not used as axes") is NOT the axis count and
-  NOT the count of all fixed conditions — it counts only FIXED
-  potential-type conditions (T, P, or a chemical potential). Worked out
-  against the paper's own binary invariant example (§3.3: "a binary
-  isobaric phase diagram has f=3-p... an invariant has thus 3 stable
-  phases" — "isobaric" means P is fixed, giving c=1 for n=2, so
-  f=2+2-p-1=3-p, matching exactly). An initial draft used c=0 for the
-  binary map case, which is wrong (P is fixed there too) — caught before
-  committing by re-deriving against the paper's worked example rather
-  than trusting the first attempt.
-  **Also found and handled as a real, unresolved design question, not
-  guessed past:** `InvariantExitFinder.findExits`'s `ExitCandidate`
-  names which phases stay stable/which is excluded along an exit, but
-  not which walk-axis DIRECTION traces it — direction is not
-  determinable from the candidate alone (the same ambiguity the paper's
-  Fig. 8(c) resolves by trying a direction and flipping it if
-  "forbidden"). Resolved by attaching BOTH directions per exit candidate
-  (matching the tie-line-in-plane pattern) and letting the wrong
-  direction terminate naturally when walked, rather than guessing a sign.
-  **Scope note on invariant testing:** no known case in this codebase
-  has `MapTracer` actually REACH a resolved `SegmentEnd.INVARIANT`
-  through a real walk — V-Zr's own documented peritectic (the only
-  candidate binary invariant with literature data) is confirmed
-  `UNRESOLVED_MULTI_PHASE_CHANGE`, not `INVARIANT` (OpenCalphad's own
-  retry strategy cannot resolve this particular jump either, per
-  `CalculationSessionMapTracerTest` Section C). `NodeGeometryTest`
-  verifies the new wiring directly against a synthetic `Node` built from
-  the peritectic's literature compositions (Cui et al. 2016) rather than
-  through the drain loop — honest about testing the NEW code, not
-  claiming an end-to-end invariant discovery this codebase cannot yet
-  demonstrate. Confirmed the invariant exit found for this synthetic
-  node (BCC_A2+LIQUID, excluding V2ZR) is a real, non-trivial result,
-  not vacuous.
-  Full JUnit suite, `CalculationSessionMapTracerTest`,
-  `EquilibriumSolverV2BaselineTest`, and `MapDiagramTracerAgCuTest`
-  (which exercises the exact drain-loop code path modified here) all
-  confirmed unchanged.
-- **5e (done):** ternary isopleth — Al-Mg-Zn/`data/cost507R.TDB`, the
-  same system/database Step 5c already validated.
-  **Design corrected against a full re-read of Sundman 2021, per
-  explicit direction this session ("refer to 2021 paper of sundman for
-  isopleth").** The original plan (a new `COMPOSITION_RATIO` condition
-  type, two simultaneously-free composition axes with a ratio
-  constraint) was wrong. The paper's own worked isopleth figure (Fig.
-  3(c): "Iso-pleth in the Al-Mg-Zn system at x_Zn = 0.05 calculated
-  using the COST 507 database" — the EXACT system/database already
-  vendored here for Step 5c) shows an isopleth's two axes are T and ONE
-  composition, with every other composition held FIXED — a fixed value
-  (the paper's own example) or a fixed ratio (also paper-sanctioned:
-  "a constant ratio between two elements or more generally a linear
-  equation between several compositions", but not what its own figure
-  actually uses). A fixed-composition isopleth is therefore structurally
-  IDENTICAL to today's binary map (T walked, one composition released)
-  applied to a ternary+ system with the extra composition(s) pinned —
-  confirmed directly this session to need **zero new production code**:
-  `ConditionSet#initialComposition()` already handles a FIXED
-  composition condition correctly (only AXIS/unspecified components get
-  computed); `StepTracer#applyCompositionAxis` only ever writes the
-  WALKED composition's own index (moot here since T, not a composition,
-  is walked); `EquilibriumSolverV2#solveBoundaryInternal` only ever
-  writes `targetAmounts[releasedComponentIndex]` each Newton iteration
-  (confirmed by direct code reading) — every other component, including
-  a genuinely fixed third one, is left exactly as passed in, with no
-  implicit sum-to-one renormalization inside that method.
-  `MapTracerTernaryIsopletTest` (sic on the plan's naming — actual file
-  is `MapTracerTernaryIsoplethTest`) calls the EXISTING `AxisConfig`
-  -based `walkOneSegment` directly (T=`walkAxis`, x(Zn)=`releaseAxis`,
-  x(Mg)=0.05 baked into `compAtStart`'s constant, never-written entry),
-  proving the walk mechanism generalizes with no new plumbing — matching
-  Step 5c's own precedent of proving generality before building new
-  scaffolding for it.
-  **OC reference** (pty-driven against the real `oc7C` binary,
-  `docs/oc_reference_tests/almgzn_isopleth_xmg05.txt`): at x(Mg)=0.05
-  fixed, T=700K, x(Zn)=0.052 gives FCC_A1 (0.9976 f.u.) + MGZN2 (0.00080
-  f.u., barely two-phase) and x(Zn)=0.058 gives FCC_A1 (0.9895 f.u.) +
-  MGZN2 (0.00349 f.u.) — both matched closely by direct
-  `EquilibriumSolverV2` calls. A direct T/x(Zn) grid scan (no tracer)
-  confirmed the FCC_A1 / FCC_A1+MGZN2 boundary curves from x(Zn)~0.02 at
-  T=630K up to x(Zn)~0.052 at T=700K, and that at x(Zn)=0.05 exactly the
-  boundary sits between T=698K (two-phase) and T=700K (single-phase) —
-  consistent with OC's own T=700K/x(Zn)=0.052 point being already
-  (barely) two-phase. `walkOneSegment` (T walked from 630K with
-  x(Zn)=0.05 as the starting two-phase composition, released as the
-  walk proceeds) finds this exact crossing at T=700.0K, confirming both
-  the walk mechanism and the OC-derived bracket agree.
-  **Correction to `docs/phase_diagram_engine_flowchart.md`'s "Open
-  implementation choices" note, also made this session per the same
-  paper re-read:** the isopleth 3-exit node case (§3.3: "In iso-pleths
-  ... most node points correspond to two crossing lines ... Such a node
-  requires the creation of 3 exits when they are found") is a
-  PAPER-STATED fact (via prose/geometric reasoning about two lines
-  crossing, not a numbered formula), not merely OC's own hardcoded,
-  unprincipled constant as the flowchart doc previously (incorrectly)
-  characterized it. This case remains unimplemented (`NodeGeometry`
-  still throws `UnsupportedOperationException` for
-  `ISOPLETH_CROSSING`, and `PhaseDiagramEngine#classifyNode` cannot
-  produce that class yet) — this step only traces a single ordinary
-  (`TIE_LINE_IN_PLANE`, 2-exit) isopleth boundary line, not a full
-  isopleth diagram's node network; the 3-exit crossing geometry is
-  deferred, not silently dropped.
-  **Also confirmed (re-read, not previously verified):** isopleth
-  sections have NO tie-lines in the plane (unlike binary T-x and
-  ternary isothermal sections, which both do) — noted here since it
-  affects how a future full isopleth diagram's regions would be
-  interpreted/plotted, though it does not affect this step's single-
-  line-tracing scope.
-  Full JUnit suite and both critical diagnostics
-  (`CalculationSessionMapTracerTest`, `EquilibriumSolverV2BaselineTest`)
-  confirmed unchanged.
-- **5f (done):** `MultiDiagramTypeSuiteTest` — the 5-diagram-type test
-  set (binary T-x, ternary isothermal, ternary isopleth, property/step
-  at fixed composition, binary activity/μ representation), each with 3
-  strictness tiers (topology / exact-value / multi-point-along-a-line).
-  The multi-point tier samples at least 3 INTERIOR points of a traced
-  line/segment (not just its endpoints) and independently re-solves/
-  re-checks each — this is what would catch "the boundary is only
-  re-solved exactly AT a crossing, points along the line are never
-  re-validated," a defect endpoint-only tests cannot see.
-  **Types 1-3 (binary T-x, ternary isothermal, ternary isopleth)** reuse
-  the exact systems/OC references already validated in Steps 3b/5c/5e
-  (`MapDiagramTracerAgCuTest`, `MapTracerTernaryIsothermalTest`,
-  `MapTracerTernaryIsoplethTest`), adding only the new tier-3 multi-
-  point assertions this suite introduces — no new OC captures needed.
-  **Type 4 (property/step at fixed composition)** is new: exercises
-  `StepTracer` (Algorithm B's STEP branch) directly, previously
-  untested against a real OC reference in this project's diagram-engine
-  test suite. New OC capture (`docs/oc_reference_tests/agcu_step_xcu05.txt`,
-  pty-driven against the real `oc7C` binary): Ag-Cu, x(Cu)=0.05, T=1176K
-  gives FCC_A1-only, T=1177K gives FCC_A1 (0.9882 f.u.) + LIQUID (0.0118
-  f.u.) — confirms both the transition bracket and the two-phase point
-  values closely.
-  **Type 5 (binary activity/μ representation)** proves the flowchart's
-  "same stored data, different plot" claim with zero new tracing,
-  reinterpreting the exact single-phase point (T=1150K, x(Cu)=0.05)
-  `MapDiagramTracerAgCuTest` already starts its own search from.
-  **Found and fixed a stale, unreproducible number while building this
-  test**: `MapDiagramTracerAgCuTest`'s javadoc cited `mu(Ag)=-71761.7`
-  from an earlier session's compiled-TQ-example capture that no longer
-  exists anywhere in this repo to verify against. Re-captured fresh,
-  directly from OC's own console this session (pty-driven,
-  `docs/oc_reference_tests/agcu_mu_1150.txt`): Chem.pot/RT = -7.1104
-  (Ag) / -6.8921 (Cu), RT=9561.7 J/mol at T=1150K, giving
-  mu(Ag)=-67987.5, mu(Cu)=-65900.2 J/mol — which matches this project's
-  own solver closely (mu(Ag)=-67987.17, mu(Cu)=-65900.04) and does NOT
-  match the old, now-corrected citation. `MapDiagramTracerAgCuTest`'s
-  javadoc updated to the verified, reproducible number.
-  **Also confirmed while writing this suite**: `PhaseDiagramEngine
-  .classifyPlot` still throws `UnsupportedOperationException` for
-  EVERY `PlotType`, including `ACTIVITY_OR_CHEMICAL_POTENTIAL` (the
-  type this suite's Type-5 case targets) — asserted directly here too,
-  since `PhaseDiagramEngineTest` only exercises that same "not yet
-  implemented" guarantee for `BINARY_T_X`, a different enum constant.
-  Full JUnit suite and both critical diagnostics
-  (`CalculationSessionMapTracerTest`, `EquilibriumSolverV2BaselineTest`)
-  confirmed unchanged.
-
-None of 5c-5f depend on fixing the still-open node-dedup bug above —
-every new test asserts "the expected node/assemblage appears in the
-registry," never an exact node count.
-
-### Step 6 — Global stability check (§2.3.3)
-
-**6a (done):** `PhaseDiagramEngine.isGloballyStable` implemented —
-re-runs `GridMinimizer`'s independent global search at a converged
-point's (T, P, overall composition) and flags it unstable if another
-candidate phase set is lower in G per real atom (`EquilibriumResult
-.totalGPerAtom()`, new; per-formula-unit `totalG()` isn't comparable
-across phase sets with different formula-unit sizes) by more than a
-1e-4 relative tolerance (an order of magnitude above `GridMinimizer`'s
-own ~1e-5 sampling noise on a correct point, confirmed directly).
-Calibrated against a genuine, non-invented failure case rather than a
-synthetic one: Ag-Cu at T=700K, x(Cu)=0.5, forced via
-`EquilibriumSolverV2#setInitialStateForTest` to converge as a single
-FCC_A1 phase instead of splitting across its real miscibility gap —
-G/atom -28521 forced vs. -31585 from `GridMinimizer`, ~10.7% off, far
-past tolerance (`PhaseDiagramEngineGlobalStabilityTest`, in
-`calc.equil` since the test hook is package-private there).
-**6b (done):** wired into `MapDiagramTracer.drain` at node creation
-(`CROSSING`/`INVARIANT` cases) — a failing node gets no exits and its
-arriving `Line` is marked excluded (`Line#markExcluded`/`#isExcluded`,
-new, matching OC's `EXCLUDEDLINE` status bit). Frequency grounded in a
-full search of OC's actual source (not guessed): OC has TWO distinct
-mechanisms, not one — `global_equil_check1` (the true, expensive
-gridminimizer-equivalent search, what `isGloballyStable` corresponds
-to) runs at EVERY node point, unconditionally, and on failure marks
-the arriving line `EXCLUDEDLINE`; a SEPARATE, cheaper `check_all_phases`
-per-phase-grid recheck runs mid-line on a fixed-count interval
-(`mapglobalcheck`, default 10, but disabled by default — `=0`) to
-un-stick metastable constitutions, unrelated to line abandonment. So
-"every node point, not mid-line" is OC's real behavior for the
-line-abandoning check, not merely a cheaper approximation of it.
-NOT checked: the START node (no arriving line to exclude if it fails —
-smaller, separate follow-up) and ordinary mid-line points (matches
-OC's own off-by-default interval check, deliberately not ported since
-it isn't what abandons lines there either).
-Full JUnit suite and both critical diagnostics confirmed unchanged —
-every node across all 5 already-validated diagram types is genuinely
-globally stable, as expected.
+Every step above is verified against the full JUnit suite plus the two
+critical standalone diagnostics (`CalculationSessionMapTracerTest`,
+`EquilibriumSolverV2BaselineTest`) confirmed unchanged, and every new OC
+reference is a real, pty-driven `oc7C` capture — see individual test/class
+javadoc for exact citations and values.
 
 ## Non-goals for this effort
 
 - General multicomponent (4+) full-diagram auto-discovery — pseudo-
-  isothermal sections (target 4) are the practical ceiling for now; a
-  true N-dimensional diagram tracer is out of scope until 1–5 above are
-  solid.
+  isothermal sections (target 4) are the practical ceiling for now.
 - RK/CVM model integration into the equilibrium pipeline — orthogonal to
-  diagram tracing; tracers work off `GibbsEnergyModel` regardless of which
-  model backs it, so this can proceed independently.
+  diagram tracing.
