@@ -1263,6 +1263,21 @@ public class EquilibriumSolverV2 {
 
             mu = newLambdaChecked.clone();
             releasedValue += deltaReleased;
+            // Unlike phaseAmounts (floored at MIN_PHASE_AMOUNT) and site
+            // fractions newY (clamped to [1e-14, 1.0]) a few lines above,
+            // this Newton update was previously applied with NO physical
+            // bound: a poorly-seeded boundary solve (e.g. releasing a
+            // composition from a starting point far from the true
+            // boundary) could walk releasedValue arbitrarily far outside
+            // [0, 1] while every other variable stayed bounded, letting
+            // the iteration "converge" (small residuals in an already
+            // inconsistent system) at a physically nonsensical mole
+            // fraction -- confirmed directly: Ag-Cu, T=1205K, fixing
+            // FCC_A1 at zero and releasing x(Cu) from a seed at T=1210K's
+            // LIQUID-only equilibrium converged to x(Cu)=3.153, no
+            // exception thrown. Clamped the same way for consistency.
+            if (releasedValue < 1.0e-14) releasedValue = 1.0e-14;
+            if (releasedValue > 1.0) releasedValue = 1.0;
             targetAmounts[releasedComponentIndex] = releasedValue;
 
             if (checkConvergence()) {
