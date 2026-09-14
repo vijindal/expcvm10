@@ -10,34 +10,39 @@ DATABASE
     │
     ▼
 [✅] DEFINE SYSTEM + CONDITIONS + AXES + LIMITS
-        └── defineSystem
+        └── PhaseDiagramEngine.defineSystem
     │
     ▼
 [✅] VALIDATE n + 2 EQUILIBRIUM CONDITIONS
-        └── validateConditionCount
+        └── PhaseDiagramEngine.validateConditionCount
     │
     ▼
 [✅] GENERATE STARTING POINT(S)
-        └── generateStartingPoints
+        └── PhaseDiagramEngine.generateStartingPoints
             (current code: single starting point)
     │
     ▼
 [⚠️] FOR EACH STARTING POINT
     │
     ├── STEP (1 axis)
-    │     └── [❌] StepTracer exists, not wired into
-    │               Node / NodeRegistry network
+    │     └── [❌] StepTracer.trace exists (StepTracer.java),
+    │               not wired into Node / NodeRegistry network
     │
     └── MAPPING (2 axes)
-          └── [✅] MapDiagramTracer.drain
+          └── [✅] PhaseDiagramEngine.drainC1Loop
+                    → MapDiagramTracer.drain (MapDiagramTracer.java)
                   │
                   ▼
           [✅] C1 : DRAIN LOOP
-                  │
+                  │   (MapDiagramTracer.drain's while loop, calling
+                  │    MapTracer.walkOneSegment, MapTracer.java)
                   ├── calculate equilibrium
+                  │       └── EquilibriumSolveHelper.solveOrSentinel
+                  │           (calc/equil/EquilibriumSolverV2.java)
                   │
                   ├── [⚠️] GLOBAL STABILITY CHECK
-                  │       └── isGloballyStable
+                  │       └── PhaseDiagramEngine.isGloballyStable
+                  │           (uses calc/equil/GridMinimizer.java)
                   │           (current code: node creation only;
                   │            Sundman: node points + regular
                   │            intervals along lines)
@@ -48,17 +53,19 @@ DATABASE
                           │
                           ▼
                   [⚠️] C2 : EXACT ENDPOINT
-                          │
+                          │   (MapTracer.walkOneSegmentInternal)
                           ├── fix appearing/disappearing phase
                           │   at zero
                           │
                           ├── release current axis
+                          │       └── EquilibriumSolverV2.solveBoundary
                           │
                           └── solve endpoint equilibrium
                                   │
                                   ▼
                   [⚠️] NODE MATCHING
                           └── NodeRegistry.findOrCreate
+                              (NodeRegistry.java, Node.java, Node.matches)
                               (STILL OPEN: robust matching of
                                nodes reached from different
                                walk directions)
@@ -66,30 +73,35 @@ DATABASE
                                   ▼
                   [⚠️] NODE CLASSIFICATION + EXIT GEOMETRY
                           ├── Eq. 8 classification
+                          │       └── PhaseDiagramEngine.classifyNode
                           ├── TIE_LINE_IN_PLANE → implemented
+                          │       └── NodeGeometry.attachExits
+                          │           (NodeGeometry.java)
                           ├── INVARIANT / Algorithm D → implemented
+                          │       └── InvariantExitFinder.findExits
+                          │           (InvariantExitFinder.java)
                           └── ISOPLETH_CROSSING → not reachable yet
                                   │
                                   ▼
                          ADD NODE + PENDING EXITS
-                                  │
+                                  │   (Node.addLine, Line.java)
                                   └──────→ back to C1
     │
     ▼
 [❌] MERGE / DEDUP NETWORK
-        └── mergeDedupNetwork
+        └── PhaseDiagramEngine.mergeDedupNetwork
             (final implementation cleanup;
              C2 should already perform node reuse)
     │
     ▼
 [❌] IDENTIFY / LABEL PHASE REGIONS
-        └── identifyPhaseRegions
+        └── PhaseDiagramEngine.identifyPhaseRegions
             (no computational-geometry algorithm specified
              by Sundman 2021)
     │
     ▼
 [❌] CLASSIFY REQUESTED PLOT / VALIDATE PLOT
-        └── classifyPlot
+        └── PhaseDiagramEngine.classifyPlot
     │
     ▼
 PHASE DIAGRAM / PROPERTY DIAGRAM
@@ -104,9 +116,11 @@ PHASE DIAGRAM / PROPERTY DIAGRAM
   only attempt is disabled dead code, never called).
 - All 5 target diagram types (binary, ternary isothermal, ternary
   isopleth, pseudo-isothermal, property/step) run through the SAME
-  mapping engine above via `Condition`/`ConditionSet` — diagram type only
-  changes which conditions are fixed vs. free, validated against real OC
-  output (`MultiDiagramTypeSuiteTest`).
+  mapping engine above via `Condition`/`ConditionSet`
+  (Condition.java, ConditionSet.java) — diagram type only changes which
+  conditions are fixed vs. free, consumed by `MapTracer.walkOneSegment`'s
+  `ConditionSet`-based overload, validated against real OC output
+  (`MultiDiagramTypeSuiteTest.java`).
 - None of the ternary work depends on the node-dedup gap being fixed
   first — every test asserts "the expected node/assemblage appears,"
   never an exact node count.
