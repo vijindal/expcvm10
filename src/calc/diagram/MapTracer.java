@@ -469,6 +469,87 @@ public final class MapTracer {
                     + releaseAxis.type);
         }
 
+        return walkOneSegmentInternal(startWalkValue, startStableNames, walkAxis, releaseAxis,
+                fixedT, fixedP, compAtStart, candidates, startResult);
+    }
+
+    /**
+     * {@code ConditionSet}-driven form of {@link #walkOneSegment(double,
+     * Set, AxisConfig, AxisConfig, double, double, double[], List,
+     * EquilibriumResult)} (Step 5b, {@code
+     * docs/roadmap_phase_diagrams.md}): the caller names which of {@code
+     * conds}'s {@link ConditionSet#axisConditions()} is walked this
+     * segment and which is released, by index into that list -- for
+     * today's binary case ({@code conds.numAxes() == 2}, one TEMPERATURE
+     * + one COMPOSITION) this is equivalent to the {@code AxisConfig}
+     * form; for a ternary isothermal section ({@code numAxes() == 2},
+     * BOTH COMPOSITION) it lets the SAME method walk either composition
+     * axis while releasing the other, with no solver change (Algorithm
+     * C2's {@code solveBoundary} already indexes {@code
+     * targetAmounts[releasedComponentIndex]} generically).
+     *
+     * <p>This is purely a translation layer over the existing {@code
+     * AxisConfig}-based walk body ({@link #walkOneSegmentInternal}) --
+     * behaviorally identical to the {@code AxisConfig} overload when
+     * given an equivalent {@link ConditionSet} (verified by {@code
+     * MapTracerConditionSetEquivalenceTest}).
+     *
+     * @param conds           the full condition set (n+2 conditions)
+     * @param walkAxisIndex   index into {@code conds.axisConditions()}
+     *                        of the axis to walk THIS segment
+     * @param releaseAxisIndex index into {@code conds.axisConditions()}
+     *                        of the axis Algorithm C2 releases at a
+     *                        crossing; must be a COMPOSITION condition
+     */
+    public SegmentResult walkOneSegment(
+            ConditionSet conds,
+            int walkAxisIndex,
+            int releaseAxisIndex,
+            double startWalkValue,
+            Set<String> startStableNames,
+            double[] compAtStart,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult startResult) {
+
+        List<Condition> axes = conds.axisConditions();
+        Condition walkCondition = axes.get(walkAxisIndex);
+        Condition releaseCondition = axes.get(releaseAxisIndex);
+
+        if (releaseCondition.variable != Condition.Variable.COMPOSITION) {
+            throw new IllegalArgumentException(
+                    "The release axis must be a COMPOSITION condition; got "
+                    + releaseCondition.variable + " (" + releaseCondition + ")");
+        }
+
+        AxisConfig walkAxis = walkCondition.toAxisConfig();
+        AxisConfig releaseAxis = releaseCondition.toAxisConfig();
+        double fixedT = conds.fixedTemperature();
+        double fixedP = conds.fixedPressure();
+
+        return walkOneSegmentInternal(startWalkValue, startStableNames, walkAxis, releaseAxis,
+                fixedT, fixedP, compAtStart, candidates, startResult);
+    }
+
+    /**
+     * Shared walk body behind every {@code walkOneSegment} overload --
+     * see {@link #walkOneSegment(double, Set, AxisConfig, AxisConfig,
+     * double, double, double[], List, EquilibriumResult)} for the full
+     * behavior description. Extracted (Step 5b) so the {@link
+     * ConditionSet}-based overload above and the original {@code
+     * AxisConfig}-based overloads share exactly one implementation
+     * rather than risking drift between two copies.
+     */
+    private SegmentResult walkOneSegmentInternal(
+            double startWalkValue,
+            Set<String> startStableNames,
+            AxisConfig walkAxis,
+            AxisConfig releaseAxis,
+            double fixedT,
+            double fixedP,
+            double[] compAtStart,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult startResult) {
+
         double[] comp = compAtStart.clone();
         Set<String> runNames = startStableNames;
 
@@ -520,18 +601,21 @@ public final class MapTracer {
             double[] effectiveComp = comp;
             Set<String> effectiveCurrentNames = currentNames;
 
-            if (appearingOrDisappearing == null
-                    && walkAxis.type == AxisConfig.Type.TEMPERATURE) {
+            if (appearingOrDisappearing == null) {
 
                 RetriedCrossing retried = retryWithHalvedSteps(
                         previousWalkValue, v, walkAxis,
-                        fixedP, comp, candidates, runNames);
+                        fixedT, fixedP, comp, candidates, runNames);
 
                 if (retried != null) {
                     appearingOrDisappearing = retried.appearingOrDisappearing;
                     effectiveCurrentNames = retried.currentNames;
                     effectiveWalkValue = retried.walkValue;
-                    effectiveT = retried.walkValue;
+                    // effectiveT only changes when the walk axis IS temperature
+                    // (retried.walkValue is the walk axis's own value, not
+                    // necessarily T -- previously hardcoded assuming
+                    // walkAxis.type == TEMPERATURE, now generalized per Step 5b).
+                    effectiveT = walkAxis.type == AxisConfig.Type.TEMPERATURE ? retried.walkValue : fixedT;
                     effectiveComp = retried.comp;
                 }
             }
@@ -628,16 +712,11 @@ public final class MapTracer {
             double lastGoodWalkValue,
             double overshotWalkValue,
             AxisConfig walkAxis,
+            double fixedT,
             double fixedP,
             double[] compAtOvershoot,
             List<GibbsEnergyModel> candidates,
             Set<String> lastGoodNames) {
-
-        if (walkAxis.type != AxisConfig.Type.TEMPERATURE) {
-            throw new IllegalArgumentException(
-                    "retryWithHalvedSteps only supports a TEMPERATURE walk axis; got "
-                    + walkAxis.type);
-        }
 
         double subStep = 0.1 * (overshotWalkValue - lastGoodWalkValue);
         double[] comp = compAtOvershoot.clone();
@@ -646,9 +725,17 @@ public final class MapTracer {
 
             double candidateWalkValue = lastGoodWalkValue + attempt * subStep;
 
+            double t = fixedT;
+            double p = fixedP;
+            switch (walkAxis.type) {
+                case TEMPERATURE: t = candidateWalkValue; break;
+                case PRESSURE: p = candidateWalkValue; break;
+                case COMPOSITION: comp = StepTracer.applyCompositionAxis(walkAxis, candidateWalkValue, comp); break;
+                default: throw new IllegalStateException("Unhandled axis type: " + walkAxis.type);
+            }
+
             EquilibriumResult candidateResult =
-                    EquilibriumSolveHelper.solveOrSentinel(
-                            candidateWalkValue, fixedP, comp, candidates);
+                    EquilibriumSolveHelper.solveOrSentinel(t, p, comp, candidates);
 
             if (!candidateResult.isConverged()) {
                 continue;

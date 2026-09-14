@@ -272,6 +272,59 @@ configuration" throughout.
    once the engine stabilizes — no point wiring an API to a tracer still
    under active change.
 
+### Step 5 progress (item 4 above, broken into sub-steps)
+
+Item 4's ternary generalization is being built as a sequence of smaller,
+individually-committable sub-steps (see the approved plan for full
+detail; summarized here for tracking):
+
+- **5a (done):** `Condition`/`ConditionSet` — engine-internal-only
+  generalization of the n+2 condition set (`calc/diagram` package only;
+  `AxisConfig` and its 19 existing callers across CLI/GUI/API/session
+  untouched). Confirmed structurally to represent both the binary map
+  shape (T=AXIS, P=FIXED, N=FIXED, x(B)=AXIS) and a genuine ternary
+  isothermal shape (T=FIXED, P=FIXED, N=FIXED, x(B)=AXIS, x(C)=AXIS).
+- **5b (done):** `MapTracer.walkOneSegment` gained a `ConditionSet`
+  -driven overload sharing one walk body (`walkOneSegmentInternal`)
+  with the existing `AxisConfig` overloads — verified behaviorally
+  identical via `MapTracerConditionSetEquivalenceTest`. Also
+  generalized `retryWithHalvedSteps` (previously hard-restricted to a
+  TEMPERATURE walk axis) to work for any walk-axis type, needed because
+  a ternary's walk axis is always a composition, never T. Full suite
+  and both critical diagnostics (`CalculationSessionMapTracerTest`,
+  `EquilibriumSolverV2BaselineTest`) confirmed unchanged.
+- **5c (next):** ternary isothermal single-line tracing — at each walk
+  step, one composition axis is walked and the other released into
+  Algorithm C2 exactly as today's binary case (no solver change needed;
+  `solveBoundary` already indexes the released component generically).
+  New `AxisSelector` class picks which axis to walk per step (the
+  flowchart's "fastest-varying axis" reselection). OC reference:
+  `examples/macros/map14.OCM` / `steel1.TDB` (vendor into `data/`),
+  cross-checked against `crfemo-1400-leftcorner.pdf`.
+- **5d (planned):** wire `InvariantExitFinder` into `MapDiagramTracer`'s
+  drain loop via a new `NodeGeometry` class and `PhaseDiagramEngine
+  .classifyNode`'s real implementation (Eq. 8) — closes the "invariant
+  nodes get zero exit lines" gap and is a prerequisite for genuine
+  ternary invariants (common in Cr-Fe-Mo at 1400K). Highest regression
+  risk of the sequence — first step changing existing drain-loop
+  behavior, not just adding entry points.
+- **5e (planned):** ternary isopleth — new `Condition.Variable
+  .COMPOSITION_RATIO` (additive), new OC macro
+  (`docs/oc_reference_tests/crfemo_isopleth.OCM`, no existing OC example
+  covers this). Isopleth's 3-exit node case accepted as OC's hard-coded
+  constant, not re-derived (neither source formalizes it).
+- **5f (planned):** the 5-diagram-type test set (binary, ternary
+  isothermal, ternary isopleth, property/step at fixed composition,
+  binary activity/μ representation), each with 3 strictness tiers
+  (topology / exact-value / multi-point-along-a-line) — the multi-point
+  tier is designed specifically to catch the "boundary only re-solved
+  AT a crossing" defect two sections above, which endpoint-only tests
+  cannot see.
+
+None of 5c-5f depend on fixing the still-open node-dedup bug above —
+every new test asserts "the expected node/assemblage appears in the
+registry," never an exact node count.
+
 ## Non-goals for this effort
 
 - General multicomponent (4+) full-diagram auto-discovery — pseudo-
