@@ -168,6 +168,30 @@ now that this doc is the tracking location):
   ternary analogue of `MapTracer`'s precise boundary-following +
   invariant-node logic yet. This is new work, not a gap in an existing
   tracer.
+- **The moving phase boundary is only re-solved AT a detected crossing,
+  not continuously.** Discovered while building Step 2's drain loop
+  (`MapDiagramTracer`) and cross-checking against a real OpenCalphad
+  `map` run on Ag-Cu: OC's mapper re-solves the exact boundary
+  composition via Algorithm C2 at EVERY walk step, continuously
+  tracking the moving boundary, so its release-axis composition value
+  changes smoothly across the whole line. `MapTracer.walkOneSegment`
+  (and the `trace()` it's refactored from) instead holds the
+  release-axis composition FIXED at its last value between crossings,
+  only invoking the exact boundary solve when a stable-set change is
+  first detected. Confirmed directly: scanning `EquilibriumSolverV2` at
+  a fixed x(Cu) across a wide T range on Ag-Cu shows genuine phase-set
+  changes purely as a side effect of holding composition fixed while T
+  moves — the tracer is answering "what phases are stable at this
+  fixed composition as T varies," not "where does the 2-phase boundary
+  sit as T varies," even though the latter is what a map is supposed to
+  trace. This did not block Step 2 (its test was redesigned around
+  genuinely crossing-free/crossing windows found by direct solver
+  scanning rather than assuming continuous tracking), but it needs
+  fixing before binary full-diagram auto-discovery (target 1) can trace
+  a real liquidus/solidus pair the way OC's Fig. 2(a) does — likely by
+  calling something like `solveBoundary` at every ordinary walk point,
+  not only at a detected crossing, mirroring OC's own per-step
+  Algorithm C2 usage.
 
 ## Suggested build order
 

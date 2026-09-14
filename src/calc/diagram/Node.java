@@ -56,14 +56,29 @@ public final class Node {
     /** Chemical potentials at this node, one per component -- part of this node's identity. */
     public final double[] chemicalPotentials;
 
+    /**
+     * Overall system composition at this node (mole fractions, one per
+     * component). Not generally recoverable from {@link #equilibrium}
+     * alone for a multi-phase node (it would require each stable phase's
+     * amount to already be normalized against a known total), so callers
+     * that know it (e.g. {@link MapDiagramTracer}, which tracks it
+     * explicitly through the walk) must supply it.
+     */
+    public final double[] overallComposition;
+
     /** Lines attached to this node (both pending and walked); see {@link Line}. */
     private final List<Line> lines = new ArrayList<>();
 
     public Node(int id, EquilibriumResult equilibrium, double[] axisValues) {
+        this(id, equilibrium, axisValues, null);
+    }
+
+    public Node(int id, EquilibriumResult equilibrium, double[] axisValues, double[] overallComposition) {
         this.id = id;
         this.equilibrium = equilibrium;
         this.axisValues = axisValues.clone();
         this.chemicalPotentials = equilibrium.getMu();
+        this.overallComposition = overallComposition == null ? null : overallComposition.clone();
 
         Set<String> names = new LinkedHashSet<>();
         for (EquilibriumResult.PhaseResult pr : equilibrium.getStablePhases()) {

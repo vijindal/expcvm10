@@ -73,10 +73,88 @@ import java.util.Set;
  * every successful boundary solve), not a single fixed target -- a map
  * line follows a moving phase boundary, not one fixed overall
  * composition.
+ *
+ * <p><b>{@link #trace} vs. {@link #walkOneSegment}:</b> {@link #trace}
+ * walks the ENTIRE axis range in one call, restarting its own
+ * line/node bookkeeping every time the stable set changes, and is the
+ * tracer every existing caller/test uses. {@link #walkOneSegment} is
+ * the same per-increment walk logic pulled out as a resumable
+ * primitive -- walk from one starting point in one direction until
+ * either an axis limit or a stable-set change, then return control
+ * without deciding what happens next. It exists for {@code
+ * docs/phase_diagram_engine_flowchart.md}'s C1 drain loop (see the
+ * forthcoming {@code NodeRegistry}/drain-loop orchestrator in this
+ * package), which needs to walk one {@link Line} at a time and decide
+ * node creation/exit generation itself rather than have {@link #trace}
+ * decide it internally. {@link #trace} is now implemented by calling
+ * {@link #walkOneSegment} in a loop -- a pure refactor, verified by
+ * {@code CalculationSessionMapTracerTest} (a standalone diagnostic,
+ * not JUnit) continuing to pass unmodified.
  */
 public final class MapTracer {
 
     public MapTracer() {
+    }
+
+    /** Why a call to {@link #walkOneSegment} stopped. */
+    public enum SegmentEnd {
+        /** Reached {@code walkAxis.max} or {@code walkAxis.min} without a stable-set change. */
+        AXIS_LIMIT,
+        /** A non-convergent point was hit; the segment stops there (matches {@link #trace}'s handling). */
+        NON_CONVERGENT,
+        /** Exactly one phase appeared or disappeared; the exact boundary was located via Algorithm C2. */
+        CROSSING,
+        /** Like {@code CROSSING}, but Algorithm D confirmed a genuine invariant at that point. */
+        INVARIANT,
+        /**
+         * More than one phase changed and the crossing could not be resolved
+         * to a single-phase boundary (matches {@link #trace}'s incomplete-crossing fallback).
+         */
+        UNRESOLVED_MULTI_PHASE_CHANGE
+    }
+
+    /**
+     * Result of one {@link #walkOneSegment} call: the points walked (in
+     * order, starting just after the segment's starting point) plus why
+     * the segment ended and, for a {@code CROSSING}/{@code INVARIANT}
+     * end, the new stable phase set and the exact crossing coordinates.
+     */
+    public static final class SegmentResult {
+        public final List<double[]> coords;
+        public final List<EquilibriumResult> points;
+        public final SegmentEnd end;
+        public final double endWalkValue;
+        /** Overall composition at the end of the segment (post-crossing release value applied, if any). */
+        public final double[] endComposition;
+        /** New stable phase set at the crossing; {@code null} unless {@code end} is CROSSING or INVARIANT. */
+        public final Set<String> newStableNames;
+        /** The phase that appeared/disappeared to cause a CROSSING/INVARIANT; {@code null} otherwise. */
+        public final String changedPhase;
+        /**
+         * For AXIS_LIMIT/NON_CONVERGENT: the last successfully solved
+         * equilibrium in this segment. For CROSSING/INVARIANT/
+         * UNRESOLVED_MULTI_PHASE_CHANGE: the equilibrium AT {@code
+         * endWalkValue} with the NEW stable set (matching {@code
+         * trace()}'s original {@code previousResult = current} at the
+         * raw grid point where the change was first observed) -- this is
+         * what a caller resuming the next segment should pass as that
+         * segment's own starting result, not a re-solve of the refined
+         * crossing composition.
+         */
+        public final EquilibriumResult lastResult;
+
+        SegmentResult(List<double[]> coords, List<EquilibriumResult> points, SegmentEnd end,
+                      double endWalkValue, double[] endComposition, Set<String> newStableNames,
+                      String changedPhase, EquilibriumResult lastResult) {
+            this.coords = coords;
+            this.points = points;
+            this.end = end;
+            this.endWalkValue = endWalkValue;
+            this.endComposition = endComposition;
+            this.newStableNames = newStableNames;
+            this.changedPhase = changedPhase;
+            this.lastResult = lastResult;
+        }
     }
 
     /**
@@ -129,10 +207,196 @@ public final class MapTracer {
         Set<String> runNames = null;
         String runFixedPhase = null;
 
-        double previousWalkValue = Double.NaN;
-        EquilibriumResult previousResult = null;
+        // Solve the starting point itself, exactly as the original
+        // for-loop's very first iteration (v == walkAxis.min) did, before
+        // any segment walk begins.
+        double t0 = fixedT, p0 = fixedP;
+        switch (walkAxis.type) {
+            case TEMPERATURE: t0 = walkAxis.min; break;
+            case PRESSURE: p0 = walkAxis.min; break;
+            case COMPOSITION: comp = StepTracer.applyCompositionAxis(walkAxis, walkAxis.min, comp); break;
+            default: throw new IllegalStateException("Unhandled axis type: " + walkAxis.type);
+        }
+        EquilibriumResult startResult = EquilibriumSolveHelper.solveOrSentinel(t0, p0, comp, candidates);
+        runNames = stablePhaseNames(startResult);
+        runCoords.add(new double[] { walkAxis.min, comp[releaseAxis.componentIndex] });
+        result.addNode(
+                new NodePoint(
+                        new double[] { walkAxis.min, comp[releaseAxis.componentIndex] },
+                        new ArrayList<>(runNames),
+                        NodePoint.Type.BOUNDARY));
 
-        for (double v = walkAxis.min; v <= walkAxis.max; v += walkAxis.step) {
+        double segmentStartValue = walkAxis.min;
+        double lastWalkValue = walkAxis.min;
+        Set<String> segmentStartNames = runNames;
+        EquilibriumResult segmentStartResult = startResult;
+
+        while (true) {
+
+            SegmentResult seg = walkOneSegment(
+                    segmentStartValue, segmentStartNames, walkAxis, releaseAxis,
+                    fixedT, fixedP, comp, candidates, segmentStartResult);
+
+            runCoords.addAll(seg.coords);
+            comp = seg.endComposition;
+            lastWalkValue = seg.endWalkValue;
+
+            if (seg.end == SegmentEnd.AXIS_LIMIT || seg.end == SegmentEnd.NON_CONVERGENT) {
+                if (seg.end == SegmentEnd.NON_CONVERGENT) {
+                    result.setComplete(false);
+                    result.setMessage("Non-convergent point at " + walkAxis.name + "=" + seg.endWalkValue);
+                }
+                break;
+            }
+
+            // CROSSING, INVARIANT, or UNRESOLVED_MULTI_PHASE_CHANGE: close
+            // out the current line/node exactly as the original inline loop did.
+            NodePoint.Type nodeType;
+            Set<String> nodeNames;
+
+            if (seg.end == SegmentEnd.UNRESOLVED_MULTI_PHASE_CHANGE) {
+                result.setComplete(false);
+                result.setMessage("More than one phase changed at "
+                        + walkAxis.name + "=" + seg.endWalkValue
+                        + " and the invariant point could not be located.");
+                nodeType = NodePoint.Type.CROSSING;
+                nodeNames = new LinkedHashSet<>(runNames);
+                if (seg.newStableNames != null) nodeNames.addAll(seg.newStableNames);
+            } else {
+                nodeType = (seg.end == SegmentEnd.INVARIANT)
+                        ? NodePoint.Type.INVARIANT : NodePoint.Type.CROSSING;
+                nodeNames = new LinkedHashSet<>(runNames);
+                nodeNames.addAll(seg.newStableNames);
+            }
+
+            result.addLine(buildSegment(runCoords, runNames, runFixedPhase));
+            result.addNode(
+                    new NodePoint(
+                            new double[] { seg.endWalkValue, comp[releaseAxis.componentIndex] },
+                            new ArrayList<>(nodeNames),
+                            nodeType));
+
+            // Matches the original: keep walking forward from the raw grid
+            // point with the new stable set -- the loop does not stop on
+            // an unresolved multi-phase jump either, same as before.
+            runCoords = new ArrayList<>();
+            runCoords.add(new double[] { seg.endWalkValue, comp[releaseAxis.componentIndex] });
+            runNames = seg.newStableNames;
+            runFixedPhase = seg.changedPhase;
+
+            // Resume the next segment one increment past where this one
+            // ended, exactly as the original for-loop's next v would be,
+            // using the SAME (raw grid point, pre-refinement) result the
+            // original loop carried forward as previousResult/previousWalkValue.
+            segmentStartNames = seg.newStableNames;
+            segmentStartResult = seg.lastResult;
+            segmentStartValue = seg.endWalkValue + walkAxis.step;
+            if ((walkAxis.step > 0 && segmentStartValue > walkAxis.max)
+                    || (walkAxis.step < 0 && segmentStartValue < walkAxis.min)) {
+                break;
+            }
+        }
+
+        if (runNames != null && !runCoords.isEmpty()) {
+            result.addLine(buildSegment(runCoords, runNames, runFixedPhase));
+            result.addNode(
+                    new NodePoint(
+                            new double[] { lastWalkValue, comp[releaseAxis.componentIndex] },
+                            new ArrayList<>(runNames),
+                            NodePoint.Type.BOUNDARY));
+        }
+
+        return result;
+    }
+
+    /**
+     * Walks {@code walkAxis} starting just after {@code startWalkValue}
+     * (i.e. the first point solved is {@code startWalkValue +
+     * walkAxis.step}), in the direction of {@code walkAxis.step}'s sign,
+     * until either an axis limit is reached or the stable phase set
+     * changes -- the resumable primitive behind {@link #trace}, and the
+     * one {@code docs/phase_diagram_engine_flowchart.md}'s C1 drain loop
+     * calls once per pending {@link Line}.
+     *
+     * <p>This does not itself decide what a crossing means for node/line
+     * bookkeeping (that is the caller's job, per the flowchart: {@link
+     * #trace} closes out its own inline bookkeeping, while the drain
+     * loop instead consults a node registry) -- it only walks and
+     * reports where it stopped and why.
+     *
+     * @param startWalkValue the axis value of the ALREADY-KNOWN starting
+     *                       equilibrium (not re-solved here); the first
+     *                       new point solved is one step beyond it
+     * @param compAtStart    overall composition at {@code startWalkValue};
+     *                       not mutated
+     * @return where and why the segment stopped, and the points walked
+     */
+    public SegmentResult walkOneSegment(
+            double startWalkValue,
+            AxisConfig walkAxis,
+            AxisConfig releaseAxis,
+            double fixedT,
+            double fixedP,
+            double[] compAtStart,
+            List<GibbsEnergyModel> candidates) {
+
+        double[] comp = compAtStart.clone();
+        double t0 = fixedT, p0 = fixedP;
+        switch (walkAxis.type) {
+            case TEMPERATURE: t0 = startWalkValue; break;
+            case PRESSURE: p0 = startWalkValue; break;
+            case COMPOSITION: comp = StepTracer.applyCompositionAxis(walkAxis, startWalkValue, comp); break;
+            default: throw new IllegalStateException("Unhandled axis type: " + walkAxis.type);
+        }
+        EquilibriumResult startResult = EquilibriumSolveHelper.solveOrSentinel(t0, p0, comp, candidates);
+
+        return walkOneSegment(startWalkValue, stablePhaseNames(startResult), walkAxis, releaseAxis,
+                fixedT, fixedP, compAtStart, candidates, startResult);
+    }
+
+    /**
+     * Same as {@link #walkOneSegment(double, AxisConfig, AxisConfig,
+     * double, double, double[], List)}, but for a caller (the C1 drain
+     * loop) that already knows the starting equilibrium's stable phase
+     * set and result -- e.g. from a {@link Node} -- and so does not need
+     * this method to redundantly re-solve the starting point.
+     *
+     * @param startStableNames stable phase names at {@code startWalkValue}
+     * @param startResult      the already-known starting equilibrium, used
+     *                         as {@code previousResult} for the first
+     *                         Algorithm C2 call if the first walked point
+     *                         already crosses a boundary
+     */
+    public SegmentResult walkOneSegment(
+            double startWalkValue,
+            Set<String> startStableNames,
+            AxisConfig walkAxis,
+            AxisConfig releaseAxis,
+            double fixedT,
+            double fixedP,
+            double[] compAtStart,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult startResult) {
+
+        if (releaseAxis.type != AxisConfig.Type.COMPOSITION) {
+            throw new IllegalArgumentException(
+                    "MapTracer's release axis must be COMPOSITION (T/P release "
+                    + "requires derivative plumbing not yet implemented); got "
+                    + releaseAxis.type);
+        }
+
+        double[] comp = compAtStart.clone();
+        Set<String> runNames = startStableNames;
+
+        List<double[]> coords = new ArrayList<>();
+        List<EquilibriumResult> points = new ArrayList<>();
+
+        double previousWalkValue = startWalkValue;
+        EquilibriumResult previousResult = startResult;
+
+        for (double v = startWalkValue + walkAxis.step;
+             walkAxis.step > 0 ? v <= walkAxis.max : v >= walkAxis.min;
+             v += walkAxis.step) {
 
             double t = fixedT;
             double p = fixedP;
@@ -144,184 +408,90 @@ public final class MapTracer {
                 default: throw new IllegalStateException("Unhandled axis type: " + walkAxis.type);
             }
 
-            EquilibriumResult current =
-                    EquilibriumSolveHelper.solveOrSentinel(t, p, comp, candidates);
+            EquilibriumResult current = EquilibriumSolveHelper.solveOrSentinel(t, p, comp, candidates);
 
             if (!current.isConverged()) {
+                coords.add(new double[] { v, comp[releaseAxis.componentIndex] });
+                points.add(current);
+                return new SegmentResult(coords, points, SegmentEnd.NON_CONVERGENT,
+                        v, comp.clone(), null, null, previousResult);
+            }
 
-                result.setComplete(false);
-                result.setMessage("Non-convergent point at " + walkAxis.name + "=" + v);
+            Set<String> currentNames = stablePhaseNames(current);
 
-                if (runNames == null) {
-                    runNames = stablePhaseNames(current);
-                }
-                runCoords.add(new double[] { v, comp[releaseAxis.componentIndex] });
+            if (currentNames.equals(runNames)) {
+                coords.add(new double[] { v, comp[releaseAxis.componentIndex] });
+                points.add(current);
                 previousWalkValue = v;
                 previousResult = current;
                 continue;
             }
 
-            Set<String> currentNames = stablePhaseNames(current);
+            // Stable set changed -- resolve exactly as trace()'s inline
+            // handling did.
+            String appearingOrDisappearing = findChangedPhase(runNames, currentNames);
 
-            if (runNames == null) {
+            double effectiveWalkValue = v;
+            double effectiveT = t;
+            double[] effectiveComp = comp;
+            Set<String> effectiveCurrentNames = currentNames;
 
-                runNames = currentNames;
-                runCoords.add(new double[] { v, comp[releaseAxis.componentIndex] });
+            if (appearingOrDisappearing == null
+                    && walkAxis.type == AxisConfig.Type.TEMPERATURE) {
 
-                result.addNode(
-                        new NodePoint(
-                                new double[] { v, comp[releaseAxis.componentIndex] },
-                                new ArrayList<>(currentNames),
-                                NodePoint.Type.BOUNDARY));
+                RetriedCrossing retried = retryWithHalvedSteps(
+                        previousWalkValue, v, walkAxis,
+                        fixedP, comp, candidates, runNames);
 
-            } else if (currentNames.equals(runNames)) {
-
-                runCoords.add(new double[] { v, comp[releaseAxis.componentIndex] });
-
-            } else {
-
-                // Phase set changed between (previousWalkValue, v). A
-                // genuine invariant (eutectic/peritectic) is a single
-                // POINT where the stable set jumps by MORE than one
-                // phase at once (e.g. V2ZR disappears and LIQUID appears
-                // at the exact same T) -- confirmed by direct testing
-                // this session against V-Zr's own documented 1586K
-                // peritectic.
-                //
-                // OpenCalphad's own map_calcnode/map_halfstep (traced
-                // directly this session, C:\Users\admin\codes\opencalphad
-                // \src\stepmapplot\smp2A.F90) handles this the SAME way
-                // as an ordinary crossing -- Algorithm C2 always fixes
-                // exactly ONE phase and releases exactly ONE condition,
-                // never two. When a second phase's driving force also
-                // crosses zero during that solve (meq_sameset returning
-                // irem/iadd nonzero), map_calcnode treats it as node
-                // failure (bmperr=4222/4223) and map_halfstep retries
-                // with a SMALLER walk-axis step from the last converged
-                // point (a 10% sub-step, up to 3 attempts, giving up with
-                // "two phases competing to appear/disappear" if the
-                // second phase still triggers -- see map_halfstep's own
-                // comment at that exact error code). There is no
-                // OpenCalphad code path that fixes two phases and
-                // releases two conditions simultaneously; an earlier
-                // version of this method did that (Eq. 9 mis-applied to
-                // node-FINDING rather than the post-node exit-amount
-                // bookkeeping it actually describes) and has been
-                // reverted in favor of this OpenCalphad-faithful retry.
-                String appearingOrDisappearing =
-                        findChangedPhase(runNames, currentNames);
-
-                // The walk point/temperature/composition actually used
-                // to solve the single-phase-fix boundary below -- either
-                // the raw grid point v, or (if a retry narrowed the
-                // multi-phase jump down to a resolvable single-phase
-                // sub-interval) the finer point found by the retry.
-                double effectiveWalkValue = v;
-                double effectiveT = t;
-                double[] effectiveComp = comp;
-                Set<String> effectiveCurrentNames = currentNames;
-
-                if (appearingOrDisappearing == null
-                        && walkAxis.type == AxisConfig.Type.TEMPERATURE
-                        && !Double.isNaN(previousWalkValue)) {
-
-                    RetriedCrossing retried = retryWithHalvedSteps(
-                            previousWalkValue, v, walkAxis,
-                            fixedP, comp, candidates, runNames);
-
-                    if (retried != null) {
-                        appearingOrDisappearing = retried.appearingOrDisappearing;
-                        effectiveCurrentNames = retried.currentNames;
-                        effectiveWalkValue = retried.walkValue;
-                        effectiveT = retried.walkValue;
-                        effectiveComp = retried.comp;
-                    }
+                if (retried != null) {
+                    appearingOrDisappearing = retried.appearingOrDisappearing;
+                    effectiveCurrentNames = retried.currentNames;
+                    effectiveWalkValue = retried.walkValue;
+                    effectiveT = retried.walkValue;
+                    effectiveComp = retried.comp;
                 }
-
-                double crossingWalkValue = effectiveWalkValue;
-                double crossingReleaseValue = effectiveComp[releaseAxis.componentIndex];
-                Set<String> nodeNames = new LinkedHashSet<>(runNames);
-                nodeNames.addAll(effectiveCurrentNames);
-                NodePoint.Type nodeType = NodePoint.Type.CROSSING;
-
-                if (appearingOrDisappearing != null) {
-
-                    // Ordinary single-phase crossing -- solve the exact
-                    // boundary via Algorithm C2 (composition release).
-                    EquilibriumSolverV2.BoundarySolveResult boundary =
-                            EquilibriumSolveHelper.solveBoundaryOrNull(
-                                    effectiveT, p, effectiveComp, candidates, previousResult,
-                                    appearingOrDisappearing, 0.0,
-                                    releaseAxis.componentIndex);
-
-                    if (boundary != null) {
-                        crossingReleaseValue = boundary.releasedComponentValue;
-                        effectiveComp[releaseAxis.componentIndex] = crossingReleaseValue;
-                    }
-
-                    if (nodeNames.size() >= 3) {
-
-                        List<InvariantExitFinder.ExitCandidate> exits =
-                                checkInvariant(nodeNames, candidates, effectiveT, p, effectiveComp,
-                                        appearingOrDisappearing);
-
-                        if (!exits.isEmpty()) {
-                            nodeType = NodePoint.Type.INVARIANT;
-                        }
-                    }
-
-                } else {
-
-                    // More than one phase changed and either the walk
-                    // axis isn't TEMPERATURE (T-release not applicable)
-                    // or the OpenCalphad-style halved-step retry could
-                    // not resolve it to a single-phase sub-interval
-                    // within 3 attempts (matching map_halfstep's own
-                    // "two phases competing to appear/disappear" give-up
-                    // condition) -- record the jump as an ordinary
-                    // (approximate) CROSSING at the walk point v,
-                    // matching StepTracer's own non-resolvable-crossing
-                    // fallback, and flag the result as incomplete.
-                    result.setComplete(false);
-                    result.setMessage("More than one phase changed at "
-                            + walkAxis.name + "=" + v
-                            + " and the invariant point could not be located.");
-                }
-
-                comp = effectiveComp;
-                runCoords.add(new double[] { crossingWalkValue, crossingReleaseValue });
-
-                result.addLine(buildSegment(runCoords, runNames, runFixedPhase));
-
-                result.addNode(
-                        new NodePoint(
-                                new double[] { crossingWalkValue, crossingReleaseValue },
-                                new ArrayList<>(nodeNames),
-                                nodeType));
-
-                runCoords = new ArrayList<>();
-                runCoords.add(new double[] { crossingWalkValue, crossingReleaseValue });
-                runCoords.add(new double[] { v, comp[releaseAxis.componentIndex] });
-                runNames = effectiveCurrentNames;
-                runFixedPhase = appearingOrDisappearing;
             }
 
-            previousWalkValue = v;
-            previousResult = current;
+            if (appearingOrDisappearing == null) {
+                coords.add(new double[] { v, comp[releaseAxis.componentIndex] });
+                return new SegmentResult(coords, points, SegmentEnd.UNRESOLVED_MULTI_PHASE_CHANGE,
+                        v, comp.clone(), effectiveCurrentNames, null, current);
+            }
+
+            EquilibriumSolverV2.BoundarySolveResult boundary =
+                    EquilibriumSolveHelper.solveBoundaryOrNull(
+                            effectiveT, p, effectiveComp, candidates, previousResult,
+                            appearingOrDisappearing, 0.0,
+                            releaseAxis.componentIndex);
+
+            double crossingReleaseValue = effectiveComp[releaseAxis.componentIndex];
+            if (boundary != null) {
+                crossingReleaseValue = boundary.releasedComponentValue;
+                effectiveComp[releaseAxis.componentIndex] = crossingReleaseValue;
+            }
+
+            Set<String> nodeNames = new LinkedHashSet<>(runNames);
+            nodeNames.addAll(effectiveCurrentNames);
+
+            SegmentEnd end = SegmentEnd.CROSSING;
+            if (nodeNames.size() >= 3) {
+                List<InvariantExitFinder.ExitCandidate> exits =
+                        checkInvariant(nodeNames, candidates, effectiveT, p, effectiveComp,
+                                appearingOrDisappearing);
+                if (!exits.isEmpty()) {
+                    end = SegmentEnd.INVARIANT;
+                }
+            }
+
+            coords.add(new double[] { effectiveWalkValue, crossingReleaseValue });
+
+            return new SegmentResult(coords, points, end,
+                    effectiveWalkValue, effectiveComp.clone(), effectiveCurrentNames,
+                    appearingOrDisappearing, current);
         }
 
-        if (runNames != null && !runCoords.isEmpty()) {
-
-            result.addLine(buildSegment(runCoords, runNames, runFixedPhase));
-
-            result.addNode(
-                    new NodePoint(
-                            new double[] { previousWalkValue, comp[releaseAxis.componentIndex] },
-                            new ArrayList<>(runNames),
-                            NodePoint.Type.BOUNDARY));
-        }
-
-        return result;
+        return new SegmentResult(coords, points, SegmentEnd.AXIS_LIMIT,
+                previousWalkValue, comp.clone(), runNames, null, previousResult);
     }
 
     /** Result of a successful {@link #retryWithHalvedSteps} attempt. */

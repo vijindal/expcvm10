@@ -1,0 +1,179 @@
+package calc.diagram;
+
+import system.model.GibbsEnergyModel;
+import system.ports.EquilibriumResult;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * The C1 drain loop from {@code docs/phase_diagram_engine_flowchart.md}:
+ * given a starting equilibrium, repeatedly picks a pending {@link Line}
+ * from the {@link NodeRegistry}, walks it via {@link
+ * MapTracer#walkOneSegment}, and on a crossing either reuses an existing
+ * {@link Node} (Algorithm C2's "already found?" check) or creates one and
+ * attaches its exit lines -- until no pending lines remain.
+ *
+ * <p><b>Scope of this first version, matching {@code
+ * docs/roadmap_phase_diagrams.md}'s step-by-step build order:</b> only
+ * the ordinary two-phase "tie-line-in-plane" node case is handled (2
+ * exit lines, per the flowchart's node-geometry branch). Invariant nodes
+ * (Algorithm D / {@link InvariantExitFinder}) are NOT yet wired into
+ * this loop -- a node where {@link MapTracer.SegmentEnd#INVARIANT} or
+ * {@link MapTracer.SegmentEnd#UNRESOLVED_MULTI_PHASE_CHANGE} is reached
+ * is registered but given no exit lines (the drain loop simply stops
+ * extending that branch), which is a deliberate, documented limitation
+ * of this version, not a silent gap.
+ *
+ * <p>Also single-walk-axis only: every {@link Line} varies the SAME
+ * walk axis as the start node (direction +1 or -1); the flowchart's
+ * "select the fastest-varying axis" reselection during a walk is not
+ * implemented here.
+ */
+public final class MapDiagramTracer {
+
+    /** Node-matching tolerance passed to {@link NodeRegistry#findOrCreate}. */
+    private final double nodeMatchTolerance;
+
+    /**
+     * Overall composition tracked per node id -- {@link Node} cannot
+     * always recover this from its {@link EquilibriumResult} alone for a
+     * multi-phase node (see {@link Node#overallComposition}'s javadoc),
+     * so this loop threads it explicitly.
+     */
+    private final Map<Integer, double[]> compositionByNodeId = new HashMap<>();
+
+    public MapDiagramTracer() {
+        this(1e-4);
+    }
+
+    public MapDiagramTracer(double nodeMatchTolerance) {
+        this.nodeMatchTolerance = nodeMatchTolerance;
+    }
+
+    /**
+     * Drains the C1 loop starting from one initial equilibrium.
+     *
+     * @param walkAxis    the axis walked in fixed increments (e.g. TEMPERATURE)
+     * @param releaseAxis the composition axis solved for exactly at each
+     *                    boundary; must have {@code type == COMPOSITION}
+     *                    (same constraint as {@link MapTracer})
+     * @param fixedT      temperature when {@code walkAxis.type != TEMPERATURE}
+     * @param fixedP      pressure when {@code walkAxis.type != PRESSURE}
+     * @param startWalkValue the axis value of the starting equilibrium
+     *                       (usually {@code walkAxis.min})
+     * @param compOverall starting overall composition
+     * @param candidates  candidate phase models
+     * @return the populated registry: 1 start node, plus any nodes
+     *         created by resolved crossings, and every line walked
+     */
+    public NodeRegistry drain(
+            AxisConfig walkAxis,
+            AxisConfig releaseAxis,
+            double fixedT,
+            double fixedP,
+            double startWalkValue,
+            double[] compOverall,
+            List<GibbsEnergyModel> candidates) {
+
+        if (releaseAxis.type != AxisConfig.Type.COMPOSITION) {
+            throw new IllegalArgumentException(
+                    "MapDiagramTracer's release axis must be COMPOSITION; got " + releaseAxis.type);
+        }
+
+        MapTracer tracer = new MapTracer();
+        NodeRegistry registry = new NodeRegistry();
+
+        double[] startComp = compOverall.clone();
+        double t0 = fixedT, p0 = fixedP;
+        switch (walkAxis.type) {
+            case TEMPERATURE: t0 = startWalkValue; break;
+            case PRESSURE: p0 = startWalkValue; break;
+            case COMPOSITION: startComp = StepTracer.applyCompositionAxis(walkAxis, startWalkValue, startComp); break;
+            default: throw new IllegalStateException("Unhandled axis type: " + walkAxis.type);
+        }
+        EquilibriumResult startResult = EquilibriumSolveHelper.solveOrSentinel(t0, p0, startComp, candidates);
+
+        Node startNode = registry.findOrCreate(
+                startResult, new double[] { startWalkValue, startComp[releaseAxis.componentIndex] },
+                startComp, nodeMatchTolerance);
+        compositionByNodeId.putIfAbsent(startNode.id, startComp);
+
+        // Per the flowchart's map-branch initialization: attach 2 pending
+        // lines, one in each direction of the walk axis, from the start
+        // node -- this is the "1 axis -> 2 pending lines" case for a
+        // 2-phase (or more) start equilibrium with tie-lines in the plane.
+        startNode.addLine(new Line(startNode, List.of(), 0, +1));
+        startNode.addLine(new Line(startNode, List.of(), 0, -1));
+
+        while (registry.hasPendingWork()) {
+
+            Line line = registry.nextPendingLine();
+            Node fromNode = line.startNode;
+            line.startWalking();
+
+            AxisConfig directedWalkAxis = directed(walkAxis, line.direction);
+            double[] compAtStart = compositionByNodeId.get(fromNode.id);
+
+            MapTracer.SegmentResult seg = tracer.walkOneSegment(
+                    fromNode.axisValues[0], fromNode.stablePhaseNames,
+                    directedWalkAxis, releaseAxis, fixedT, fixedP,
+                    compAtStart, candidates, fromNode.equilibrium);
+
+            for (int i = 0; i < seg.points.size(); i++) {
+                line.addPoint(seg.points.get(i), seg.coords.get(i));
+            }
+
+            switch (seg.end) {
+                case AXIS_LIMIT:
+                case NON_CONVERGENT:
+                    line.terminateAtAxisLimit();
+                    break;
+
+                case CROSSING: {
+                    Node endNode = registry.findOrCreate(
+                            seg.lastResult,
+                            new double[] { seg.endWalkValue, seg.endComposition[releaseAxis.componentIndex] },
+                            seg.endComposition, nodeMatchTolerance);
+                    compositionByNodeId.putIfAbsent(endNode.id, seg.endComposition);
+                    line.terminateAtNode(endNode);
+                    if (endNode.getLines().isEmpty()) {
+                        // Newly created: ordinary tie-line-in-plane node,
+                        // per the flowchart's node-geometry branch -- 2
+                        // exits, one continuing in each direction of the
+                        // SAME walk axis (this scope's only case).
+                        endNode.addLine(new Line(endNode, List.of(seg.changedPhase), 0, +1));
+                        endNode.addLine(new Line(endNode, List.of(seg.changedPhase), 0, -1));
+                    }
+                    break;
+                }
+
+                case INVARIANT:
+                case UNRESOLVED_MULTI_PHASE_CHANGE: {
+                    // Out of scope for this version -- register the node
+                    // (so it is visible/inspectable) but do not attach
+                    // exit lines; see class javadoc.
+                    Node endNode = registry.findOrCreate(
+                            seg.lastResult,
+                            new double[] { seg.endWalkValue, seg.endComposition[releaseAxis.componentIndex] },
+                            seg.endComposition, nodeMatchTolerance);
+                    compositionByNodeId.putIfAbsent(endNode.id, seg.endComposition);
+                    line.terminateAtNode(endNode);
+                    break;
+                }
+            }
+        }
+
+        return registry;
+    }
+
+    /** Returns an {@link AxisConfig} with the same range but a step whose sign matches {@code direction}. */
+    private static AxisConfig directed(AxisConfig axis, int direction) {
+        double step = Math.abs(axis.step) * Math.signum(direction);
+        if (axis.type == AxisConfig.Type.COMPOSITION) {
+            return new AxisConfig(axis.name, axis.componentIndex, axis.min, axis.max, step);
+        }
+        return new AxisConfig(axis.name, axis.type, axis.min, axis.max, step);
+    }
+}
