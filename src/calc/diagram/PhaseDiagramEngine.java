@@ -82,18 +82,40 @@ public final class PhaseDiagramEngine {
      * (Eq. 8) used later at node classification -- see {@link
      * #classifyNode}.
      *
-     * <p><b>Not yet implemented.</b> No caller in this codebase
-     * currently builds an arbitrary condition set this general
-     * (today's {@code AxisConfig}/{@code CalculationSession} paths only
-     * ever use T, P, and overall composition) -- there is nothing to
-     * validate against yet beyond that fixed shape. See {@code
-     * docs/roadmap_phase_diagrams.md}.
+     * <p><b>Implemented</b> as OC's own check (confirmed directly this
+     * session, not just the paper's prose): OC's Fortran source
+     * ({@code src/models/gtp3X.F90:5401}, function {@code
+     * extract_massbal}) computes {@code idf = noofel+2-nc} and raises
+     * error 4144 ("Degrees of freedom not zero") whenever {@code idf !=
+     * 0} -- i.e. this is symmetric: TOO FEW conditions and TOO MANY
+     * conditions both fail the same way, not just underdetermined
+     * systems. Reproduced directly against the real {@code oc7C}
+     * binary via the pty driver ({@code
+     * docs/oc_reference_tests/run_pty.py}): a 2-component Ag-Cu system
+     * with only T,P set (2 conditions, needs 4) and, separately, with
+     * T,P,N,x(Cu),x(Ag) set (5 conditions) BOTH produced OC's error
+     * 4144 with that exact message; the correctly-determined 4-condition
+     * case (T,P,N,x(Cu)) is what every other equilibrium call in this
+     * codebase already relies on succeeding.
+     *
+     * @param numComponents        n, the number of independent components
+     * @param numConditionsSupplied how many conditions the caller intends
+     *                               to set for one Algorithm-A call
+     * @throws IllegalArgumentException if {@code numConditionsSupplied !=
+     *         numComponents + 2}, whether too few or too many -- mirroring
+     *         OC's own symmetric idf != 0 check, not just an underdetermined-
+     *         only guard
      */
     public static void validateConditionCount(int numComponents, int numConditionsSupplied) {
-        throw new UnsupportedOperationException(
-                "General n+2 condition validation not yet implemented -- "
-                + "every current caller uses the fixed T/P/composition shape only. "
-                + "See docs/roadmap_phase_diagrams.md.");
+        int requiredConditions = numComponents + 2;
+        int idf = requiredConditions - numConditionsSupplied;
+        if (idf != 0) {
+            throw new IllegalArgumentException(
+                    "Degrees of freedom not zero: " + numComponents + " components require exactly "
+                    + requiredConditions + " conditions (n+2), but " + numConditionsSupplied
+                    + " were supplied (idf=" + idf + "). Matches OpenCalphad's own error 4144, "
+                    + "\"Degrees of freedom not zero\" (src/models/gtp3X.F90's idf=noofel+2-nc check).");
+        }
     }
 
     // ------------------------------------------------------------------

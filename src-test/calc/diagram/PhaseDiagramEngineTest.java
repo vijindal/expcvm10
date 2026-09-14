@@ -59,10 +59,34 @@ public class PhaseDiagramEngineTest {
         assertTrue(registry.size() >= 1, "the drain loop should have produced at least a start node");
     }
 
+    /**
+     * OC-confirmed cases (via the pty driver on the real {@code oc7C}
+     * binary, {@code docs/oc_reference_tests/run_pty.py}): a 2-component
+     * Ag-Cu system with only T,P set (2 conditions) raises OC's error
+     * 4144 ("Degrees of freedom not zero"); the same system with
+     * T,P,N,x(Cu),x(Ag) set (5 conditions) raises the SAME error 4144 --
+     * OC's idf != 0 check is symmetric, not underdetermined-only.
+     */
     @Test
-    void validateConditionCountIsNotYetImplemented() {
-        assertThrows(UnsupportedOperationException.class,
-                () -> PhaseDiagramEngine.validateConditionCount(2, 4));
+    void rejectsTooFewConditionsMatchingOcsUnderdeterminedCase() {
+        // 2-component system, only T and P set (2 conditions; needs 4).
+        assertThrows(IllegalArgumentException.class,
+                () -> PhaseDiagramEngine.validateConditionCount(2, 2));
+    }
+
+    @Test
+    void rejectsTooManyConditionsMatchingOcsOverdeterminedCase() {
+        // 2-component system, T,P,N,x(Cu),x(Ag) set (5 conditions; needs 4).
+        assertThrows(IllegalArgumentException.class,
+                () -> PhaseDiagramEngine.validateConditionCount(2, 5));
+    }
+
+    @Test
+    void acceptsExactlyNPlusTwoConditions() {
+        // 2-component system, T,P,N,x(Cu) set (4 conditions) -- matches OC's
+        // correctly-determined case, which every other equilibrium call in
+        // this codebase already relies on succeeding.
+        PhaseDiagramEngine.validateConditionCount(2, 4);
     }
 
     @Test
