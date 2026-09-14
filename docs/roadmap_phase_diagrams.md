@@ -293,14 +293,37 @@ detail; summarized here for tracking):
   a ternary's walk axis is always a composition, never T. Full suite
   and both critical diagnostics (`CalculationSessionMapTracerTest`,
   `EquilibriumSolverV2BaselineTest`) confirmed unchanged.
-- **5c (next):** ternary isothermal single-line tracing — at each walk
-  step, one composition axis is walked and the other released into
-  Algorithm C2 exactly as today's binary case (no solver change needed;
-  `solveBoundary` already indexes the released component generically).
-  New `AxisSelector` class picks which axis to walk per step (the
-  flowchart's "fastest-varying axis" reselection). OC reference:
-  `examples/macros/map14.OCM` / `steel1.TDB` (vendor into `data/`),
-  cross-checked against `crfemo-1400-leftcorner.pdf`.
+- **5c (done):** ternary isothermal single-line tracing. Confirmed
+  directly (`MapTracerTernaryIsothermalTest`): walking one composition
+  axis while releasing a DIFFERENT composition axis works with **zero
+  changes** to `walkOneSegment`/`walkOneSegmentInternal` beyond Step
+  5b's `ConditionSet` plumbing — `solveBoundary` already indexes
+  `targetAmounts[releasedComponentIndex]` generically, and the walk
+  loop's `COMPOSITION` case already used `StepTracer.applyCompositionAxis`
+  with no binary-specific assumption. `AxisSelector` (dynamically
+  picking which axis to walk per step) is deferred to 5d, since it is
+  only needed once a full drain loop walks a line without the caller
+  pre-choosing walk/release axes -- not needed for a single explicit
+  `walkOneSegment` call.
+  **Reference system changed from the original plan:** the planned
+  Cr-Fe-Mo/`steel1.TDB`/`map14.OCM` target turned out to need `SIGMA`
+  (present almost everywhere interesting near `map14`'s own starting
+  point) for a physically correct answer, and `SIGMA` converges too
+  slowly in this codebase's solver (very close to OC's answer but not
+  within 100 iterations at `T=1400K, x(Cr)=0.3, x(Mo)=0.05` -- a new,
+  separate finding, not investigated further here). Switched to
+  Al-Mg-Zn on `data/cost507R.TDB` (OpenCalphad's own bundled COST 507
+  database, copied byte-identical into this repo) instead, which traces
+  a clean FCC_A1 -> FCC_A1+MGZN2 crossing with no convergence issues.
+  **Also found:** this project's OTHER pre-existing file with a similar
+  name, `data/cost507.tdb`, is a DIFFERENT, incompatible assessment for
+  this system (gives FCC_A1+LIQUID where `cost507R.TDB` gives
+  FCC_A1+MGZN2 at the same conditions) -- do not use it interchangeably
+  with `cost507R.TDB` for OC cross-checking. Also found `cost507R.TDB`'s
+  `GridMinimizer`/`Hyperplane` initialization fails when LIQUID or
+  HCP_A3 are included as extra candidates alongside FCC_A1 (works fine
+  with a correctly-curated candidate list) -- a minor, separate
+  robustness gap, not investigated further.
 - **5d (planned):** wire `InvariantExitFinder` into `MapDiagramTracer`'s
   drain loop via a new `NodeGeometry` class and `PhaseDiagramEngine
   .classifyNode`'s real implementation (Eq. 8) — closes the "invariant
