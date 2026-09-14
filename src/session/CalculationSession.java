@@ -3,7 +3,6 @@ package session;
 import calc.diagram.AxisConfig;
 import calc.diagram.CoarseDiagramTracer;
 import calc.diagram.MapTracer;
-import calc.diagram.PhaseDiagram;
 import calc.diagram.StepTracer;
 import calc.equil.EquilibriumSolverV2;
 import calc.equil.GridMinimizer;
@@ -81,7 +80,6 @@ public final class CalculationSession {
     private ThermodynamicSystem currentSystem;
     private EquilibriumResult currentEquilibriumResult;
     private EquilibriumResult currentInitialState;
-    private PhaseDiagram currentPhaseDiagram;
     private PhaseDiagramResult currentStepResult;
     private CoarseDiagramResult currentCoarseDiagramResult;
     private PhaseDiagramResult currentMapResult;
@@ -182,7 +180,6 @@ public final class CalculationSession {
         this.currentKey = requested;
         this.currentEquilibriumResult = null;
         this.currentInitialState = null;
-        this.currentPhaseDiagram = null;
         this.currentStepResult = null;
         this.currentCoarseDiagramResult = null;
         this.currentMapResult = null;
@@ -324,21 +321,27 @@ public final class CalculationSession {
     }
 
     /**
-     * Runs a phase-diagram calculation against the currently held system and
-     * stores the result; read it back via {@link #currentPhaseDiagram()}.
+     * Runs a full, automated phase-diagram calculation against the
+     * currently held system -- multi-line/node ZPF stitching (Sundman
+     * Algorithms B/C1/C2/D), not a single line like {@link #calculateMap}.
      *
-     * <p>Distinct from {@link #calculateStep}/{@link #calculateMap}: a phase
-     * diagram traces phase boundaries (Sundman's Algorithms B/C1/C2).
-     *
-     * <p>Not yet implemented: the previous tracing engine
-     * ({@code DiagramTracer}/{@code LineStepper}/{@code PhaseChangeHandler})
-     * was built on the retired mole-fraction (x-facing)
-     * {@code GibbsEnergyModel} surface and was removed when the codebase
+     * <p>Not yet implemented: this is the top-priority build target
+     * described in {@code docs/roadmap_phase_diagrams.md} and
+     * {@code docs/phase_diagram_engine_flowchart.md} (Node/Line/
+     * EquilibriumState data structures, a node registry with dedup, and
+     * the C1 drain loop wrapping today's single-line {@link MapTracer}
+     * plus {@code InvariantExitFinder}). An earlier tracing engine
+     * ({@code DiagramTracer}/{@code LineStepper}/{@code
+     * PhaseChangeHandler}/{@code DiagramNode}/{@code DiagramExit}/
+     * {@code DiagramLine}/{@code calc.diagram.PhaseDiagram}) was built on
+     * the retired mole-fraction (x-facing) {@code GibbsEnergyModel}
+     * surface and removed as dead scaffolding when the codebase
      * standardized on Sundman's site-fraction (y-facing) formulation
-     * ({@code EquilibriumSolverV2}). A y-facing tracer does not exist yet.
+     * ({@code EquilibriumSolverV2}) -- it never reached this method, which
+     * has always thrown.
      *
      * @throws IllegalStateException if {@link #setModel} hasn't been called yet
-     * @throws UnsupportedOperationException always, until a y-facing tracer exists
+     * @throws UnsupportedOperationException always, until the engine above is built
      */
     public void calculatePhaseDiagram(AxisConfig[] axes, double[] startAxes,
                                        double fixedT, double fixedP, double[] comp) {
@@ -478,14 +481,6 @@ public final class CalculationSession {
      */
     public EquilibriumResult currentInitialState() {
         return currentInitialState;
-    }
-
-    /**
-     * The most recent phase-diagram result, or {@code null} (same rules as
-     * {@link #currentEquilibriumResult()}).
-     */
-    public PhaseDiagram currentPhaseDiagram() {
-        return currentPhaseDiagram;
     }
 
     /**

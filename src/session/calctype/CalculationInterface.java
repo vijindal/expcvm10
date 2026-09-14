@@ -1,7 +1,6 @@
 package session.calctype;
 
 import calc.diagram.AxisConfig;
-import calc.diagram.PhaseDiagram;
 import session.CalculationSession;
 import system.ports.EquilibriumResult;
 import ui.result.CoarseDiagramResult;
@@ -143,7 +142,9 @@ public final class CalculationInterface {
                 PhaseDiagramParams p = (PhaseDiagramParams) params;
                 session.calculatePhaseDiagram(p.axes(), p.startAxes(), p.fixedT(), p.fixedP(),
                         p.composition());
-                return (R) session.currentPhaseDiagram();
+                // calculatePhaseDiagram always throws today (not yet implemented --
+                // see docs/roadmap_phase_diagrams.md); no result type to return yet.
+                throw new IllegalStateException("unreachable");
             }
             default:
                 throw new IllegalArgumentException("Unhandled CALCULATE-group kind: " + kind);

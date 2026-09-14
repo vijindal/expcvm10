@@ -6,12 +6,10 @@ import ui.api.dto.EquilibriumRequest;
 import ui.api.dto.EquilibriumResponse;
 import ui.api.dto.ErrorResponse;
 import ui.api.dto.PhaseDiagramRequest;
-import ui.api.dto.PhaseDiagramResponse;
 import ui.api.dto.PhasesRequest;
 import ui.api.dto.PhasesResponse;
 import ui.api.dto.SetModelRequest;
 import calc.diagram.AxisConfig;
-import calc.diagram.PhaseDiagram;
 import com.google.gson.Gson;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -49,7 +47,7 @@ import java.util.regex.Pattern;
  *   POST   /sessions/{id}/elements                      -> 200 ElementsResponse
  *   POST   /sessions/{id}/phases                        -> 200 PhasesResponse
  *   POST   /sessions/{id}/calculations/equilibrium      -> 200 EquilibriumResponse
- *   POST   /sessions/{id}/calculations/phase-diagram    -> 200 PhaseDiagramResponse
+ *   POST   /sessions/{id}/calculations/phase-diagram    -> 501 (not implemented yet)
  *   POST   /sessions/{id}/calculations/assessment       -> 501 (opt -- not implemented yet)
  *   POST   /sessions/{id}/calculations/step             -> 501
  *   POST   /sessions/{id}/calculations/map              -> 501
@@ -303,9 +301,11 @@ public final class CalculationApiServer {
 
         CalculationInterface.PhaseDiagramParams params = new CalculationInterface.PhaseDiagramParams(
                 axes, req.startAxes, req.fixedT, req.fixedP, req.composition);
-        PhaseDiagram diagram = CalculationInterface.runCalculating(
+        // calculatePhaseDiagram always throws today (not yet implemented -- see
+        // docs/roadmap_phase_diagrams.md); runCalculating below is expected to
+        // propagate that as an error response, same as any other 501.
+        CalculationInterface.<CalculationInterface.PhaseDiagramParams, Object>runCalculating(
                 entry.session, CalculationKind.PHASE_DIAGRAM, entry.modelSelection, params);
-        sendJson(exchange, 200, new PhaseDiagramResponse(diagram));
     }
 
     /**

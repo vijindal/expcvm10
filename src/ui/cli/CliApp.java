@@ -16,8 +16,6 @@ import session.calctype.CalculationOutcome;
 import session.calctype.ModelSelection;
 import calc.diagram.AxisConfig;
 import calc.diagram.AxisConfig.Type;
-import calc.diagram.PhaseDiagram;
-import calc.diagram.DiagramLine;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -428,19 +426,13 @@ public class CliApp {
                 axes.toArray(new AxisConfig[0]), startAxes,
                 /* fixedT */ 1000.0, /* fixedP */ 101325.0, comp);
 
-        PhaseDiagram diagram;
         try {
-            diagram = CalculationInterface.runCalculating(
+            CalculationInterface.<CalculationInterface.PhaseDiagramParams, Object>runCalculating(
                     session, CalculationKind.PHASE_DIAGRAM, model, params);
         } catch (IllegalStateException | UnsupportedOperationException | IllegalArgumentException e) {
             System.out.println("Error: " + e.getMessage());
             return;
         }
-
-        System.out.println("Calculation complete");
-        System.out.printf("  Lines:  %d%n", diagram.getLines().size());
-        System.out.printf("  Nodes:  %d%n", diagram.getNodes().size());
-        printPhaseRegions(diagram);
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -1335,17 +1327,6 @@ public class CliApp {
                 default:            return null;
             }
         } catch (NumberFormatException e) { return null; }
-    }
-
-    private void printPhaseRegions(PhaseDiagram diagram) {
-        java.util.Set<String> regions = new java.util.TreeSet<>();
-        for (DiagramLine line : diagram.getLines()) {
-            regions.add(String.join(" + ", line.stablePhaseSet));
-        }
-        if (!regions.isEmpty()) {
-            System.out.println("  Phase regions found:");
-            for (String r : regions) System.out.println("    " + r);
-        }
     }
 
     // ──────────────────────────────────────────────────────────────────
