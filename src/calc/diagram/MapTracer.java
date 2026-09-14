@@ -96,6 +96,90 @@ public final class MapTracer {
     public MapTracer() {
     }
 
+    /**
+     * Result of {@link #findInitialBoundary}.
+     */
+    public static final class InitialBoundaryResult {
+        /** True if a stable-set change was found and resolved within the search range. */
+        public final boolean found;
+        /** The resolved crossing equilibrium; {@code null} if {@code !found}. */
+        public final EquilibriumResult equilibrium;
+        /** The search axis value at the crossing; meaningless if {@code !found}. */
+        public final double crossingSearchValue;
+        /** The stable phase set AT the crossing (the new one); {@code null} if {@code !found}. */
+        public final Set<String> stableNames;
+        /** The full segment walked during the search, for callers that want the intermediate points too. */
+        public final SegmentResult segment;
+
+        InitialBoundaryResult(boolean found, EquilibriumResult equilibrium, double crossingSearchValue,
+                              Set<String> stableNames, SegmentResult segment) {
+            this.found = found;
+            this.equilibrium = equilibrium;
+            this.crossingSearchValue = crossingSearchValue;
+            this.stableNames = stableNames;
+            this.segment = segment;
+        }
+    }
+
+    /**
+     * The map branch's initial single-axis search (Sundman 2021 Section
+     * 3.3, and {@code docs/phase_diagram_engine_flowchart.md}'s "TWO
+     * AXES" initialization sub-block): starting from a possibly
+     * single-phase equilibrium, walk {@code searchAxis} ALONE (holding
+     * every other condition, including {@code releaseAxis}'s value,
+     * fixed) until the stable phase set changes, then resolve that
+     * crossing exactly via Algorithm C2 -- this resolved equilibrium,
+     * NOT the original starting point, is what becomes the map's first/
+     * START node.
+     *
+     * <p>This is a thin wrapper over {@link #walkOneSegment} (the search
+     * IS just a segment walk); it exists as its own named method because
+     * the flowchart treats it as a distinct step with a specific meaning
+     * (finding the true first node), not because the underlying walk
+     * mechanics differ.
+     *
+     * @param searchAxis        the axis to search (typically a potential,
+     *                          per the paper's convention -- but any
+     *                          {@link AxisConfig.Type} is accepted, same
+     *                          as {@link #walkOneSegment})
+     * @param startSearchValue  the search axis's value at the starting
+     *                          (possibly single-phase) equilibrium
+     * @param releaseAxis       the composition axis to solve for exactly
+     *                          at the crossing; held FIXED at whatever
+     *                          value {@code compAtStart} gives it during
+     *                          the search itself (this is what
+     *                          distinguishes "search axis" from "release
+     *                          axis" here -- the release axis is not
+     *                          released until the crossing is found)
+     * @return whether a crossing was found in {@code [searchAxis.min,
+     *         searchAxis.max]}, and if so, the resolved boundary
+     */
+    public InitialBoundaryResult findInitialBoundary(
+            AxisConfig searchAxis,
+            double startSearchValue,
+            AxisConfig releaseAxis,
+            double fixedT,
+            double fixedP,
+            double[] compAtStart,
+            List<GibbsEnergyModel> candidates) {
+
+        SegmentResult seg = walkOneSegment(
+                startSearchValue, searchAxis, releaseAxis, fixedT, fixedP, compAtStart, candidates);
+
+        switch (seg.end) {
+            case CROSSING:
+            case INVARIANT:
+                return new InitialBoundaryResult(
+                        true, seg.lastResult, seg.endWalkValue, seg.newStableNames, seg);
+            case AXIS_LIMIT:
+            case NON_CONVERGENT:
+            case UNRESOLVED_MULTI_PHASE_CHANGE:
+                return new InitialBoundaryResult(false, null, Double.NaN, null, seg);
+            default:
+                throw new IllegalStateException("Unhandled segment end: " + seg.end);
+        }
+    }
+
     /** Why a call to {@link #walkOneSegment} stopped. */
     public enum SegmentEnd {
         /** Reached {@code walkAxis.max} or {@code walkAxis.min} without a stable-set change. */
