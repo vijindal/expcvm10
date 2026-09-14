@@ -192,6 +192,34 @@ now that this doc is the tracking location):
   calling something like `solveBoundary` at every ordinary walk point,
   not only at a detected crossing, mirroring OC's own per-step
   Algorithm C2 usage.
+- **Two new drain-loop bugs surfaced by Step 3b's testing (start-node
+  search wiring), not yet investigated:**
+  - **An out-of-range composition value.** Draining Ag-Cu from a
+    single-phase FCC_A1 start (T=1150K, x(Cu)=0.05) over
+    T∈[1150,1230]K produced a node with `x(Cu) = 3.15330` — physically
+    impossible (mole fractions must be ≤ 1). It appeared on a line that
+    had walked 11 points before hitting its crossing, suggesting a
+    boundary-solve or extrapolation issue on a longer walk, not
+    something visible on the short single-segment cases Steps 1-3a
+    tested. Needs isolating: which walked point first goes out of
+    range, and whether `solveBoundaryOrNull` or the walk's own
+    composition bookkeeping is at fault.
+  - **Undeduplicated nodes at the same physical point.** The same
+    drain run produced two distinct nodes both at
+    (T=1210K, x(Cu)=0.0453150, stable=LIQUID) — `NodeRegistry`'s
+    `findOrCreate` (Step 2) failed to merge them. Either the default
+    `1e-4` matching tolerance is too tight for chemical potentials
+    reached via two different walk paths, or the two paths' equilibria
+    genuinely differ (e.g. one less-converged than the other) and a
+    numeric-only tolerance can't paper over that, or there's a real
+    dedup logic gap. Needs its own investigation before believing
+    `NodeRegistry`'s dedup is trustworthy on anything beyond Step 1's
+    two-solve-from-the-same-point unit test.
+  - Both found in `MapDiagramTracerAgCuTest`'s git history (Step 3b
+    commit) via a debug driver, not asserted against in the committed
+    test — the committed test only checks the high-T exit line reaches
+    a real LIQUID node, deliberately not asserting on the low-T line
+    where these two issues live.
 
 ## Suggested build order
 

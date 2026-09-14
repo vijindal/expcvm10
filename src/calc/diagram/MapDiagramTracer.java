@@ -30,6 +30,20 @@ import java.util.Map;
  * walk axis as the start node (direction +1 or -1); the flowchart's
  * "select the fastest-varying axis" reselection during a walk is not
  * implemented here.
+ *
+ * <p><b>On the flowchart's "attach exits along the OTHER axis"
+ * language (Step 3b analysis):</b> for a binary T-x map -- this
+ * version's only supported case -- there are exactly 2 axes total, one
+ * WALKED and one RELEASED (never both walked at once); the initial
+ * search (see {@link #drain}) consumes {@code walkAxis}, and {@code
+ * releaseAxis} is never itself walked in this scope, only solved for
+ * exactly at each crossing. So the start node's 2 exit lines correctly
+ * continue walking {@code walkAxis} in each direction (exactly like
+ * every other node's exits, Step 2's original design) -- the
+ * flowchart's "other axis" case only becomes literally applicable once
+ * a diagram type with a genuine second WALKABLE axis exists (e.g. a
+ * ternary isothermal section's two composition axes, neither one
+ * released) -- deferred to that future work, not implemented here.
  */
 public final class MapDiagramTracer {
 
@@ -53,20 +67,35 @@ public final class MapDiagramTracer {
     }
 
     /**
-     * Drains the C1 loop starting from one initial equilibrium.
+     * Drains the C1 loop starting from one initial equilibrium, which may
+     * be SINGLE-phase (Step 3b): the true start {@link Node} is located
+     * by {@link MapTracer#findInitialBoundary}'s search along {@code
+     * walkAxis} (holding {@code releaseAxis} fixed, per the flowchart's
+     * map-branch initialization, Section 3.3) from the caller's starting
+     * condition -- not the starting condition itself, unless it already
+     * happens to sit exactly on a boundary.
      *
-     * @param walkAxis    the axis walked in fixed increments (e.g. TEMPERATURE)
+     * @param walkAxis    the axis searched initially, then walked by
+     *                    every line in the diagram (e.g. TEMPERATURE);
+     *                    see the class javadoc for why every line,
+     *                    including the start node's own exits, walks
+     *                    this SAME axis in this version's binary-only scope
      * @param releaseAxis the composition axis solved for exactly at each
      *                    boundary; must have {@code type == COMPOSITION}
      *                    (same constraint as {@link MapTracer})
      * @param fixedT      temperature when {@code walkAxis.type != TEMPERATURE}
      * @param fixedP      pressure when {@code walkAxis.type != PRESSURE}
-     * @param startWalkValue the axis value of the starting equilibrium
-     *                       (usually {@code walkAxis.min})
+     * @param startWalkValue the axis value of the CALLER's starting
+     *                       condition (usually {@code walkAxis.min}) --
+     *                       not necessarily where the start node ends up
      * @param compOverall starting overall composition
      * @param candidates  candidate phase models
-     * @return the populated registry: 1 start node, plus any nodes
-     *         created by resolved crossings, and every line walked
+     * @return the populated registry: 1 start node (located by the
+     *         initial search), plus any nodes created by resolved
+     *         crossings, and every line walked
+     * @throws IllegalStateException if the initial search finds no
+     *         stable-set change anywhere in {@code walkAxis}'s range --
+     *         there is nothing for the drain loop to start from
      */
     public NodeRegistry drain(
             AxisConfig walkAxis,
@@ -86,24 +115,31 @@ public final class MapDiagramTracer {
         NodeRegistry registry = new NodeRegistry();
 
         double[] startComp = compOverall.clone();
-        double t0 = fixedT, p0 = fixedP;
-        switch (walkAxis.type) {
-            case TEMPERATURE: t0 = startWalkValue; break;
-            case PRESSURE: p0 = startWalkValue; break;
-            case COMPOSITION: startComp = StepTracer.applyCompositionAxis(walkAxis, startWalkValue, startComp); break;
-            default: throw new IllegalStateException("Unhandled axis type: " + walkAxis.type);
+        if (walkAxis.type == AxisConfig.Type.COMPOSITION) {
+            startComp = StepTracer.applyCompositionAxis(walkAxis, startWalkValue, startComp);
         }
-        EquilibriumResult startResult = EquilibriumSolveHelper.solveOrSentinel(t0, p0, startComp, candidates);
 
+        MapTracer.InitialBoundaryResult initial = tracer.findInitialBoundary(
+                walkAxis, startWalkValue, releaseAxis, fixedT, fixedP, startComp, candidates);
+
+        if (!initial.found) {
+            throw new IllegalStateException(
+                    "No stable-set change found searching " + walkAxis.name + " in ["
+                    + walkAxis.min + ", " + walkAxis.max + "] from the starting condition -- "
+                    + "nothing for the drain loop to start from.");
+        }
+
+        double[] startNodeComp = initial.segment.endComposition;
         Node startNode = registry.findOrCreate(
-                startResult, new double[] { startWalkValue, startComp[releaseAxis.componentIndex] },
-                startComp, nodeMatchTolerance);
-        compositionByNodeId.putIfAbsent(startNode.id, startComp);
+                initial.equilibrium,
+                new double[] { initial.crossingSearchValue, startNodeComp[releaseAxis.componentIndex] },
+                startNodeComp, nodeMatchTolerance);
+        compositionByNodeId.putIfAbsent(startNode.id, startNodeComp);
 
         // Per the flowchart's map-branch initialization: attach 2 pending
         // lines, one in each direction of the walk axis, from the start
-        // node -- this is the "1 axis -> 2 pending lines" case for a
-        // 2-phase (or more) start equilibrium with tie-lines in the plane.
+        // node -- see the class javadoc for why this stays walkAxis (not
+        // releaseAxis) in this version's binary-only scope.
         startNode.addLine(new Line(startNode, List.of(), 0, +1));
         startNode.addLine(new Line(startNode, List.of(), 0, -1));
 
