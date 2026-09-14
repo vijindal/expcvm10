@@ -127,15 +127,56 @@ public final class PhaseDiagramEngine {
      * a full diagram can have components disconnected from the first
      * (the paper's own Fe-Mo γ-loop example, §3).
      *
-     * <p><b>Partially implemented.</b> A single starting point is
-     * exactly what every {@link #drainC1Loop} caller supplies today
-     * (Steps 1-4) -- this method exists so multi-start-point discovery
-     * has a named place to be added, but generating anything beyond
-     * the one caller-supplied point is NOT yet implemented. See {@code
-     * docs/roadmap_phase_diagrams.md}'s `GENERATE STARTING POINTS` row.
+     * <p><b>Single-point only -- and this is NOT a gap relative to
+     * either source, unlike this method's earlier javadoc claimed.</b>
+     * Confirmed directly this session (paper re-read + a full search of
+     * OC's actual Fortran source, {@code
+     * D:\codes\opencalphad\src\stepmapplot\smp2A.F90} and {@code
+     * pmon6.F90}): NEITHER source has a working multi-start-point
+     * algorithm to port.
+     * <ul>
+     *   <li>The paper (§3, page 5) names the problem (Fe-Mo's γ-loop,
+     *       disconnected from the rest of that diagram) and says only
+     *       "More than one starting point has then to be input. This
+     *       can simply be done by the user or it is possible to
+     *       automatically predefine many starting points, in particular
+     *       for binary or ternary diagrams" -- then explicitly declines
+     *       to formalize it: <em>"Such issues will not be considered in
+     *       the algorithms presented here, where instead the focus is
+     *       on the way to process connected lines."</em> No algorithm,
+     *       pseudocode, or figure covers this anywhere in the paper.</li>
+     *   <li>OC's own source has exactly one attempt, {@code
+     *       auto_startpoints} ({@code smp2A.F90:9342-9498}): a hardcoded
+     *       5-point scheme for EXACTLY 2 axes (4 composition-simplex
+     *       corners + 1 center point, 12 total directions) -- but it is
+     *       gated behind a status bit literally named {@code GSNOAUTOSP}
+     *       ("no auto start point"), its own header comment admits "the
+     *       rest here works but not converting the startpoint to lines"
+     *       (i.e. incomplete), and EVERY call site to it is commented
+     *       out ({@code smp2A.F90:81}, {@code pmon6.F90:6810}, the
+     *       latter inside a debug-only case block itself preceded by
+     *       "debug map_startpoints commented away"). It is unreachable
+     *       dead code in the shipped program. A separate author comment
+     *       ({@code smp2A.F90:112-113}) states plainly: "I have not
+     *       really implemented several startpoint."</li>
+     * </ul>
+     * So this method's single-point behavior is not an unfinished
+     * corner of this codebase -- it is exactly where both the paper and
+     * OC's real, running behavior stand today (multiple starting points
+     * are a manual, user-driven affair: run separate {@code map}/{@code
+     * step} calls from different starting conditions). A future
+     * multi-start-point search here would be genuinely NEW
+     * implementation work with no validated algorithm or OC reference
+     * output to test against -- OC's own disabled {@code
+     * auto_startpoints} scheme (corners + center of the 2-axis range)
+     * is a plausible reference DESIGN to draw on if that work is ever
+     * undertaken, but it must be labeled as an unvalidated, dead-code
+     * prototype, not a port of working, tested logic.
      */
     public static List<double[]> generateStartingPoints(double singleStartWalkValue) {
-        // Single starting point: the trivial, currently-sufficient case.
+        // Single starting point: matches both the paper's own explicit
+        // scope limitation and OC's actual (non-)behavior -- see the
+        // javadoc above for the full finding.
         return List.of(new double[] { singleStartWalkValue });
     }
 

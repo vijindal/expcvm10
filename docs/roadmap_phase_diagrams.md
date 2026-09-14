@@ -240,6 +240,33 @@ now that this doc is the tracking location):
     walk history, or accept looser node-identity tolerance and instead
     snap/merge near-matches after the fact) before `NodeRegistry`'s
     dedup can be trusted beyond Step 1's simplest same-point test.
+- ~~**`GENERATE STARTING POINTS` is a gap.**~~ **Corrected this
+  session (paper re-read + a full source search of OC's actual
+  Fortran, per explicit direction to fix this using both sources):
+  this is NOT a gap relative to either source, so it is removed from
+  this list.** The paper (§3, page 5) names the disconnected-diagram
+  problem (Fe-Mo's γ-loop) but explicitly declines to give an
+  algorithm: "Such issues will not be considered in the algorithms
+  presented here." OC's own source has exactly one attempt,
+  `auto_startpoints` (`smp2A.F90:9342-9498`, a hardcoded 5-point
+  corner/center scheme for exactly 2 axes) — but it is gated behind a
+  status bit named `GSNOAUTOSP` ("no auto start point"), its own header
+  comment admits it is incomplete ("the rest here works but not
+  converting the startpoint to lines"), and every call site to it is
+  commented out (`smp2A.F90:81`, `pmon6.F90:6810`) — it is unreachable
+  dead code in the shipped program. A separate author comment
+  (`smp2A.F90:112-113`) states plainly: "I have not really implemented
+  several startpoint." `PhaseDiagramEngine#generateStartingPoints`'s
+  single-caller-supplied-point behavior therefore already matches both
+  sources' real behavior; its javadoc (previously mischaracterizing
+  this as "NOT yet implemented," implying an unfinished corner of this
+  codebase specifically) has been corrected to state this finding.
+  Any future multi-start-point search here would be genuinely NEW
+  implementation work with no validated algorithm or reference output
+  to test against, not a missing port — OC's disabled `auto_startpoints`
+  scheme is a plausible reference DESIGN if that work is ever
+  undertaken, but must stay labeled as an unvalidated dead-code
+  prototype.
 
 ## Suggested build order
 
