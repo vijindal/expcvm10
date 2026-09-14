@@ -169,6 +169,13 @@ now that this doc is the tracking location):
   ternary isothermal/isopleth/pseudo-isothermal targets (2–4) will need
   this validated for 3+ component invariants (e.g. ternary eutectics,
   quasi-peritectics).
+- **No post-hoc grid retest (paper §2.3.3's alternate path).**
+  `EquilibriumSolverV2` always runs `GridMinimizer.initialize`
+  unconditionally up front; it never skips the grid minimizer and
+  retests afterward the way the paper describes for when T isn't
+  itself a condition. Not a gap today — every caller here always
+  supplies T as a condition — but would need building if a future
+  caller ever releases T (see the T-release entry above).
 - **REST API is stale here.** `step`/`map` endpoints return 501 — not
   updated for the new tracers. Any UI-facing automated diagram feature
   needs the API layer brought current too.

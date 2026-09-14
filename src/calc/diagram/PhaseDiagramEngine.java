@@ -186,65 +186,16 @@ public final class PhaseDiagramEngine {
     // ------------------------------------------------------------------
 
     /**
-     * The flowchart's "FOR EACH STARTING POINT" box (initial estimate
-     * via GridMinimizer, Algorithm A, the initial-equilibrium grid test,
-     * the ONE-AXIS-vs-TWO-AXES branch, and locating the true START
-     * {@link Node}) followed immediately by the {@code C1 : DRAIN LOOP}
-     * box -- together, "drain the diagram from one starting point."
-     *
-     * <p><b>Implemented for the TWO-AXES (map) branch only, with
-     * Algorithm D wired in (Step 5d).</b> Delegates to {@link
-     * MapDiagramTracer#drain}, which internally:
-     * <ul>
-     *   <li>solves the starting condition (Algorithm A), which always
-     *       calls {@link calc.equil.GridMinimizer#initialize} first,
-     *       unconditionally, as part of {@code EquilibriumSolverV2}'s
-     *       own iteration setup -- covering Fig. 1's "optional initial
-     *       estimate" step for every call this codebase makes. The
-     *       paper's §2.3.3 ALTERNATE path -- skip the grid minimizer up
-     *       front only when a condition set doesn't allow it (e.g. T is
-     *       not itself a condition), then re-run it as a POST-HOC test
-     *       against the computed result and recalculate if any
-     *       gridpoint sits below -- genuinely does not exist anywhere
-     *       in {@code EquilibriumSolverV2} (confirmed directly: no
-     *       post-hoc grid retest of any kind exists in that class).
-     *       This is not a gap today because every caller in this
-     *       codebase always supplies T as a condition, so the
-     *       alternate path's precondition never arises -- but it would
-     *       need building if a future caller ever solves with T NOT
-     *       fixed/axis (e.g. releasing T at an invariant, still
-     *       unimplemented per the roadmap's "P-release is not
-     *       implemented" / T-release gaps);</li>
-     *   <li>runs the TWO-AXES initial search ({@link
-     *       MapTracer#findInitialBoundary}, Step 3a/3b) to locate the
-     *       true START node;</li>
-     *   <li>drains the C1 loop (Step 2), classifying each resolved
-     *       crossing via {@link #classifyNode} (Eq. 8) and attaching
-     *       its exits via {@link NodeGeometry} -- 2 exits for the
-     *       ordinary {@code TIE_LINE_IN_PLANE} case, and (Step 5d,
-     *       CORRECTING this javadoc's earlier claim that invariant
-     *       nodes get no exits) Algorithm D exits via {@link
-     *       InvariantExitFinder} for a genuine {@code INVARIANT}.</li>
-     * </ul>
-     *
-     * <p><b>NOT implemented within this delegation:</b>
-     * <ul>
-     *   <li>the ONE-AXIS (step) branch's own node/exit bookkeeping --
-     *       {@link StepTracer} exists and is used elsewhere in this
-     *       codebase, but is not wired into a {@link Node}/{@link
-     *       NodeRegistry}-based drain loop the way the map branch is;</li>
-     *   <li>{@code UNRESOLVED_MULTI_PHASE_CHANGE} crossings (more than
-     *       one phase changed and neither an ordinary nor an invariant
-     *       resolution succeeded) still get no exit lines -- a
-     *       deliberate, documented limitation distinct from the
-     *       invariant case above (see {@link MapDiagramTracer}'s own
-     *       javadoc);</li>
-     *   <li>the "fastest-varying axis" reselection during a walk;</li>
-     *   <li>multi-start-point stitching -- NOT a gap relative to either
-     *       source, see {@link #generateStartingPoints}'s javadoc for
-     *       why (neither the paper nor OC has a working algorithm to
-     *       port here either).</li>
-     * </ul>
+     * The flowchart's "FOR EACH STARTING POINT" box through the {@code
+     * C1 : DRAIN LOOP} box: drains the whole diagram from one starting
+     * point. Delegates to {@link MapDiagramTracer#drain} -- see that
+     * class's javadoc for what it does internally (initial search,
+     * node classification via {@link #classifyNode}, exit generation
+     * via {@link NodeGeometry}/{@link InvariantExitFinder}) and {@code
+     * docs/roadmap_phase_diagrams.md} for what's still out of scope
+     * (the ONE-AXIS/step branch, the "fastest-varying axis"
+     * reselection, {@code UNRESOLVED_MULTI_PHASE_CHANGE} exits,
+     * multi-start-point stitching).
      *
      * @throws IllegalStateException if the initial search finds no
      *         crossing anywhere in {@code walkAxis}'s range (propagated
