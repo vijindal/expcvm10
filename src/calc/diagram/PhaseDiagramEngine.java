@@ -243,28 +243,52 @@ public final class PhaseDiagramEngine {
     }
 
     /**
-     * Node classification at a stable-set change (flowchart): first the
-     * GIBBS PHASE RULE (Eq. 8, {@code f = n+2-p-c}) distinguishes
-     * invariant ({@code f=0}) from ordinary ({@code f>0}); for the
-     * ordinary case, exit count comes from NODE GEOMETRY, not from
-     * {@code f} itself (tie-line-in-plane = 2, isopleth-style = 3 --
-     * see the flowchart's explicit correction on this point).
+     * Node classification at a stable-set change (flowchart): the GIBBS
+     * PHASE RULE (Eq. 8, {@code f = n+2-p-c}) distinguishes invariant
+     * ({@code f=0}) from ordinary ({@code f>0}).
      *
-     * <p><b>Partially implemented.</b> {@link MapDiagramTracer}
-     * implicitly always takes the {@code TIE_LINE_IN_PLANE} branch (2
-     * exits) for any resolved crossing, matching this scope's only
-     * target diagram type so far -- it does not compute {@code f} via
-     * Eq. 8, distinguish {@code ISOPLETH_CROSSING}, or call {@link
-     * InvariantExitFinder} from within the drain loop (that class
-     * exists and is exercised inside {@link MapTracer} directly, but
-     * not reachable through this classification step). See {@code
-     * docs/phase_diagram_engine_flowchart.md}'s GIBBS PHASE RULE box.
+     * <p><b>{@code c}'s exact meaning, worked out against the paper's
+     * own example (important -- easy to get backwards).</b> §3.3: "A
+     * binary isobaric phase diagram has {@code f=3-p}... and an
+     * invariant has thus 3 stable phases." "Isobaric" means P is FIXED,
+     * not an axis -- so for {@code n=2} this requires {@code c=1}
+     * (P counted as one fixed, non-axis potential condition), giving
+     * {@code f=n+2-p-c=2+2-p-1=3-p}, matching the paper exactly and
+     * giving {@code f=0} at {@code p=3} as stated. So {@code c} counts
+     * FIXED potential-type conditions (T, P, or a chemical potential)
+     * NOT used as axes -- it is NOT the number of axes, and NOT the
+     * number of fixed conditions in general (a fixed composition or N
+     * does not count). This codebase's binary map (T and one
+     * composition as AXIS, P FIXED) has {@code c=1}; a step calculation
+     * (only T as AXIS, P FIXED) also has {@code c=1}; a hypothetical
+     * fully-potential-driven setup with both T and P fixed would have
+     * {@code c=2}.
+     *
+     * <p><b>Implemented (Step 5d) for the two cases this codebase's
+     * tracers actually produce: {@code TIE_LINE_IN_PLANE} and {@code
+     * INVARIANT}.</b> {@code ISOPLETH_CROSSING} (Step 5e's isopleth
+     * work) is NOT distinguished here yet -- per the flowchart's
+     * explicit correction, exit count for the ordinary ({@code f>0})
+     * case comes from NODE GEOMETRY, not from {@code f} itself, and
+     * this codebase has no isopleth-tracing code yet to produce that
+     * geometry from. Every {@code f>0} node classifies as {@code
+     * TIE_LINE_IN_PLANE} until Step 5e adds a way to distinguish the
+     * two ordinary cases.
+     *
+     * @param numComponents          n
+     * @param numStablePhases        p, the number of phases stable at this node
+     * @param numFixedPotentialConditions c, FIXED (non-axis) potential-type
+     *                               conditions (T, P, or a chemical
+     *                               potential) -- see the javadoc above
+     *                               for why this is 1, not 0, for this
+     *                               codebase's binary map/step cases
+     *                               (P is fixed) and would be 2 for a
+     *                               ternary isothermal section (T and P
+     *                               both fixed)
      */
-    public static NodeClass classifyNode(int numComponents, int numStablePhases, int numPotentialConditions) {
-        throw new UnsupportedOperationException(
-                "Explicit Eq. 8 node classification (and the ISOPLETH_CROSSING branch) "
-                + "not yet implemented -- MapDiagramTracer always assumes TIE_LINE_IN_PLANE. "
-                + "See docs/phase_diagram_engine_flowchart.md's GIBBS PHASE RULE box.");
+    public static NodeClass classifyNode(int numComponents, int numStablePhases, int numFixedPotentialConditions) {
+        int f = numComponents + 2 - numStablePhases - numFixedPotentialConditions;
+        return f == 0 ? NodeClass.INVARIANT : NodeClass.TIE_LINE_IN_PLANE;
     }
 
     // ------------------------------------------------------------------

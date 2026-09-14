@@ -15,16 +15,25 @@ import java.util.Map;
  * {@link Node} (Algorithm C2's "already found?" check) or creates one and
  * attaches its exit lines -- until no pending lines remain.
  *
- * <p><b>Scope of this first version, matching {@code
- * docs/roadmap_phase_diagrams.md}'s step-by-step build order:</b> only
- * the ordinary two-phase "tie-line-in-plane" node case is handled (2
- * exit lines, per the flowchart's node-geometry branch). Invariant nodes
- * (Algorithm D / {@link InvariantExitFinder}) are NOT yet wired into
- * this loop -- a node where {@link MapTracer.SegmentEnd#INVARIANT} or
- * {@link MapTracer.SegmentEnd#UNRESOLVED_MULTI_PHASE_CHANGE} is reached
- * is registered but given no exit lines (the drain loop simply stops
- * extending that branch), which is a deliberate, documented limitation
- * of this version, not a silent gap.
+ * <p><b>Scope, matching {@code docs/roadmap_phase_diagrams.md}'s
+ * step-by-step build order:</b> a resolved {@link
+ * MapTracer.SegmentEnd#CROSSING} is classified via {@link
+ * PhaseDiagramEngine#classifyNode} (Eq. 8) and given exits via {@link
+ * NodeGeometry} -- {@code TIE_LINE_IN_PLANE} (2 exits) for the
+ * ordinary case, or a genuine {@link MapTracer.SegmentEnd#INVARIANT}
+ * routed through Algorithm D ({@link InvariantExitFinder}), Step 5d.
+ * {@link MapTracer.SegmentEnd#UNRESOLVED_MULTI_PHASE_CHANGE} is still
+ * out of scope -- that crossing could not even be resolved to a
+ * specific node (more than one phase changed and neither an ordinary
+ * nor an invariant resolution succeeded), so it is registered with no
+ * exit lines, a deliberate, documented limitation, not a silent gap.
+ * No known end-to-end case in this codebase yet exercises a genuine
+ * resolved {@code INVARIANT} through a real walk (V-Zr's own
+ * documented peritectic is confirmed {@code
+ * UNRESOLVED_MULTI_PHASE_CHANGE}, not {@code INVARIANT}) -- {@link
+ * NodeGeometry}'s invariant-exit wiring is unit-tested directly
+ * ({@code NodeGeometryTest}) against a synthetic node built from
+ * literature data, not through this drain loop.
  *
  * <p>Also single-walk-axis only: every {@link Line} varies the SAME
  * walk axis as the start node (direction +1 or -1); the flowchart's
@@ -175,21 +184,45 @@ public final class MapDiagramTracer {
                     compositionByNodeId.putIfAbsent(endNode.id, seg.endComposition);
                     line.terminateAtNode(endNode);
                     if (endNode.getLines().isEmpty()) {
-                        // Newly created: ordinary tie-line-in-plane node,
-                        // per the flowchart's node-geometry branch -- 2
-                        // exits, one continuing in each direction of the
-                        // SAME walk axis (this scope's only case).
-                        endNode.addLine(new Line(endNode, List.of(seg.changedPhase), 0, +1));
-                        endNode.addLine(new Line(endNode, List.of(seg.changedPhase), 0, -1));
+                        // Newly created: classify via Eq. 8 and attach
+                        // exits accordingly (Step 5d) -- see NodeGeometry.
+                        // c=1: this codebase's binary map fixes P as a
+                        // non-axis potential condition (see
+                        // PhaseDiagramEngine#classifyNode's javadoc for
+                        // the full derivation against the paper's own
+                        // binary-isobaric worked example).
+                        PhaseDiagramEngine.NodeClass nodeClass = PhaseDiagramEngine.classifyNode(
+                                compOverall.length, endNode.stablePhaseNames.size(), 1);
+                        NodeGeometry.attachExits(endNode, nodeClass, seg.changedPhase, 0);
                     }
                     break;
                 }
 
-                case INVARIANT:
+                case INVARIANT: {
+                    // A genuine invariant (Algorithm D, Step 5d) -- register
+                    // the node and attach whatever valid exits
+                    // InvariantExitFinder finds (possibly none, a
+                    // legitimate outcome; see NodeGeometry's javadoc).
+                    Node endNode = registry.findOrCreate(
+                            seg.lastResult,
+                            new double[] { seg.endWalkValue, seg.endComposition[releaseAxis.componentIndex] },
+                            seg.endComposition, nodeMatchTolerance);
+                    compositionByNodeId.putIfAbsent(endNode.id, seg.endComposition);
+                    line.terminateAtNode(endNode);
+                    if (endNode.getLines().isEmpty()) {
+                        NodeGeometry.attachExits(endNode, PhaseDiagramEngine.NodeClass.INVARIANT,
+                                seg.changedPhase, 0);
+                    }
+                    break;
+                }
+
                 case UNRESOLVED_MULTI_PHASE_CHANGE: {
-                    // Out of scope for this version -- register the node
-                    // (so it is visible/inspectable) but do not attach
-                    // exit lines; see class javadoc.
+                    // Still out of scope: the crossing could not even be
+                    // resolved to a specific node (more than one phase
+                    // changed and neither an ordinary nor an invariant
+                    // resolution succeeded) -- nothing for NodeGeometry to
+                    // classify. Register the node (so it is visible/
+                    // inspectable) but do not attach exit lines.
                     Node endNode = registry.findOrCreate(
                             seg.lastResult,
                             new double[] { seg.endWalkValue, seg.endComposition[releaseAxis.componentIndex] },

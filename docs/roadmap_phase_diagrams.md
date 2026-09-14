@@ -324,13 +324,51 @@ detail; summarized here for tracking):
   HCP_A3 are included as extra candidates alongside FCC_A1 (works fine
   with a correctly-curated candidate list) -- a minor, separate
   robustness gap, not investigated further.
-- **5d (planned):** wire `InvariantExitFinder` into `MapDiagramTracer`'s
+- **5d (done):** wired `InvariantExitFinder` into `MapDiagramTracer`'s
   drain loop via a new `NodeGeometry` class and `PhaseDiagramEngine
   .classifyNode`'s real implementation (Eq. 8) — closes the "invariant
-  nodes get zero exit lines" gap and is a prerequisite for genuine
-  ternary invariants (common in Cr-Fe-Mo at 1400K). Highest regression
-  risk of the sequence — first step changing existing drain-loop
-  behavior, not just adding entry points.
+  nodes get zero exit lines" gap. `PhaseDiagramEngineTest`'s placeholder
+  updated per the project's own rule (an `assertThrows` for a stage that
+  becomes implemented must be intentionally rewritten, not silently left
+  stale).
+  **Important correction made while implementing Eq. 8:** `c` (Eq. 8's
+  "potential conditions not used as axes") is NOT the axis count and
+  NOT the count of all fixed conditions — it counts only FIXED
+  potential-type conditions (T, P, or a chemical potential). Worked out
+  against the paper's own binary invariant example (§3.3: "a binary
+  isobaric phase diagram has f=3-p... an invariant has thus 3 stable
+  phases" — "isobaric" means P is fixed, giving c=1 for n=2, so
+  f=2+2-p-1=3-p, matching exactly). An initial draft used c=0 for the
+  binary map case, which is wrong (P is fixed there too) — caught before
+  committing by re-deriving against the paper's worked example rather
+  than trusting the first attempt.
+  **Also found and handled as a real, unresolved design question, not
+  guessed past:** `InvariantExitFinder.findExits`'s `ExitCandidate`
+  names which phases stay stable/which is excluded along an exit, but
+  not which walk-axis DIRECTION traces it — direction is not
+  determinable from the candidate alone (the same ambiguity the paper's
+  Fig. 8(c) resolves by trying a direction and flipping it if
+  "forbidden"). Resolved by attaching BOTH directions per exit candidate
+  (matching the tie-line-in-plane pattern) and letting the wrong
+  direction terminate naturally when walked, rather than guessing a sign.
+  **Scope note on invariant testing:** no known case in this codebase
+  has `MapTracer` actually REACH a resolved `SegmentEnd.INVARIANT`
+  through a real walk — V-Zr's own documented peritectic (the only
+  candidate binary invariant with literature data) is confirmed
+  `UNRESOLVED_MULTI_PHASE_CHANGE`, not `INVARIANT` (OpenCalphad's own
+  retry strategy cannot resolve this particular jump either, per
+  `CalculationSessionMapTracerTest` Section C). `NodeGeometryTest`
+  verifies the new wiring directly against a synthetic `Node` built from
+  the peritectic's literature compositions (Cui et al. 2016) rather than
+  through the drain loop — honest about testing the NEW code, not
+  claiming an end-to-end invariant discovery this codebase cannot yet
+  demonstrate. Confirmed the invariant exit found for this synthetic
+  node (BCC_A2+LIQUID, excluding V2ZR) is a real, non-trivial result,
+  not vacuous.
+  Full JUnit suite, `CalculationSessionMapTracerTest`,
+  `EquilibriumSolverV2BaselineTest`, and `MapDiagramTracerAgCuTest`
+  (which exercises the exact drain-loop code path modified here) all
+  confirmed unchanged.
 - **5e (planned):** ternary isopleth — new `Condition.Variable
   .COMPOSITION_RATIO` (additive), new OC macro
   (`docs/oc_reference_tests/crfemo_isopleth.OCM`, no existing OC example

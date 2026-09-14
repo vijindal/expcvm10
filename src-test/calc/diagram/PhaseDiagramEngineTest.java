@@ -95,10 +95,29 @@ public class PhaseDiagramEngineTest {
                 () -> PhaseDiagramEngine.isGloballyStable(null));
     }
 
+    /**
+     * Eq. 8 worked against the paper's own binary invariant example
+     * (§3.3: "A binary isobaric phase diagram has f=3-p... and an
+     * invariant has thus 3 stable phases" -- isobaric means P is FIXED,
+     * so c=1 for n=2, giving f=2+2-p-1=3-p; see {@link
+     * PhaseDiagramEngine#classifyNode}'s javadoc for the full
+     * derivation) and against this project's own OC-referenced binary
+     * cases (V-Zr peritectic: 3 phases at the invariant, per {@code
+     * CalculationSessionMapTracerTest} Section C; Ag-Cu ordinary
+     * crossings: 2 phases, per {@code MapDiagramTracerAgCuTest}).
+     */
     @Test
-    void classifyNodeIsNotYetImplemented() {
-        assertThrows(UnsupportedOperationException.class,
-                () -> PhaseDiagramEngine.classifyNode(2, 2, 0));
+    void classifyNodeDistinguishesOrdinaryFromInvariantForABinaryIsobaricSystem() {
+        // n=2, p=2 (ordinary 2-phase crossing, e.g. Ag-Cu's liquidus),
+        // c=1 (P fixed, not an axis): f=2+2-2-1=1 -- ordinary.
+        assertEquals(PhaseDiagramEngine.NodeClass.TIE_LINE_IN_PLANE,
+                PhaseDiagramEngine.classifyNode(2, 2, 1));
+
+        // n=2, p=3 (V-Zr's 1586K peritectic: BCC_A2+V2ZR+LIQUID), c=1:
+        // f=2+2-3-1=0 -- invariant, matching the paper's own p=3 result
+        // for a binary isobaric invariant exactly.
+        assertEquals(PhaseDiagramEngine.NodeClass.INVARIANT,
+                PhaseDiagramEngine.classifyNode(2, 3, 1));
     }
 
     @Test
