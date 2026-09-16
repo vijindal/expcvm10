@@ -67,8 +67,11 @@ import java.util.Map;
  */
 public final class MapDiagramTracer {
 
-    /** Node-matching tolerance passed to {@link NodeRegistry#findOrCreate}. */
-    private final double nodeMatchTolerance;
+    /** T/P node-matching tolerance passed to {@link NodeRegistry#findOrCreate}. */
+    private final double tpMatchTolerance;
+
+    /** Chemical-potential node-matching tolerance passed to {@link NodeRegistry#findOrCreate}. */
+    private final double muMatchTolerance;
 
     /**
      * Overall composition tracked per node id -- {@link Node} cannot
@@ -78,12 +81,14 @@ public final class MapDiagramTracer {
      */
     private final Map<Integer, double[]> compositionByNodeId = new HashMap<>();
 
+    /** Uses OC's own node-matching tolerances (see {@link Node#matches(Node)}). */
     public MapDiagramTracer() {
-        this(1e-4);
+        this(Node.DEFAULT_TP_RELATIVE_TOLERANCE, Node.DEFAULT_MU_RELATIVE_TOLERANCE);
     }
 
-    public MapDiagramTracer(double nodeMatchTolerance) {
-        this.nodeMatchTolerance = nodeMatchTolerance;
+    public MapDiagramTracer(double tpMatchTolerance, double muMatchTolerance) {
+        this.tpMatchTolerance = tpMatchTolerance;
+        this.muMatchTolerance = muMatchTolerance;
     }
 
     /**
@@ -153,7 +158,7 @@ public final class MapDiagramTracer {
         Node startNode = registry.findOrCreate(
                 initial.equilibrium,
                 new double[] { initial.crossingSearchValue, startNodeComp[releaseAxis.componentIndex] },
-                startNodeComp, nodeMatchTolerance);
+                startNodeComp, tpMatchTolerance, muMatchTolerance);
         compositionByNodeId.putIfAbsent(startNode.id, startNodeComp);
 
         // Per the flowchart's map-branch initialization: attach 2 pending
@@ -175,7 +180,8 @@ public final class MapDiagramTracer {
             MapTracer.SegmentResult seg = tracer.walkOneSegment(
                     fromNode.axisValues[0], fromNode.stablePhaseNames,
                     directedWalkAxis, releaseAxis, fixedT, fixedP,
-                    compAtStart, candidates, fromNode.equilibrium);
+                    compAtStart, candidates, fromNode.equilibrium,
+                    StepTracer.DEFAULT_GLOBAL_CHECK_INTERVAL);
 
             for (int i = 0; i < seg.points.size(); i++) {
                 line.addPoint(seg.points.get(i), seg.coords.get(i));
@@ -187,11 +193,19 @@ public final class MapDiagramTracer {
                     line.terminateAtAxisLimit();
                     break;
 
+                case GLOBALLY_UNSTABLE:
+                    // §2.3.3's mid-line check: "abandon this line and
+                    // suppress it" -- same treatment as a node-level
+                    // failure below, but no node is created at all here.
+                    line.terminateAtAxisLimit();
+                    line.markExcluded();
+                    break;
+
                 case CROSSING: {
                     Node endNode = registry.findOrCreate(
                             seg.lastResult,
                             new double[] { seg.endWalkValue, seg.endComposition[releaseAxis.componentIndex] },
-                            seg.endComposition, nodeMatchTolerance);
+                            seg.endComposition, tpMatchTolerance, muMatchTolerance);
                     compositionByNodeId.putIfAbsent(endNode.id, seg.endComposition);
                     line.terminateAtNode(endNode);
                     if (endNode.getLines().isEmpty()) {
@@ -228,7 +242,7 @@ public final class MapDiagramTracer {
                     Node endNode = registry.findOrCreate(
                             seg.lastResult,
                             new double[] { seg.endWalkValue, seg.endComposition[releaseAxis.componentIndex] },
-                            seg.endComposition, nodeMatchTolerance);
+                            seg.endComposition, tpMatchTolerance, muMatchTolerance);
                     compositionByNodeId.putIfAbsent(endNode.id, seg.endComposition);
                     line.terminateAtNode(endNode);
                     if (endNode.getLines().isEmpty()) {
@@ -252,7 +266,7 @@ public final class MapDiagramTracer {
                     Node endNode = registry.findOrCreate(
                             seg.lastResult,
                             new double[] { seg.endWalkValue, seg.endComposition[releaseAxis.componentIndex] },
-                            seg.endComposition, nodeMatchTolerance);
+                            seg.endComposition, tpMatchTolerance, muMatchTolerance);
                     compositionByNodeId.putIfAbsent(endNode.id, seg.endComposition);
                     line.terminateAtNode(endNode);
                     break;

@@ -2,4 +2,6 @@
 /dist/
 /lib/
 /.gradle/
+/bin/
+/out_build/
 data/expcvm.log

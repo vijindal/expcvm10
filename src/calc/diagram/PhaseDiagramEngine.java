@@ -229,19 +229,19 @@ public final class PhaseDiagramEngine {
     private static final double GLOBAL_STABILITY_RELATIVE_TOLERANCE = 1.0e-4;
 
     /**
-     * The C1 walk loop's {@code GLOBAL STABILITY CHECK} (§2.3.3): does
-     * another candidate phase set give a lower G at this equilibrium's
-     * (T, P, overall composition)? Re-runs {@link GridMinimizer}'s
-     * independent global search and compares G per mole of real atoms
-     * ({@link EquilibriumResult#totalGPerAtom()}, not {@link
+     * The {@code GLOBAL STABILITY CHECK} (§2.3.3): does another candidate
+     * phase set give a lower G at this equilibrium's (T, P, overall
+     * composition)? Re-runs {@link GridMinimizer}'s independent global
+     * search and compares G per mole of real atoms ({@link
+     * EquilibriumResult#totalGPerAtom()}, not {@link
      * EquilibriumResult#totalG()} -- not comparable across phase sets
      * with different formula-unit sizes).
      *
-     * <p>Not yet wired into the walk loop -- {@link
-     * MapTracer#walkOneSegment} doesn't call this yet, so a converged
-     * point is still accepted unconditionally today. The paper's full
-     * behavior (abandon and suppress the whole line) is separate,
-     * follow-up walk-loop work.
+     * <p>Called at every node ({@link MapDiagramTracer}, {@link
+     * StepDiagramTracer}) and, at a configurable interval, mid-line
+     * ({@link MapTracer#walkOneSegment}, {@link
+     * StepTracer#walkOneSegment}) -- the paper's two check sites, §2.3.3:
+     * "at node points and at regular intervals along a line."
      *
      * @param candidates the SAME candidate list {@code candidateEquilibrium} was solved with
      */
@@ -292,7 +292,20 @@ public final class PhaseDiagramEngine {
         /** f &gt; 0, isopleth-style crossing geometry: 3 exits. */
         ISOPLETH_CROSSING,
         /** f = 0: a genuine invariant, exits found via Algorithm D. */
-        INVARIANT
+        INVARIANT,
+        /**
+         * A STEP-calculation node created by a stable-set change mid-walk
+         * (NOT the step's own START node, which instead gets 2 exits --
+         * see {@link StepDiagramTracer}): exactly 1 exit, continuing in
+         * the SAME direction the line was already going. Not reached via
+         * {@link #classifyNode}'s Eq. 8 formula (STEP has no ZPF-fixed
+         * axis at all, so {@code f} is not evaluated for it) -- Sundman
+         * 2021 Calphad 75 Section 3.2 states this exit count directly in
+         * prose: "a new node will be created with one exit to continue
+         * calculating along the axis in the same direction with the new
+         * set of stable phases."
+         */
+        STEP_CONTINUATION
     }
 
     /**
@@ -357,22 +370,21 @@ public final class PhaseDiagramEngine {
      * <p><b>Partially implemented.</b> {@link NodeRegistry#findOrCreate}
      * (Step 1/2) performs node-matching dedup INLINE, at creation time,
      * for the ordinary case -- there is no separate post-hoc merge pass.
-     * Step 4's investigation found this inline dedup does not catch
-     * every case: independent walks reaching the "same" physical
-     * boundary from different directions can converge to meaningfully
-     * different equilibria (chemical potentials differing well beyond
-     * solver tolerance), which {@link Node#matches} then correctly
-     * treats as distinct nodes even though they represent one physical
-     * point -- see {@code docs/roadmap_phase_diagrams.md}'s "STILL
-     * OPEN" entry. A true post-hoc merge pass, and global-stability-
-     * check-based line suppression, are NOT implemented.
+     * {@link Node#matches} now ports OC's own {@code map_newnode}
+     * comparison (T/P gate, then chemical potentials, both at OC's own
+     * tight tolerances -- closing the roadmap's earlier "nodes reached
+     * from different walk directions" gap), so the REMAINING work here
+     * is exclusively global-stability-check-based line suppression
+     * across the whole registry (a POST-HOC pass over already-created
+     * nodes/lines, distinct from the per-node check {@link
+     * PhaseDiagramEngine#isGloballyStable} already runs inline at node
+     * creation) -- NOT implemented.
      */
     public static void mergeDedupNetwork(NodeRegistry registry) {
         throw new UnsupportedOperationException(
-                "Post-hoc node merge / line suppression not yet implemented -- "
-                + "NodeRegistry only dedups inline at creation time, which Step 4 found "
-                + "is not sufficient for nodes reached from different walk directions. "
-                + "See docs/roadmap_phase_diagrams.md's \"STILL OPEN\" node-duplication entry.");
+                "Post-hoc line suppression (global-stability-check-based) not yet "
+                + "implemented -- node-matching dedup itself is done (NodeRegistry.findOrCreate, "
+                + "Node.matches), see docs/roadmap_phase_diagrams.md's MERGE / DEDUP NETWORK box.");
     }
 
     // ------------------------------------------------------------------

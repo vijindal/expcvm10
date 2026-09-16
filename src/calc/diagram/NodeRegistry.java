@@ -25,8 +25,9 @@ public final class NodeRegistry {
 
     /**
      * Algorithm C2's "already found?" check (Fig. 6): returns an existing
-     * node matching {@code equilibrium} within {@code tolerance} (see
-     * {@link Node#matches}), or registers and returns a new one.
+     * node matching {@code equilibrium} within OC's own default
+     * tolerances (see {@link Node#matches(Node)}), or registers and
+     * returns a new one.
      *
      * @param overallComposition the overall system composition at this
      *                           point (see {@link Node#overallComposition});
@@ -34,10 +35,22 @@ public final class NodeRegistry {
      *                           track it
      */
     public Node findOrCreate(EquilibriumResult equilibrium, double[] axisValues,
-                              double[] overallComposition, double tolerance) {
+                              double[] overallComposition) {
+        return findOrCreate(equilibrium, axisValues, overallComposition,
+                Node.DEFAULT_TP_RELATIVE_TOLERANCE, Node.DEFAULT_MU_RELATIVE_TOLERANCE);
+    }
+
+    /**
+     * As {@link #findOrCreate(EquilibriumResult, double[], double[])},
+     * with explicit T/P and chemical-potential tolerances (see {@link
+     * Node#matches(Node, double, double)}).
+     */
+    public Node findOrCreate(EquilibriumResult equilibrium, double[] axisValues,
+                              double[] overallComposition,
+                              double tpRelativeTolerance, double muRelativeTolerance) {
         Node candidate = new Node(-1, equilibrium, axisValues, overallComposition);
         for (Node existing : nodes) {
-            if (existing.matches(candidate, tolerance)) {
+            if (existing.matches(candidate, tpRelativeTolerance, muRelativeTolerance)) {
                 return existing;
             }
         }

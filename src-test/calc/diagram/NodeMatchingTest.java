@@ -56,8 +56,6 @@ public class NodeMatchingTest {
     /** Relative tolerance for this solver's own chemical potentials vs. OC's. */
     private static final double OC_AGREEMENT_TOLERANCE = 1e-4;
 
-    /** Node-matching relative tolerance (see {@link Node#matches}). */
-    private static final double NODE_MATCH_TOLERANCE = 1e-4;
 
     private static EquilibriumResult solve(double xCr) throws IOException {
         ThermodynamicSystem system = ThermodynamicSystem.build(TDB, ELEMENTS, PHASES);
@@ -95,7 +93,7 @@ public class NodeMatchingTest {
         Node nodeA = new Node(0, a, new double[] {T, 0.3});
         Node nodeB = new Node(1, b, new double[] {T, 0.3});
 
-        assertTrue(nodeA.matches(nodeB, NODE_MATCH_TOLERANCE),
+        assertTrue(nodeA.matches(nodeB),
                 "two independent solves of the identical equilibrium should match as the same node");
     }
 
@@ -111,7 +109,7 @@ public class NodeMatchingTest {
         // materially different chemical potentials -- Node#matches must not
         // key off the phase set alone.
         assertEquals(nodeA.stablePhaseNames, nodeB.stablePhaseNames);
-        assertFalse(nodeA.matches(nodeB, NODE_MATCH_TOLERANCE),
+        assertFalse(nodeA.matches(nodeB),
                 "different equilibria with the same stable phase set must not match as the same node");
     }
 

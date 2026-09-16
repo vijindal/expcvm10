@@ -19,10 +19,23 @@ import java.util.Set;
  * (used to recognize the same physical node reached by two different
  * lines) is its stable phase set plus its chemical potentials, per
  * Sundman 2021 Section 3.1's prose description and OC's {@code
- * map_node%stable_phases}/{@code chempots} fields. The exact numeric
- * matching rule is this codebase's own choice (see {@link #matches},
- * and "Open implementation choices" in the flowchart doc) -- neither the
- * paper nor OC's source specifies a tolerance.
+ * map_node%stable_phases}/{@code chempots} fields. {@link #matches}'
+ * numeric rule is a direct port of OC's own realization of that
+ * description, {@code map_newnode} ({@code src/stepmapplot/smp2A.F90}):
+ * T and P are compared FIRST (a node search short-circuits to the next
+ * candidate the instant T or P disagrees), then every chemical
+ * potential -- both gates required, in that order, before two nodes are
+ * considered the same, and both scaled relative to the CANDIDATE node's
+ * own value (not symmetrically, or against the incoming equilibrium) --
+ * see {@code map_newnode}'s {@code abs(vz*mapnode%tpval(1))}/{@code
+ * abs(2.0D1*vz*mapnode%chempots(nel))}. Default tolerances mirror OC's
+ * own constants ({@code vz=1.0D-8} for T/P, {@code 20*vz=2.0D-7} for
+ * mu) -- see {@link #DEFAULT_TP_RELATIVE_TOLERANCE}/{@link
+ * #DEFAULT_MU_RELATIVE_TOLERANCE}. These are deliberately tight: they
+ * exist to recognize two independent EXACT Newton solves of the same
+ * physical point as numerically identical, not to bridge two genuinely
+ * different points on a ZPF line found via different walk directions or
+ * step sizes.
  *
  * <p><b>Known limitation carried from {@link EquilibriumResult}:</b> a
  * stable phase set here is a {@link Set} of phase names, which cannot
@@ -113,34 +126,70 @@ public final class Node {
         return null;
     }
 
+    /** OC's own T/P node-matching relative tolerance ({@code vz}, {@code map_newnode}, smp2A.F90). */
+    public static final double DEFAULT_TP_RELATIVE_TOLERANCE = 1.0e-8;
+
+    /** OC's own chemical-potential node-matching relative tolerance ({@code 20*vz}, {@code map_newnode}). */
+    public static final double DEFAULT_MU_RELATIVE_TOLERANCE = 2.0e-7;
+
     /**
-     * This codebase's node-matching rule (an open implementation choice --
-     * see the class javadoc): two nodes are considered the same physical
-     * node if their stable phase sets are identical and every chemical
-     * potential agrees within {@code relativeTolerance} (relative to the
-     * magnitude of the potential being compared, floored at 1.0 to avoid
-     * a division blowup near mu == 0).
+     * Two nodes are considered the same physical node under OC's own
+     * {@code map_newnode} rule (see the class javadoc): stable phase sets
+     * identical, AND T and P agree within {@code tpRelativeTolerance},
+     * AND every chemical potential agrees within {@code
+     * muRelativeTolerance} -- both tolerances scaled relative to THIS
+     * node's own value (mirroring {@code map_newnode}'s {@code
+     * mapnode%tpval}/{@code mapnode%chempots} as the scale, i.e. the
+     * EXISTING registered node being searched, not the incoming
+     * candidate), floored at 1.0 to avoid a division blowup near zero.
      *
-     * @param other              the node to compare against
-     * @param relativeTolerance  e.g. {@code 1e-4}, tied to the equilibrium
-     *                           solver's own convergence tolerance
+     * @param other                the node to compare against
+     * @param tpRelativeTolerance  e.g. {@link #DEFAULT_TP_RELATIVE_TOLERANCE}
+     * @param muRelativeTolerance  e.g. {@link #DEFAULT_MU_RELATIVE_TOLERANCE}
      */
-    public boolean matches(Node other, double relativeTolerance) {
+    public boolean matches(Node other, double tpRelativeTolerance, double muRelativeTolerance) {
         if (!this.stablePhaseNames.equals(other.stablePhaseNames)) {
+            return false;
+        }
+        if (!withinRelativeTolerance(other.equilibrium.getT(), this.equilibrium.getT(), tpRelativeTolerance)) {
+            return false;
+        }
+        if (!withinRelativeTolerance(other.equilibrium.getP(), this.equilibrium.getP(), tpRelativeTolerance)) {
             return false;
         }
         if (this.chemicalPotentials.length != other.chemicalPotentials.length) {
             return false;
         }
         for (int i = 0; i < this.chemicalPotentials.length; i++) {
-            double a = this.chemicalPotentials[i];
-            double b = other.chemicalPotentials[i];
-            double scale = Math.max(1.0, Math.max(Math.abs(a), Math.abs(b)));
-            if (Math.abs(a - b) / scale > relativeTolerance) {
+            if (!withinRelativeTolerance(
+                    other.chemicalPotentials[i], this.chemicalPotentials[i], muRelativeTolerance)) {
                 return false;
             }
         }
         return true;
+    }
+
+    /**
+     * As {@link #matches(Node, double, double)}, using OC's own default
+     * tolerances ({@link #DEFAULT_TP_RELATIVE_TOLERANCE}/{@link
+     * #DEFAULT_MU_RELATIVE_TOLERANCE}) for both gates.
+     */
+    public boolean matches(Node other) {
+        return matches(other, DEFAULT_TP_RELATIVE_TOLERANCE, DEFAULT_MU_RELATIVE_TOLERANCE);
+    }
+
+    /**
+     * True if {@code candidate} is within {@code relativeTolerance} of
+     * {@code reference}, scaled by {@code reference}'s own magnitude
+     * (floored at 1.0) -- {@code map_newnode}'s {@code
+     * abs(x-mapnode%field).gt.abs(tol*mapnode%field)} test, restated as
+     * "within," with the existing registered node ({@code reference})
+     * always supplying the scale.
+     */
+    private static boolean withinRelativeTolerance(
+            double candidate, double reference, double relativeTolerance) {
+        double scale = Math.max(1.0, Math.abs(reference));
+        return Math.abs(candidate - reference) <= scale * relativeTolerance;
     }
 
     @Override
