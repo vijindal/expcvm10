@@ -15,30 +15,47 @@ import java.util.Map;
  * {@link Node} (Algorithm C2's "already found?" check) or creates one and
  * attaches its exit lines -- until no pending lines remain.
  *
+ * <p><b>Every diagram type this engine's {@link ConditionSet} can
+ * express</b> -- binary T-x, ternary isothermal (two free composition
+ * axes), or a ternary+ isopleth (T + one free composition, one or more
+ * OTHER compositions FIXED) -- runs through the SAME {@link
+ * #drain(ConditionSet, int, int, double, double[], List)} loop below.
+ * {@link #drain(AxisConfig, AxisConfig, double, double, double,
+ * double[], List)} is a thin translation layer over it (via {@link
+ * ConditionSet#fromBinaryAxes}) kept for existing callers that only ever
+ * describe a binary T-x map with {@code AxisConfig} pairs (e.g. {@link
+ * PhaseDiagramEngine#drainC1Loop}) -- both overloads share one
+ * implementation, not two copies.
+ *
  * <p><b>Scope, matching {@code docs/roadmap_phase_diagrams.md}'s
  * step-by-step build order:</b> a resolved {@link
  * MapTracer.SegmentEnd#CROSSING} is classified via {@link
- * PhaseDiagramEngine#classifyNode} (Eq. 8) and given exits via {@link
- * NodeGeometry} -- {@code TIE_LINE_IN_PLANE} (2 exits) for the
- * ordinary case, or a genuine {@link MapTracer.SegmentEnd#INVARIANT}
- * routed through Algorithm D ({@link InvariantExitFinder}), Step 5d.
- * {@link MapTracer.SegmentEnd#UNRESOLVED_MULTI_PHASE_CHANGE} is still
- * out of scope -- that crossing could not even be resolved to a
- * specific node (more than one phase changed and neither an ordinary
- * nor an invariant resolution succeeded), so it is registered with no
- * exit lines, a deliberate, documented limitation, not a silent gap.
- * No known end-to-end case in this codebase yet exercises a genuine
- * resolved {@code INVARIANT} through a real walk (V-Zr's own
- * documented peritectic is confirmed {@code
- * UNRESOLVED_MULTI_PHASE_CHANGE}, not {@code INVARIANT}) -- {@link
- * NodeGeometry}'s invariant-exit wiring is unit-tested directly
- * ({@code NodeGeometryTest}) against a synthetic node built from
- * literature data, not through this drain loop.
+ * PhaseDiagramEngine#classifyNode(ConditionSet, int)} (Eq. 8 plus the
+ * paper's own §3.3 tie-line-in-plane/isopleth distinction) and given
+ * exits via {@link NodeGeometry} -- {@code TIE_LINE_IN_PLANE} (2 exits)
+ * for the ordinary case, {@code ISOPLETH_CROSSING} (2 or 3 exits,
+ * depending on whether the arriving line already had a fixed phase of
+ * its own) for an isopleth-shaped diagram, or a genuine {@link
+ * MapTracer.SegmentEnd#INVARIANT} routed through Algorithm D ({@link
+ * InvariantExitFinder}). {@link
+ * MapTracer.SegmentEnd#UNRESOLVED_MULTI_PHASE_CHANGE} is still out of
+ * scope -- that crossing could not even be resolved to a specific node
+ * (more than one phase changed and neither an ordinary nor an invariant
+ * resolution succeeded), so it is registered with no exit lines, a
+ * deliberate, documented limitation, not a silent gap. No known
+ * end-to-end case in this codebase yet exercises a genuine resolved
+ * {@code INVARIANT} through a real walk (V-Zr's own documented
+ * peritectic is confirmed {@code UNRESOLVED_MULTI_PHASE_CHANGE}, not
+ * {@code INVARIANT}) -- {@link NodeGeometry}'s invariant-exit wiring is
+ * unit-tested directly ({@code NodeGeometryTest}) against a synthetic
+ * node built from literature data, not through this drain loop.
  *
  * <p>Also single-walk-axis only: every {@link Line} varies the SAME
- * walk axis as the start node (direction +1 or -1); the flowchart's
- * "select the fastest-varying axis" reselection during a walk is not
- * implemented here.
+ * axis the caller names as {@code searchAxisIndex}/{@code walkAxis}
+ * (direction +1 or -1); the flowchart's "select the fastest-varying
+ * axis" reselection during a walk is not implemented here -- a ternary
+ * isothermal or isopleth caller picks ONE of its axes to walk for the
+ * whole diagram, same as the binary case always has.
  *
  * <p><b>Global stability check (Step 6b, §2.3.3).</b> Every newly
  * created {@code CROSSING}/{@code INVARIANT} node is checked via
@@ -50,20 +67,6 @@ import java.util.Map;
  * follow-up) and every ordinary walked point mid-line (OC's own
  * cheaper, off-by-default {@code check_all_phases} interval check,
  * confirmed unrelated to line abandonment -- see the roadmap doc).
- *
- * <p><b>On the flowchart's "attach exits along the OTHER axis"
- * language (Step 3b analysis):</b> for a binary T-x map -- this
- * version's only supported case -- there are exactly 2 axes total, one
- * WALKED and one RELEASED (never both walked at once); the initial
- * search (see {@link #drain}) consumes {@code walkAxis}, and {@code
- * releaseAxis} is never itself walked in this scope, only solved for
- * exactly at each crossing. So the start node's 2 exit lines correctly
- * continue walking {@code walkAxis} in each direction (exactly like
- * every other node's exits, Step 2's original design) -- the
- * flowchart's "other axis" case only becomes literally applicable once
- * a diagram type with a genuine second WALKABLE axis exists (e.g. a
- * ternary isothermal section's two composition axes, neither one
- * released) -- deferred to that future work, not implemented here.
  */
 public final class MapDiagramTracer {
 
@@ -136,16 +139,101 @@ public final class MapDiagramTracer {
                     "MapDiagramTracer's release axis must be COMPOSITION; got " + releaseAxis.type);
         }
 
+        ConditionSet conds = ConditionSet.fromBinaryAxes(
+                compOverall.length, walkAxis, releaseAxis, fixedT, fixedP, compOverall);
+
+        // fromBinaryAxes puts exactly 2 axis conditions in, in the order
+        // added: the walk axis first, the release (composition) axis
+        // second -- see its own source. Index 0/1 here is not a
+        // coincidence to re-derive per call; it is that method's own
+        // fixed construction order.
+        return drain(conds, 0, 1, startWalkValue, compOverall, candidates);
+    }
+
+    /** Returns an {@link AxisConfig} with the same range but a step whose sign matches {@code direction}. */
+    private static AxisConfig directed(AxisConfig axis, int direction) {
+        double step = Math.abs(axis.step) * Math.signum(direction);
+        if (axis.type == AxisConfig.Type.COMPOSITION) {
+            return new AxisConfig(axis.name, axis.componentIndex, axis.min, axis.max, step);
+        }
+        return new AxisConfig(axis.name, axis.type, axis.min, axis.max, step);
+    }
+
+    /**
+     * The actual C1 drain loop -- see the class javadoc. Drains the loop
+     * for ANY diagram type expressible as a {@link ConditionSet}: binary
+     * T-x, ternary isothermal (two free composition axes), or a
+     * ternary+ isopleth (T + one free composition, one or more OTHER
+     * compositions FIXED). {@link
+     * PhaseDiagramEngine#classifyNode(ConditionSet, int)} genuinely
+     * distinguishes {@code TIE_LINE_IN_PLANE} from {@code
+     * ISOPLETH_CROSSING} here, and the arriving {@link Line}'s own
+     * {@link Line#fixedPhases} is threaded into {@link NodeGeometry} so
+     * a genuine isopleth crossing gets its paper-derived 3 exits (see
+     * {@link NodeGeometry#attachExits(Node, PhaseDiagramEngine.NodeClass,
+     * String, String, int)}'s javadoc for the exact mechanism, ported
+     * directly from OpenCalphad's own {@code map_newnode case(3)}).
+     *
+     * @param conds            the full condition set (n+2 conditions)
+     * @param searchAxisIndex  index into {@code conds.axisConditions()}
+     *                         of the axis searched initially, then walked
+     *                         by every line in the diagram -- this
+     *                         version's single-walk-axis scope (see the
+     *                         class javadoc) still applies: every line
+     *                         walks this SAME axis, no per-line
+     *                         reselection
+     * @param releaseAxisIndex index into {@code conds.axisConditions()}
+     *                         of the composition axis Algorithm C2
+     *                         releases at every crossing
+     * @param startSearchValue the search axis's value at the caller's
+     *                         starting condition
+     * @param compOverall      starting overall composition (length
+     *                         {@code conds.numComponents()}); any
+     *                         composition condition's FIXED value must
+     *                         already be baked in here (this method does
+     *                         not re-derive it from {@code conds} beyond
+     *                         what {@link ConditionSet#initialComposition()}
+     *                         would give a fresh caller)
+     * @param candidates       candidate phase models
+     * @return the populated registry: 1 start node (located by the
+     *         initial search), plus any nodes created by resolved
+     *         crossings, and every line walked
+     * @throws IllegalStateException if the initial search finds no
+     *         stable-set change anywhere in the search axis's range
+     */
+    public NodeRegistry drain(
+            ConditionSet conds,
+            int searchAxisIndex,
+            int releaseAxisIndex,
+            double startSearchValue,
+            double[] compOverall,
+            List<GibbsEnergyModel> candidates) {
+
+        List<Condition> axes = conds.axisConditions();
+        Condition searchCondition = axes.get(searchAxisIndex);
+        Condition releaseCondition = axes.get(releaseAxisIndex);
+
+        if (releaseCondition.variable != Condition.Variable.COMPOSITION) {
+            throw new IllegalArgumentException(
+                    "The release axis must be a COMPOSITION condition; got "
+                    + releaseCondition.variable + " (" + releaseCondition + ")");
+        }
+
+        AxisConfig walkAxis = searchCondition.toAxisConfig();
+        AxisConfig releaseAxis = releaseCondition.toAxisConfig();
+        double fixedT = conds.fixedTemperature();
+        double fixedP = conds.fixedPressure();
+
         MapTracer tracer = new MapTracer();
         NodeRegistry registry = new NodeRegistry();
 
         double[] startComp = compOverall.clone();
         if (walkAxis.type == AxisConfig.Type.COMPOSITION) {
-            startComp = StepTracer.applyCompositionAxis(walkAxis, startWalkValue, startComp);
+            startComp = StepTracer.applyCompositionAxis(walkAxis, startSearchValue, startComp);
         }
 
         MapTracer.InitialBoundaryResult initial = tracer.findInitialBoundary(
-                walkAxis, startWalkValue, releaseAxis, fixedT, fixedP, startComp, candidates);
+                conds, searchAxisIndex, startSearchValue, releaseAxisIndex, startComp, candidates);
 
         if (!initial.found) {
             throw new IllegalStateException(
@@ -161,10 +249,10 @@ public final class MapDiagramTracer {
                 startNodeComp, tpMatchTolerance, muMatchTolerance);
         compositionByNodeId.putIfAbsent(startNode.id, startNodeComp);
 
-        // Per the flowchart's map-branch initialization: attach 2 pending
-        // lines, one in each direction of the walk axis, from the start
-        // node -- see the class javadoc for why this stays walkAxis (not
-        // releaseAxis) in this version's binary-only scope.
+        // The START node has no arriving line, so no fixed phase of its
+        // own to form an isopleth crossing with -- its 2 exits are always
+        // the ordinary case, exactly the AxisConfig overload's own
+        // start-node construction.
         startNode.addLine(new Line(startNode, List.of(), 0, +1));
         startNode.addLine(new Line(startNode, List.of(), 0, -1));
 
@@ -172,6 +260,7 @@ public final class MapDiagramTracer {
 
             Line line = registry.nextPendingLine();
             Node fromNode = line.startNode;
+            String arrivingLineFixedPhase = line.fixedPhases.isEmpty() ? null : line.fixedPhases.get(0);
             line.startWalking();
 
             AxisConfig directedWalkAxis = directed(walkAxis, line.direction);
@@ -194,9 +283,6 @@ public final class MapDiagramTracer {
                     break;
 
                 case GLOBALLY_UNSTABLE:
-                    // §2.3.3's mid-line check: "abandon this line and
-                    // suppress it" -- same treatment as a node-level
-                    // failure below, but no node is created at all here.
                     line.terminateAtAxisLimit();
                     line.markExcluded();
                     break;
@@ -210,35 +296,22 @@ public final class MapDiagramTracer {
                     line.terminateAtNode(endNode);
                     if (endNode.getLines().isEmpty()) {
                         if (!PhaseDiagramEngine.isGloballyStable(seg.lastResult, candidates)) {
-                            // Global stability check (Step 6b, §2.3.3):
-                            // matches OC's global_equil_check1 at node
-                            // creation -- "the automatic procedure is to
-                            // abandon this line and suppress it." No
-                            // exits attached; the node exists (visible/
-                            // inspectable) but this arriving line is
-                            // excluded.
                             line.markExcluded();
                             break;
                         }
-                        // Newly created: classify via Eq. 8 and attach
-                        // exits accordingly (Step 5d) -- see NodeGeometry.
-                        // c=1: this codebase's binary map fixes P as a
-                        // non-axis potential condition (see
-                        // PhaseDiagramEngine#classifyNode's javadoc for
-                        // the full derivation against the paper's own
-                        // binary-isobaric worked example).
                         PhaseDiagramEngine.NodeClass nodeClass = PhaseDiagramEngine.classifyNode(
-                                compOverall.length, endNode.stablePhaseNames.size(), 1);
-                        NodeGeometry.attachExits(endNode, nodeClass, seg.changedPhase, 0);
+                                conds, endNode.stablePhaseNames.size());
+                        if (nodeClass == PhaseDiagramEngine.NodeClass.ISOPLETH_CROSSING) {
+                            NodeGeometry.attachExits(endNode, nodeClass,
+                                    seg.changedPhase, arrivingLineFixedPhase, 0);
+                        } else {
+                            NodeGeometry.attachExits(endNode, nodeClass, seg.changedPhase, 0);
+                        }
                     }
                     break;
                 }
 
                 case INVARIANT: {
-                    // A genuine invariant (Algorithm D, Step 5d) -- register
-                    // the node and attach whatever valid exits
-                    // InvariantExitFinder finds (possibly none, a
-                    // legitimate outcome; see NodeGeometry's javadoc).
                     Node endNode = registry.findOrCreate(
                             seg.lastResult,
                             new double[] { seg.endWalkValue, seg.endComposition[releaseAxis.componentIndex] },
@@ -257,12 +330,6 @@ public final class MapDiagramTracer {
                 }
 
                 case UNRESOLVED_MULTI_PHASE_CHANGE: {
-                    // Still out of scope: the crossing could not even be
-                    // resolved to a specific node (more than one phase
-                    // changed and neither an ordinary nor an invariant
-                    // resolution succeeded) -- nothing for NodeGeometry to
-                    // classify. Register the node (so it is visible/
-                    // inspectable) but do not attach exit lines.
                     Node endNode = registry.findOrCreate(
                             seg.lastResult,
                             new double[] { seg.endWalkValue, seg.endComposition[releaseAxis.componentIndex] },
@@ -275,14 +342,5 @@ public final class MapDiagramTracer {
         }
 
         return registry;
-    }
-
-    /** Returns an {@link AxisConfig} with the same range but a step whose sign matches {@code direction}. */
-    private static AxisConfig directed(AxisConfig axis, int direction) {
-        double step = Math.abs(axis.step) * Math.signum(direction);
-        if (axis.type == AxisConfig.Type.COMPOSITION) {
-            return new AxisConfig(axis.name, axis.componentIndex, axis.min, axis.max, step);
-        }
-        return new AxisConfig(axis.name, axis.type, axis.min, axis.max, step);
     }
 }

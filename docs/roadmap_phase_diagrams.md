@@ -22,17 +22,26 @@ DATABASE
             (current code: single starting point)
     │
     ▼
-[⚠️] FOR EACH STARTING POINT
+[✅] FOR EACH STARTING POINT
+    │   (checked truly end-to-end, chaining defineSystem->
+    │    validateConditionCount->generateStartingPoints->
+    │    drainC1Loop/drainStepLoop in ONE call:
+    │    PhaseDiagramEngineEndToEndTest.java)
     │
     ├── STEP (1 axis)
-    │     └── [✅] StepDiagramTracer.drain (StepDiagramTracer.java)
+    │     └── [✅] PhaseDiagramEngine.drainStepLoop
+    │               → StepDiagramTracer.drain (StepDiagramTracer.java)
     │               → StepTracer.walkOneSegment (StepTracer.java)
     │               (formatter-level OC check: StepDiagramTracer
     │                OcFormatterComparisonTest.java)
     │
     └── MAPPING (2 axes)
           └── [✅] PhaseDiagramEngine.drainC1Loop
-                    → MapDiagramTracer.drain (MapDiagramTracer.java)
+                    → MapDiagramTracer.drain (MapDiagramTracer.java;
+                      ONE loop implementation serving both an
+                      AxisConfig-pair overload -- for binary T-x
+                      callers -- and a ConditionSet overload reaching
+                      every diagram type, incl. isopleth)
                   │
                   ▼
           [✅] C1 : DRAIN LOOP
@@ -78,16 +87,25 @@ DATABASE
                                map_newnode, smp2A.F90)
                                   │
                                   ▼
-                  [⚠️] NODE CLASSIFICATION + EXIT GEOMETRY
+                  [✅] NODE CLASSIFICATION + EXIT GEOMETRY
                           ├── Eq. 8 classification
                           │       └── PhaseDiagramEngine.classifyNode
+                          │           (ConditionSet overload: any FIXED
+                          │            composition condition → isopleth-
+                          │            shaped diagram, per §3.3)
                           ├── TIE_LINE_IN_PLANE → implemented
                           │       └── NodeGeometry.attachExits
                           │           (NodeGeometry.java)
                           ├── INVARIANT / Algorithm D → implemented
                           │       └── InvariantExitFinder.findExits
                           │           (InvariantExitFinder.java)
-                          └── ISOPLETH_CROSSING → not reachable yet
+                          └── ISOPLETH_CROSSING → implemented
+                                  └── NodeGeometry.attachIsoplethCrossingExits
+                                      (LFIX/PHFIX exit table ported from
+                                       OC's map_newnode case(3));
+                                      MapDiagramTracer.drain's
+                                      ConditionSet overload reaches it
+                                      end-to-end
                                   │
                                   ▼
                          ADD NODE + PENDING EXITS

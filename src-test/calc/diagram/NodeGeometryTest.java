@@ -61,6 +61,54 @@ public class NodeGeometryTest {
     }
 
     @Test
+    void isoplethCrossingWithNoArrivingLineFixedPhaseDegradesToTwoExits() {
+        // The arriving line had NO fixed phase of its own (e.g. it came
+        // from the diagram's START node) -- per NodeGeometry's own
+        // javadoc, there is no "already fixed" phase to form a genuine
+        // 2-line crossing with, so this degrades to the ordinary 2-exit
+        // case, identical to TIE_LINE_IN_PLANE.
+        EquilibriumResult eq = twoPhaseEquilibrium();
+        Node node = new Node(0, eq, new double[] { 699.58, 0.05 }, new double[] { 0.9, 0.05, 0.05 });
+
+        NodeGeometry.attachExits(
+                node, PhaseDiagramEngine.NodeClass.ISOPLETH_CROSSING, "LIQUID", null, 0);
+
+        List<Line> lines = node.getLines();
+        assertEquals(2, lines.size());
+        for (Line l : lines) {
+            assertEquals(List.of("LIQUID"), l.fixedPhases);
+        }
+    }
+
+    @Test
+    void isoplethCrossingWithArrivingLineFixedPhaseAttachesThreeExits() {
+        // A genuine 2-line crossing (Sundman 2021 Section 3.3, ported
+        // from OpenCalphad's map_newnode case(3)): the arriving line was
+        // already fixing "MGZN2" (LFIX) when phase "FCC_A1" (PHFIX)
+        // appeared/disappeared to create this node.
+        EquilibriumResult eq = twoPhaseEquilibrium();
+        Node node = new Node(0, eq, new double[] { 700.0, 0.05 }, new double[] { 0.9, 0.05, 0.05 });
+
+        NodeGeometry.attachExits(
+                node, PhaseDiagramEngine.NodeClass.ISOPLETH_CROSSING, "FCC_A1", "MGZN2", 0);
+
+        List<Line> lines = node.getLines();
+        assertEquals(3, lines.size());
+
+        // Exit 1: LFIX (MGZN2)'s own line continues, single direction.
+        long mgzn2Exits = lines.stream().filter(l -> l.fixedPhases.equals(List.of("MGZN2"))).count();
+        assertEquals(1, mgzn2Exits, "LFIX's own line should get exactly 1 exit, not 2");
+
+        // Exits 2 and 3: PHFIX (FCC_A1)'s own line, both directions.
+        List<Line> fccExits = lines.stream()
+                .filter(l -> l.fixedPhases.equals(List.of("FCC_A1")))
+                .toList();
+        assertEquals(2, fccExits.size(), "PHFIX's own line should get exactly 2 exits (both directions)");
+        assertTrue(fccExits.stream().anyMatch(l -> l.direction == +1));
+        assertTrue(fccExits.stream().anyMatch(l -> l.direction == -1));
+    }
+
+    @Test
     void invariantAttachesExitsFoundByAlgorithmD() {
         // Synthetic 3-phase node built from the V-Zr peritectic's known
         // literature compositions (see class javadoc) -- BCC_A2, V2ZR,

@@ -28,10 +28,13 @@ import java.util.List;
  * is that single place: implemented stages delegate to the classes
  * above; unimplemented stages throw {@link UnsupportedOperationException}
  * naming the exact gap and pointing at the roadmap doc, rather than
- * silently doing nothing or being absent entirely. Nothing in the
- * implemented stages below was rewritten to make this skeleton --
- * {@link #generateStartingPoints}/{@link #drainC1Loop} are thin
- * delegations to already-tested code (Steps 1-4).
+ * silently doing nothing or being absent entirely. {@link
+ * #generateStartingPoints}/{@link #drainC1Loop}/{@link #drainStepLoop}
+ * are thin delegations to already-tested code, not reimplementations --
+ * {@link #drainC1Loop(ConditionSet, int, int, double, double[], List)}
+ * reaches every diagram type (binary, ternary isothermal, isopleth) this
+ * engine's {@link ConditionSet} can express, the same generalization
+ * {@link MapDiagramTracer} itself went through (Step 6d).
  *
  * <p><b>Not yet wired into any UI.</b> {@code
  * CalculationSession#calculatePhaseDiagram} still throws its own
@@ -189,15 +192,20 @@ public final class PhaseDiagramEngine {
 
     /**
      * The flowchart's "FOR EACH STARTING POINT" box through the {@code
-     * C1 : DRAIN LOOP} box: drains the whole diagram from one starting
-     * point. Delegates to {@link MapDiagramTracer#drain} -- see that
-     * class's javadoc for what it does internally (initial search,
-     * node classification via {@link #classifyNode}, exit generation
-     * via {@link NodeGeometry}/{@link InvariantExitFinder}) and {@code
-     * docs/roadmap_phase_diagrams.md} for what's still out of scope
-     * (the ONE-AXIS/step branch, the "fastest-varying axis"
+     * C1 : DRAIN LOOP} box, MAPPING branch (2 axes): drains the whole
+     * diagram from one starting point. Delegates to {@link
+     * MapDiagramTracer#drain(AxisConfig, AxisConfig, double, double,
+     * double, double[], List)} -- see that class's javadoc for what it
+     * does internally (initial search, node classification via {@link
+     * #classifyNode}, exit generation via {@link NodeGeometry}/{@link
+     * InvariantExitFinder}) and {@code docs/roadmap_phase_diagrams.md}
+     * for what's still out of scope (the "fastest-varying axis"
      * reselection, {@code UNRESOLVED_MULTI_PHASE_CHANGE} exits,
-     * multi-start-point stitching).
+     * multi-start-point stitching). This overload only expresses a
+     * binary T-x map (its two {@link AxisConfig} arguments cannot
+     * describe a FIXED third composition or two free composition axes)
+     * -- see {@link #drainC1Loop(ConditionSet, int, int, double,
+     * double[], List)} for a ternary isothermal section or an isopleth.
      *
      * @throws IllegalStateException if the initial search finds no
      *         crossing anywhere in {@code walkAxis}'s range (propagated
@@ -214,6 +222,55 @@ public final class PhaseDiagramEngine {
 
         return new MapDiagramTracer().drain(
                 walkAxis, releaseAxis, fixedT, fixedP, startWalkValue, compOverall, candidates);
+    }
+
+    /**
+     * {@link ConditionSet}-driven form of {@link #drainC1Loop(AxisConfig,
+     * AxisConfig, double, double, double, double[], List)}: the SAME
+     * MAPPING branch, generalized to any diagram type this engine's
+     * {@link ConditionSet} can express -- binary T-x, ternary isothermal
+     * (two free composition axes), or a ternary+ isopleth (one or more
+     * compositions FIXED, per {@link #classifyNode(ConditionSet, int)}'s
+     * own distinction). Delegates to {@link
+     * MapDiagramTracer#drain(ConditionSet, int, int, double, double[],
+     * List)}.
+     *
+     * @throws IllegalStateException if the initial search finds no
+     *         crossing anywhere in the search axis's range (propagated
+     *         from {@link MapDiagramTracer#drain})
+     */
+    public static NodeRegistry drainC1Loop(
+            ConditionSet conds,
+            int searchAxisIndex,
+            int releaseAxisIndex,
+            double startSearchValue,
+            double[] compOverall,
+            List<GibbsEnergyModel> candidates) {
+
+        return new MapDiagramTracer().drain(
+                conds, searchAxisIndex, releaseAxisIndex, startSearchValue, compOverall, candidates);
+    }
+
+    /**
+     * The flowchart's "FOR EACH STARTING POINT" box through the {@code
+     * C1 : DRAIN LOOP} box, STEP branch (1 axis, §3.2): drains the whole
+     * property/step diagram from one starting point. Delegates to
+     * {@link StepDiagramTracer#drain} -- STEP has no ZPF-fixed axis at
+     * all (no phase is ever released), so unlike the MAPPING branch it
+     * needs no {@link ConditionSet} generalization: one {@link
+     * AxisConfig} already fully describes it.
+     *
+     * @throws IllegalStateException if the starting point does not converge
+     *         (propagated from {@link StepDiagramTracer#drain})
+     */
+    public static NodeRegistry drainStepLoop(
+            AxisConfig axis,
+            double fixedT,
+            double fixedP,
+            double[] compOverall,
+            List<GibbsEnergyModel> candidates) {
+
+        return new StepDiagramTracer().drain(axis, fixedT, fixedP, compOverall, candidates);
     }
 
     // ------------------------------------------------------------------
@@ -311,7 +368,10 @@ public final class PhaseDiagramEngine {
     /**
      * Node classification at a stable-set change (flowchart): the GIBBS
      * PHASE RULE (Eq. 8, {@code f = n+2-p-c}) distinguishes invariant
-     * ({@code f=0}) from ordinary ({@code f>0}).
+     * ({@code f=0}) from ordinary ({@code f>0}); {@code numComponents}
+     * and {@code c} (FIXED, non-axis potential-type conditions) are
+     * derived directly from {@code conds} rather than passed separately,
+     * so this always reflects the diagram actually being traced.
      *
      * <p><b>{@code c}'s exact meaning, worked out against the paper's
      * own example (important -- easy to get backwards).</b> §3.3: "A
@@ -323,38 +383,63 @@ public final class PhaseDiagramEngine {
      * giving {@code f=0} at {@code p=3} as stated. So {@code c} counts
      * FIXED potential-type conditions (T, P, or a chemical potential)
      * NOT used as axes -- it is NOT the number of axes, and NOT the
-     * number of fixed conditions in general (a fixed composition or N
-     * does not count). This codebase's binary map (T and one
-     * composition as AXIS, P FIXED) has {@code c=1}; a step calculation
-     * (only T as AXIS, P FIXED) also has {@code c=1}; a hypothetical
+     * number of fixed conditions in general ({@link
+     * Condition.Variable#TOTAL_MOLES} and a FIXED composition condition
+     * do not count). This codebase's binary map (T and one composition
+     * as AXIS, P FIXED) has {@code c=1}; a step calculation (only T as
+     * AXIS, P FIXED) also has {@code c=1}; a hypothetical
      * fully-potential-driven setup with both T and P fixed would have
      * {@code c=2}.
      *
-     * <p><b>Implemented (Step 5d) for the two cases this codebase's
-     * tracers actually produce: {@code TIE_LINE_IN_PLANE} and {@code
-     * INVARIANT}.</b> {@code ISOPLETH_CROSSING} (Step 5e's isopleth
-     * work) is NOT distinguished here yet -- per the flowchart's
-     * explicit correction, exit count for the ordinary ({@code f>0})
-     * case comes from NODE GEOMETRY, not from {@code f} itself, and
-     * this codebase has no isopleth-tracing code yet to produce that
-     * geometry from. Every {@code f>0} node classifies as {@code
-     * TIE_LINE_IN_PLANE} until Step 5e adds a way to distinguish the
-     * two ordinary cases.
+     * <p><b>Distinguishing the two ordinary ({@code f>0}) cases --
+     * {@code TIE_LINE_IN_PLANE} vs. {@code ISOPLETH_CROSSING}.</b> Per
+     * the flowchart's "Exit count at a normal node" analysis: exit count
+     * for {@code f>0} comes from NODE GEOMETRY, not {@code f} itself, so
+     * this is not an Eq. 8 computation -- it is the paper's own §3.3
+     * geometric distinction, "tie-lines in the plane" (binary T-x,
+     * ternary isothermal: every stable phase's composition is fully
+     * described by the diagram's own axes) vs. not (an isopleth: some
+     * composition is FIXED outside the two axes, so a phase's tie-line
+     * generally leaves the plane -- §3.3's own words, "In iso-pleths...
+     * most node points correspond to two crossing lines... requires the
+     * creation of 3 exits"). Concretely: a {@link ConditionSet} with ANY
+     * FIXED {@link Condition.Variable#COMPOSITION} condition is an
+     * isopleth-shaped diagram (2021 Fig. 3(c)'s own worked example: T and
+     * x(Zn) axes, x(Mg) FIXED); a {@link ConditionSet} with none is
+     * tie-line-in-plane (binary T-x: only T is an axis besides the one
+     * released composition, no OTHER composition to fix; ternary
+     * isothermal: both composition axes are free, none fixed).
      *
-     * @param numComponents          n
-     * @param numStablePhases        p, the number of phases stable at this node
-     * @param numFixedPotentialConditions c, FIXED (non-axis) potential-type
-     *                               conditions (T, P, or a chemical
-     *                               potential) -- see the javadoc above
-     *                               for why this is 1, not 0, for this
-     *                               codebase's binary map/step cases
-     *                               (P is fixed) and would be 2 for a
-     *                               ternary isothermal section (T and P
-     *                               both fixed)
+     * @param conds           the full condition set (n+2 conditions) for
+     *                        the diagram this node belongs to
+     * @param numStablePhases p, the number of phases stable at this node
      */
-    public static NodeClass classifyNode(int numComponents, int numStablePhases, int numFixedPotentialConditions) {
-        int f = numComponents + 2 - numStablePhases - numFixedPotentialConditions;
-        return f == 0 ? NodeClass.INVARIANT : NodeClass.TIE_LINE_IN_PLANE;
+    public static NodeClass classifyNode(ConditionSet conds, int numStablePhases) {
+        int numFixedPotentialConditions = 0;
+        boolean hasFixedComposition = false;
+
+        for (Condition c : conds.all()) {
+            if (!c.isFixed()) continue;
+            switch (c.variable) {
+                case TEMPERATURE:
+                case PRESSURE:
+                    numFixedPotentialConditions++;
+                    break;
+                case COMPOSITION:
+                    hasFixedComposition = true;
+                    break;
+                default:
+                    // TOTAL_MOLES: neither a potential condition nor a
+                    // composition -- does not affect either count.
+            }
+        }
+
+        NodeClass ordinary = hasFixedComposition
+                ? NodeClass.ISOPLETH_CROSSING
+                : NodeClass.TIE_LINE_IN_PLANE;
+
+        int f = conds.numComponents() + 2 - numStablePhases - numFixedPotentialConditions;
+        return f == 0 ? NodeClass.INVARIANT : ordinary;
     }
 
     // ------------------------------------------------------------------

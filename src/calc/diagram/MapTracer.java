@@ -166,6 +166,56 @@ public final class MapTracer {
         SegmentResult seg = walkOneSegment(
                 startSearchValue, searchAxis, releaseAxis, fixedT, fixedP, compAtStart, candidates);
 
+        return toInitialBoundaryResult(seg);
+    }
+
+    /**
+     * {@code ConditionSet}-driven form of {@link #findInitialBoundary(
+     * AxisConfig, double, AxisConfig, double, double, double[], List)},
+     * generalizing the map branch's initial search (Sundman 2021 Section
+     * 3.3) to any diagram type this engine's {@link ConditionSet} can
+     * express (binary T-x, ternary isothermal, isopleth) -- the SAME
+     * translation {@link #walkOneSegment(ConditionSet, int, int, double,
+     * Set, double[], List, EquilibriumResult)} already performs for a
+     * resumed segment, applied here to the very first search instead.
+     *
+     * @param conds           the full condition set (n+2 conditions)
+     * @param searchAxisIndex index into {@code conds.axisConditions()}
+     *                        of the axis to search initially
+     * @param releaseAxisIndex index into {@code conds.axisConditions()}
+     *                        of the axis Algorithm C2 releases at the
+     *                        found crossing; must be a COMPOSITION
+     *                        condition
+     */
+    public InitialBoundaryResult findInitialBoundary(
+            ConditionSet conds,
+            int searchAxisIndex,
+            double startSearchValue,
+            int releaseAxisIndex,
+            double[] compAtStart,
+            List<GibbsEnergyModel> candidates) {
+
+        List<Condition> axes = conds.axisConditions();
+        AxisConfig searchAxis = axes.get(searchAxisIndex).toAxisConfig();
+        Condition releaseCondition = axes.get(releaseAxisIndex);
+
+        if (releaseCondition.variable != Condition.Variable.COMPOSITION) {
+            throw new IllegalArgumentException(
+                    "The release axis must be a COMPOSITION condition; got "
+                    + releaseCondition.variable + " (" + releaseCondition + ")");
+        }
+
+        AxisConfig releaseAxis = releaseCondition.toAxisConfig();
+        double fixedT = conds.fixedTemperature();
+        double fixedP = conds.fixedPressure();
+
+        SegmentResult seg = walkOneSegment(
+                startSearchValue, searchAxis, releaseAxis, fixedT, fixedP, compAtStart, candidates);
+
+        return toInitialBoundaryResult(seg);
+    }
+
+    private static InitialBoundaryResult toInitialBoundaryResult(SegmentResult seg) {
         switch (seg.end) {
             case CROSSING:
             case INVARIANT:

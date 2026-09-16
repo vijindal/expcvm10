@@ -121,16 +121,70 @@ public class PhaseDiagramEngineTest {
      */
     @Test
     void classifyNodeDistinguishesOrdinaryFromInvariantForABinaryIsobaricSystem() {
-        // n=2, p=2 (ordinary 2-phase crossing, e.g. Ag-Cu's liquidus),
-        // c=1 (P fixed, not an axis): f=2+2-2-1=1 -- ordinary.
-        assertEquals(PhaseDiagramEngine.NodeClass.TIE_LINE_IN_PLANE,
-                PhaseDiagramEngine.classifyNode(2, 2, 1));
+        // Binary T-x (Ag-Cu's own shape): T=AXIS, P=FIXED, N=FIXED,
+        // x(Cu)=AXIS -- c=1 (P is the only fixed potential condition).
+        ConditionSet binaryIsobaric = new ConditionSet(2, List.of(
+                Condition.axis(Condition.Variable.TEMPERATURE, "T", 1150, 1230, 5),
+                Condition.fixed(Condition.Variable.PRESSURE, "P", 101325.0),
+                Condition.fixed(Condition.Variable.TOTAL_MOLES, "N", 1.0),
+                Condition.axisComposition(1, "x(Cu)", 0.0, 1.0, 0.01)));
 
-        // n=2, p=3 (V-Zr's 1586K peritectic: BCC_A2+V2ZR+LIQUID), c=1:
-        // f=2+2-3-1=0 -- invariant, matching the paper's own p=3 result
-        // for a binary isobaric invariant exactly.
+        // p=2 (ordinary 2-phase crossing, e.g. Ag-Cu's liquidus):
+        // f=2+2-2-1=1 -- ordinary.
+        assertEquals(PhaseDiagramEngine.NodeClass.TIE_LINE_IN_PLANE,
+                PhaseDiagramEngine.classifyNode(binaryIsobaric, 2));
+
+        // p=3 (V-Zr's 1586K peritectic: BCC_A2+V2ZR+LIQUID): f=2+2-3-1=0
+        // -- invariant, matching the paper's own p=3 result for a binary
+        // isobaric invariant exactly.
         assertEquals(PhaseDiagramEngine.NodeClass.INVARIANT,
-                PhaseDiagramEngine.classifyNode(2, 3, 1));
+                PhaseDiagramEngine.classifyNode(binaryIsobaric, 3));
+    }
+
+    @Test
+    void conditionSetClassifyNodeDistinguishesTieLineInPlaneFromIsopleth() {
+        // Binary T-x (Ag-Cu's own shape): T=AXIS, P=FIXED, N=FIXED,
+        // x(Cu)=AXIS -- no FIXED composition, so ordinary p=2 crossing
+        // is TIE_LINE_IN_PLANE.
+        ConditionSet binary = new ConditionSet(2, List.of(
+                Condition.axis(Condition.Variable.TEMPERATURE, "T", 1000, 1200, 5),
+                Condition.fixed(Condition.Variable.PRESSURE, "P", 101325.0),
+                Condition.fixed(Condition.Variable.TOTAL_MOLES, "N", 1.0),
+                Condition.axisComposition(1, "x(Cu)", 0.0, 1.0, 0.01)));
+        assertEquals(PhaseDiagramEngine.NodeClass.TIE_LINE_IN_PLANE,
+                PhaseDiagramEngine.classifyNode(binary, 2));
+
+        // Ternary isothermal (Al-Mg-Zn Step 5c's own shape): T=FIXED,
+        // P=FIXED, N=FIXED, x(Mg)=AXIS, x(Zn)=AXIS -- still no FIXED
+        // composition (both are AXIS), so still TIE_LINE_IN_PLANE.
+        ConditionSet ternaryIsothermal = new ConditionSet(3, List.of(
+                Condition.fixed(Condition.Variable.TEMPERATURE, "T", 700.0),
+                Condition.fixed(Condition.Variable.PRESSURE, "P", 101325.0),
+                Condition.fixed(Condition.Variable.TOTAL_MOLES, "N", 1.0),
+                Condition.axisComposition(1, "x(Mg)", 0.0, 0.5, 0.01),
+                Condition.axisComposition(2, "x(Zn)", 0.0, 0.5, 0.01)));
+        assertEquals(PhaseDiagramEngine.NodeClass.TIE_LINE_IN_PLANE,
+                PhaseDiagramEngine.classifyNode(ternaryIsothermal, 2));
+
+        // Ternary isopleth (Al-Mg-Zn Step 5e's own shape, Fig. 3(c)):
+        // T=AXIS, P=FIXED, N=FIXED, x(Mg)=FIXED, x(Zn)=AXIS -- x(Mg) is
+        // FIXED, so this IS an isopleth-shaped diagram.
+        ConditionSet isopleth = new ConditionSet(3, List.of(
+                Condition.axis(Condition.Variable.TEMPERATURE, "T", 630, 760, 2),
+                Condition.fixed(Condition.Variable.PRESSURE, "P", 101325.0),
+                Condition.fixed(Condition.Variable.TOTAL_MOLES, "N", 1.0),
+                Condition.fixedComposition(1, "x(Mg)", 0.05),
+                Condition.axisComposition(2, "x(Zn)", 0.0, 0.5, 0.001)));
+        assertEquals(PhaseDiagramEngine.NodeClass.ISOPLETH_CROSSING,
+                PhaseDiagramEngine.classifyNode(isopleth, 2));
+
+        // The SAME isopleth ConditionSet still recognizes a genuine
+        // invariant: n=3, p=4 (isopleth's own invariant per §3.3's own
+        // Fig. 13(c) discussion), c=2 (T is AXIS here, so only P is
+        // fixed... wait: T is AXIS, so c counts only P=1 fixed potential.
+        // f=3+2-4-1=0 -- invariant.
+        assertEquals(PhaseDiagramEngine.NodeClass.INVARIANT,
+                PhaseDiagramEngine.classifyNode(isopleth, 4));
     }
 
     @Test

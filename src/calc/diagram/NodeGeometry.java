@@ -15,13 +15,12 @@ import java.util.List;
  * <p>Per the flowchart's node-geometry branch: exit count for the
  * ordinary ({@code f>0}) case comes from NODE GEOMETRY, not from Eq. 8's
  * {@code f} itself -- {@link PhaseDiagramEngine.NodeClass#TIE_LINE_IN_PLANE}
- * always gets 2 exits (this codebase's only ordinary case so far;
- * {@code ISOPLETH_CROSSING}'s 3-exit case is Step 5e's work, not
- * reachable from {@link PhaseDiagramEngine#classifyNode} yet). {@code
- * INVARIANT} exits are found via Algorithm D ({@link InvariantExitFinder},
- * Eq. 9): one {@link Line} per {@link InvariantExitFinder.ExitCandidate},
- * verified combinatorics only for binary systems so far (see that
- * class's own javadoc).
+ * always gets 2 exits; {@link PhaseDiagramEngine.NodeClass#ISOPLETH_CROSSING}
+ * always gets 3 (Sundman 2021 §3.3's own worked description, see {@link
+ * #attachIsoplethCrossingExits}). {@code INVARIANT} exits are found via
+ * Algorithm D ({@link InvariantExitFinder}, Eq. 9): one {@link Line} per
+ * {@link InvariantExitFinder.ExitCandidate}, verified combinatorics only
+ * for binary systems so far (see that class's own javadoc).
  */
 final class NodeGeometry {
 
@@ -41,6 +40,10 @@ final class NodeGeometry {
      * @param walkAxisIndex the axis index every exit {@link Line} varies
      *                      (this codebase's single-walk-axis scope, per
      *                      {@link MapDiagramTracer}'s class javadoc)
+     * @throws IllegalArgumentException if {@code nodeClass} is {@code
+     *         ISOPLETH_CROSSING} -- use {@link #attachExits(Node,
+     *         PhaseDiagramEngine.NodeClass, String, String, int)} instead,
+     *         which needs the arriving line's own already-fixed phase too
      */
     static void attachExits(
             Node node,
@@ -61,13 +64,42 @@ final class NodeGeometry {
                         + "attachExits(Node, NodeClass, String, int, int) instead, which "
                         + "StepDiagramTracer uses directly (it always knows its own direction).");
             case ISOPLETH_CROSSING:
-                throw new UnsupportedOperationException(
-                        "ISOPLETH_CROSSING exit geometry (3 exits) is Step 5e's work -- "
-                        + "not reachable from PhaseDiagramEngine#classifyNode yet, so this "
-                        + "should be unreachable today.");
+                throw new IllegalArgumentException(
+                        "ISOPLETH_CROSSING needs the arriving line's own already-fixed phase -- "
+                        + "call attachExits(Node, NodeClass, String, String, int) instead.");
             default:
                 throw new IllegalStateException("Unhandled NodeClass: " + nodeClass);
         }
+    }
+
+    /**
+     * {@link #attachExits(Node, PhaseDiagramEngine.NodeClass, String, int)}
+     * overload for {@link PhaseDiagramEngine.NodeClass#ISOPLETH_CROSSING}
+     * -- see {@link #attachIsoplethCrossingExits} for the full mechanism.
+     *
+     * @param arrivingLineFixedPhase the phase already fixed at zero along
+     *                      the ARRIVING line (OC's {@code LFIX}/{@code
+     *                      jphr}) -- empty ({@code null}) if the arriving
+     *                      line had no fixed phase at all (e.g. it came
+     *                      from a {@code TIE_LINE_IN_PLANE} node or the
+     *                      diagram's own START node), in which case this
+     *                      crossing cannot be a genuine 2-line isopleth
+     *                      crossing and degrades to the ordinary 2-exit
+     *                      case
+     */
+    static void attachExits(
+            Node node,
+            PhaseDiagramEngine.NodeClass nodeClass,
+            String arrivedViaPhase,
+            String arrivingLineFixedPhase,
+            int walkAxisIndex) {
+
+        if (nodeClass != PhaseDiagramEngine.NodeClass.ISOPLETH_CROSSING) {
+            throw new IllegalArgumentException(
+                    "The arrivingLineFixedPhase-taking overload is for ISOPLETH_CROSSING only; got "
+                    + nodeClass + " -- use attachExits(Node, NodeClass, String, int) instead.");
+        }
+        attachIsoplethCrossingExits(node, arrivedViaPhase, arrivingLineFixedPhase, walkAxisIndex);
     }
 
     /**
@@ -105,6 +137,71 @@ final class NodeGeometry {
      * pre-Step-5d inline construction, now centralized here.
      */
     private static void attachTieLineInPlaneExits(Node node, String arrivedViaPhase, int walkAxisIndex) {
+        node.addLine(new Line(node, List.of(arrivedViaPhase), walkAxisIndex, +1));
+        node.addLine(new Line(node, List.of(arrivedViaPhase), walkAxisIndex, -1));
+    }
+
+    /**
+     * The isopleth-crossing case: "two crossing lines" meet at this node
+     * (Sundman 2021 §3.3's own worked description, quoted in full in
+     * {@link PhaseDiagramEngine#classifyNode(ConditionSet, int)}'s
+     * javadoc) -- confirmed directly against OpenCalphad's own
+     * implementation of this exact case ({@code
+     * src/stepmapplot/smp2A.F90}, {@code case(3)}, comment "Normal node
+     * in a phase diagram without tie-lines in plane... Two crossing
+     * lines, one in and 3 exits"). OC names the two phases involved
+     * {@code PHFIX} (the phase that just appeared/disappeared to create
+     * THIS crossing -- {@code arrivedViaPhase} here) and {@code LFIX}/
+     * {@code jphr} (the phase that was ALREADY fixed at zero along the
+     * arriving line -- {@code arrivingLineFixedPhase} here, found by
+     * OC's own comment as "the phase that was stable along the line"
+     * relative to the line's own fix phase, i.e. the arriving {@link
+     * Line#fixedPhases}' single entry, not a driving-force search or any
+     * other computed quantity).
+     *
+     * <p>OC's own exit table (comment at {@code case(3)}, {@code
+     * PHFIX>0}, a phase appearing -- the disappearing case mirrors it):
+     * <pre>
+     *          FIX     STABLE (relative to the node's own p phases)
+     * exit 1   LFIX    p+1, including PHFIX  -- LFIX's own line continues
+     * exit 2   PHFIX   p+1, including LFIX   -- PHFIX's line, LFIX side
+     * exit 3   PHFIX   p,   LFIX in, PHFIX out -- PHFIX's line, other side
+     * </pre>
+     * Exit 1 is the SINGLE continuation of the phase already fixed along
+     * the arriving line (not both directions -- the arriving line
+     * already covers the direction we came from; only the far side is a
+     * genuinely new exit, per OC's "4 lines meet, 3 exits" accounting).
+     * Exits 2 and 3 are the NEW phase's ({@code arrivedViaPhase}) own ZPF
+     * line, in the two directions that differ by which OTHER phase
+     * (LFIX in vs. out) is stable alongside it -- both attached here
+     * (their actual walk direction is not determinable from local node
+     * data alone, the same ambiguity {@link #attachInvariantExits}
+     * documents for Algorithm D; the wrong one is expected to terminate
+     * quickly when walked).
+     *
+     * <p>If {@code arrivingLineFixedPhase} is {@code null} (the arriving
+     * line had no fixed phase of its own -- it came from a {@code
+     * TIE_LINE_IN_PLANE} node or the diagram's START node, so there is
+     * no "already fixed" phase to form a second crossing line with),
+     * this degrades to the ordinary 2-exit case: {@code
+     * arrivedViaPhase}'s own line continues in both directions, exactly
+     * {@link #attachTieLineInPlaneExits}. This matches the paper's own
+     * "MOST node points" (not ALL) phrasing -- not every {@code f>0}
+     * node in an isopleth-shaped diagram is a genuine 4-region crossing.
+     */
+    private static void attachIsoplethCrossingExits(
+            Node node, String arrivedViaPhase, String arrivingLineFixedPhase, int walkAxisIndex) {
+
+        if (arrivingLineFixedPhase == null) {
+            attachTieLineInPlaneExits(node, arrivedViaPhase, walkAxisIndex);
+            return;
+        }
+
+        // Exit 1: LFIX's own line continues (single direction -- the
+        // other direction is where the arriving line came from).
+        node.addLine(new Line(node, List.of(arrivingLineFixedPhase), walkAxisIndex, +1));
+
+        // Exits 2 and 3: PHFIX's own line, both directions.
         node.addLine(new Line(node, List.of(arrivedViaPhase), walkAxisIndex, +1));
         node.addLine(new Line(node, List.of(arrivedViaPhase), walkAxisIndex, -1));
     }
