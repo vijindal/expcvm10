@@ -377,4 +377,52 @@ public final class GlobalEquilibriumMatrixAssembler {
 
         return new Result(A, b, null, null);
     }
+
+    /**
+     * As {@link #convertToFixedPhaseAmountSystemReleasingT}, but releases
+     * PRESSURE instead of temperature -- the direct P-analogue, using
+     * {@link PhaseEquilData#dG_dP}/{@link PhaseEquilData#dM_dP} in place
+     * of {@code dG_dT}/{@code dM_dT}. See that method's javadoc for the
+     * full derivation (identical structure, T replaced by P throughout).
+     *
+     * @param phaseData      same array used to build {@code matrix}/{@code rhs}
+     * @param phaseAmounts   same array used to build {@code matrix}/{@code rhs}
+     * @param fixedSlotIndex index of the phase whose amount is fixed
+     * @return a NEW (matrix, rhs) pair -- the inputs are not mutated
+     */
+    public static Result convertToFixedPhaseAmountSystemReleasingP(
+            double[][] matrix,
+            double[] rhs,
+            PhaseEquilData[] phaseData,
+            double[] phaseAmounts,
+            int nc,
+            int np,
+            int fixedSlotIndex) {
+
+        int n = nc + np;
+
+        double[][] A = new double[n][];
+        for (int row = 0; row < n; row++) {
+            A[row] = matrix[row].clone();
+        }
+        double[] b = rhs.clone();
+
+        int fixedColumn = nc + fixedSlotIndex;
+
+        for (int row = 0; row < n; row++) {
+            A[row][fixedColumn] = 0.0;
+        }
+
+        A[fixedSlotIndex][fixedColumn] = -phaseData[fixedSlotIndex].dG_dP;
+
+        for (int Aidx = 0; Aidx < nc; Aidx++) {
+            double coeff = 0.0;
+            for (int k = 0; k < np; k++) {
+                coeff += phaseAmounts[k] * phaseData[k].dM_dP[Aidx];
+            }
+            A[np + Aidx][fixedColumn] = coeff;
+        }
+
+        return new Result(A, b, null, null);
+    }
 }

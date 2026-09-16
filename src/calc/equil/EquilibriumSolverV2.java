@@ -701,6 +701,18 @@ public class EquilibriumSolverV2 {
     // ZPF boundary solve (Sundman Algorithm C2)
     // ================================================================
 
+    /**
+     * Which condition Algorithm C2 releases at a boundary solve, in place
+     * of the phase fixed at {@code fixedAmount} -- Sundman 2021 Fig. 6
+     * ("release the current axis condition") releases whichever variable
+     * is the walk's own active axis, not always composition; OpenCalphad's
+     * {@code map_calcnode} (smp2A.F90, {@code jax=abs(mapline%axandir)})
+     * confirms the same: the released condition is always the ACTIVE axis,
+     * which can be composition, T, or P depending on what the walk (or
+     * Algorithm D's invariant search) is currently doing.
+     */
+    public enum ReleasedVariable { COMPOSITION, TEMPERATURE, PRESSURE }
+
     /** Result of {@link #solveBoundary}. */
     public static final class BoundarySolveResult {
 
@@ -785,6 +797,38 @@ public class EquilibriumSolverV2 {
             double fixedAmount,
             int releasedComponentIndex) {
 
+        int fixedSlotIndex = setUpBoundarySolve(T, P, compOverAll, candidates, seed,
+                fixedPhaseName, fixedAmount);
+
+        double internalFixedAmount = phaseAmounts[fixedSlotIndex];
+
+        double releasedValue = solveBoundaryInternalGeneric(
+                fixedSlotIndex, internalFixedAmount,
+                ReleasedVariable.COMPOSITION, releasedComponentIndex);
+
+        EquilibriumResult eq = buildEquilibriumResult(true, 0);
+
+        return new BoundarySolveResult(eq, releasedValue);
+    }
+
+    /**
+     * Shared setup for every {@code solveBoundary*} variant: seeds solver
+     * state from {@code seed}, locates (or creates) the fixed phase's
+     * stable slot, and pins its amount at {@code fixedAmount} (floored to
+     * {@link #MIN_PHASE_AMOUNT} -- see the comment previously duplicated
+     * in each variant, now here once).
+     *
+     * @return the fixed phase's stable-slot index
+     */
+    private int setUpBoundarySolve(
+            double T,
+            double P,
+            double[] compOverAll,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult seed,
+            String fixedPhaseName,
+            double fixedAmount) {
+
         if (candidates == null || candidates.isEmpty()) {
             throw new IllegalArgumentException(
                     "At least one phase model is required.");
@@ -807,7 +851,7 @@ public class EquilibriumSolverV2 {
 
         /*
          * validateState()/validateMultiphaseUpdate() (and, for the same
-         * reason, buildEquilibriumMatrix(), which solveBoundaryInternal()
+         * reason, buildEquilibriumMatrix(), which solveBoundaryInternalGeneric()
          * deliberately does NOT call) hardcode omega > 0.0 as an
          * "invalid state" guard everywhere a phase amount is read -- a
          * genuinely fixed-at-zero amount trips that guard even though it
@@ -827,12 +871,7 @@ public class EquilibriumSolverV2 {
             phaseAmounts[fixedSlotIndex] = internalFixedAmount;
         }
 
-        double releasedValue =
-                solveBoundaryInternal(fixedSlotIndex, internalFixedAmount, releasedComponentIndex);
-
-        EquilibriumResult eq = buildEquilibriumResult(true, 0);
-
-        return new BoundarySolveResult(eq, releasedValue);
+        return fixedSlotIndex;
     }
 
     /**
@@ -912,40 +951,57 @@ public class EquilibriumSolverV2 {
             String fixedPhaseName,
             double fixedAmount) {
 
-        if (candidates == null || candidates.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "At least one phase model is required.");
-        }
+        int fixedSlotIndex = setUpBoundarySolve(T, P, compOverAll, candidates, seed,
+                fixedPhaseName, fixedAmount);
 
-        this.T = T;
-        this.P = P;
-        this.phaseModels = candidates;
-        this.targetAmounts = compOverAll.clone();
+        double internalFixedAmount = phaseAmounts[fixedSlotIndex];
 
-        seedFromEquilibriumResult(seed, candidates);
-
-        int fixedSlotIndex = -1;
-        for (int k = 0; k < stablePhases.length; k++) {
-            if (candidates.get(stablePhases[k]).phaseName().equals(fixedPhaseName)) {
-                fixedSlotIndex = k;
-                break;
-            }
-        }
-
-        double internalFixedAmount = Math.max(fixedAmount, MIN_PHASE_AMOUNT);
-
-        if (fixedSlotIndex < 0) {
-            fixedSlotIndex = addNewStableSlot(candidates, fixedPhaseName, internalFixedAmount);
-        } else {
-            phaseAmounts[fixedSlotIndex] = internalFixedAmount;
-        }
-
-        double releasedT =
-                solveBoundaryInternalReleasingT(fixedSlotIndex, internalFixedAmount);
+        double releasedT = solveBoundaryInternalGeneric(
+                fixedSlotIndex, internalFixedAmount, ReleasedVariable.TEMPERATURE, -1);
 
         EquilibriumResult eq = buildEquilibriumResult(true, 0);
 
         return new BoundarySolveResult(eq, releasedT);
+    }
+
+    /**
+     * As {@link #solveBoundaryReleasingT}, but releases PRESSURE instead
+     * of temperature -- the direct P-analogue, symmetric with how {@link
+     * #solveBoundary} releases a composition component. Subject to the
+     * same {@code np <= nc} scope limit documented on {@link
+     * #solveBoundaryReleasingT} (a third stable phase makes the
+     * assembled matrix singular regardless of which single scalar is
+     * released).
+     *
+     * @param T                temperature (K), held fixed while P is released
+     * @param P                pressure to seed the search from (Pa)
+     * @param compOverAll      the FIXED overall composition
+     * @param candidates       candidate phase models
+     * @param seed             the prior converged equilibrium to warm-start from
+     * @param fixedPhaseName   name of the phase to fix at {@code fixedAmount}
+     * @param fixedAmount      the phase's fixed amount (0 for an ordinary ZPF boundary)
+     * @return the boundary equilibrium and the released (solved) pressure
+     */
+    public BoundarySolveResult solveBoundaryReleasingP(
+            double T,
+            double P,
+            double[] compOverAll,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult seed,
+            String fixedPhaseName,
+            double fixedAmount) {
+
+        int fixedSlotIndex = setUpBoundarySolve(T, P, compOverAll, candidates, seed,
+                fixedPhaseName, fixedAmount);
+
+        double internalFixedAmount = phaseAmounts[fixedSlotIndex];
+
+        double releasedP = solveBoundaryInternalGeneric(
+                fixedSlotIndex, internalFixedAmount, ReleasedVariable.PRESSURE, -1);
+
+        EquilibriumResult eq = buildEquilibriumResult(true, 0);
+
+        return new BoundarySolveResult(eq, releasedP);
     }
 
     /**
@@ -1171,15 +1227,18 @@ public class EquilibriumSolverV2 {
      *
      * @return the released component's final solved target-amount value
      */
-    private double solveBoundaryInternal(
+    private double solveBoundaryInternalGeneric(
             int fixedSlotIndex,
             double fixedAmount,
+            ReleasedVariable released,
             int releasedComponentIndex) {
 
         final int nc = targetAmounts.length;
         final int np = stablePhases.length;
 
-        double releasedValue = targetAmounts[releasedComponentIndex];
+        double releasedValue = released == ReleasedVariable.COMPOSITION
+                ? targetAmounts[releasedComponentIndex]
+                : released == ReleasedVariable.TEMPERATURE ? this.T : this.P;
 
         for (int iteration = 0; iteration < maxIterations; iteration++) {
 
@@ -1200,10 +1259,23 @@ public class EquilibriumSolverV2 {
                     GlobalEquilibriumMatrixAssembler.buildRhs(
                             phaseData, stablePhaseAmounts, targetAmounts);
 
-            GlobalEquilibriumMatrixAssembler.Result converted =
-                    GlobalEquilibriumMatrixAssembler.convertToFixedPhaseAmountSystem(
+            GlobalEquilibriumMatrixAssembler.Result converted;
+            switch (released) {
+                case TEMPERATURE:
+                    converted = GlobalEquilibriumMatrixAssembler.convertToFixedPhaseAmountSystemReleasingT(
+                            ordinaryMatrix, ordinaryRhs, phaseData, stablePhaseAmounts,
+                            nc, np, fixedSlotIndex);
+                    break;
+                case PRESSURE:
+                    converted = GlobalEquilibriumMatrixAssembler.convertToFixedPhaseAmountSystemReleasingP(
+                            ordinaryMatrix, ordinaryRhs, phaseData, stablePhaseAmounts,
+                            nc, np, fixedSlotIndex);
+                    break;
+                default:
+                    converted = GlobalEquilibriumMatrixAssembler.convertToFixedPhaseAmountSystem(
                             ordinaryMatrix, ordinaryRhs, nc, np,
                             fixedSlotIndex, releasedComponentIndex);
+            }
 
             equilibriumMatrix = converted.matrix;
             equilibriumRhs = converted.rhs;
@@ -1262,143 +1334,62 @@ public class EquilibriumSolverV2 {
             }
 
             mu = newLambdaChecked.clone();
-            releasedValue += deltaReleased;
-            // Unlike phaseAmounts (floored at MIN_PHASE_AMOUNT) and site
-            // fractions newY (clamped to [1e-14, 1.0]) a few lines above,
-            // this Newton update was previously applied with NO physical
-            // bound: a poorly-seeded boundary solve (e.g. releasing a
-            // composition from a starting point far from the true
-            // boundary) could walk releasedValue arbitrarily far outside
-            // [0, 1] while every other variable stayed bounded, letting
-            // the iteration "converge" (small residuals in an already
-            // inconsistent system) at a physically nonsensical mole
-            // fraction -- confirmed directly: Ag-Cu, T=1205K, fixing
-            // FCC_A1 at zero and releasing x(Cu) from a seed at T=1210K's
-            // LIQUID-only equilibrium converged to x(Cu)=3.153, no
-            // exception thrown. Clamped the same way for consistency.
-            if (releasedValue < 1.0e-14) releasedValue = 1.0e-14;
-            if (releasedValue > 1.0) releasedValue = 1.0;
-            targetAmounts[releasedComponentIndex] = releasedValue;
 
-            if (checkConvergence()) {
+            if (!Double.isFinite(deltaReleased)) {
+                throw new IllegalStateException(
+                        "Non-finite released-variable delta: " + deltaReleased);
+            }
+
+            switch (released) {
+                case TEMPERATURE:
+                    this.T += deltaReleased;
+                    releasedValue = this.T;
+                    break;
+                case PRESSURE:
+                    this.P += deltaReleased;
+                    releasedValue = this.P;
+                    break;
+                default:
+                    releasedValue += deltaReleased;
+                    // Unlike phaseAmounts (floored at MIN_PHASE_AMOUNT) and site
+                    // fractions newY (clamped to [1e-14, 1.0]) a few lines above,
+                    // this Newton update was previously applied with NO physical
+                    // bound: a poorly-seeded boundary solve (e.g. releasing a
+                    // composition from a starting point far from the true
+                    // boundary) could walk releasedValue arbitrarily far outside
+                    // [0, 1] while every other variable stayed bounded, letting
+                    // the iteration "converge" (small residuals in an already
+                    // inconsistent system) at a physically nonsensical mole
+                    // fraction -- confirmed directly: Ag-Cu, T=1205K, fixing
+                    // FCC_A1 at zero and releasing x(Cu) from a seed at T=1210K's
+                    // LIQUID-only equilibrium converged to x(Cu)=3.153, no
+                    // exception thrown. Clamped the same way for consistency.
+                    if (releasedValue < 1.0e-14) releasedValue = 1.0e-14;
+                    if (releasedValue > 1.0) releasedValue = 1.0;
+                    targetAmounts[releasedComponentIndex] = releasedValue;
+            }
+
+            boolean convergedThisIter;
+            switch (released) {
+                case TEMPERATURE:
+                    convergedThisIter = checkConvergence()
+                            && Math.abs(deltaReleased) < tolerance * Math.max(1.0, Math.abs(this.T));
+                    break;
+                case PRESSURE:
+                    convergedThisIter = checkConvergence()
+                            && Math.abs(deltaReleased) < tolerance * Math.max(1.0, Math.abs(this.P));
+                    break;
+                default:
+                    convergedThisIter = checkConvergence();
+            }
+
+            if (convergedThisIter) {
                 return releasedValue;
             }
         }
 
         throw new IllegalStateException(
-                "Boundary solve did not converge within " + maxIterations + " iterations.");
-    }
-
-    /**
-     * As {@link #solveBoundaryInternal}, but the freed column solves for
-     * {@code DeltaT} (applied to {@code this.T}, re-evaluating every
-     * phase at the new temperature each iteration via {@link
-     * #evaluateAllPhases}/{@link #buildPhaseResponses}) instead of a
-     * released composition component's target amount.
-     *
-     * @return the final converged temperature
-     */
-    private double solveBoundaryInternalReleasingT(
-            int fixedSlotIndex,
-            double fixedAmount) {
-
-        final int nc = targetAmounts.length;
-        final int np = stablePhases.length;
-
-        for (int iteration = 0; iteration < maxIterations; iteration++) {
-
-            evaluateAllPhases();
-            buildPhaseResponses();
-
-            PhaseEquilData[] phaseData = new PhaseEquilData[np];
-            double[] stablePhaseAmounts = new double[np];
-            for (int k = 0; k < np; k++) {
-                stablePhaseAmounts[k] = phaseAmounts[k];
-                phaseData[k] = stableSlots.get(k).equilData;
-            }
-
-            double[][] ordinaryMatrix =
-                    GlobalEquilibriumMatrixAssembler.buildMatrix(
-                            phaseData, stablePhaseAmounts, targetAmounts);
-            double[] ordinaryRhs =
-                    GlobalEquilibriumMatrixAssembler.buildRhs(
-                            phaseData, stablePhaseAmounts, targetAmounts);
-
-            GlobalEquilibriumMatrixAssembler.Result converted =
-                    GlobalEquilibriumMatrixAssembler.convertToFixedPhaseAmountSystemReleasingT(
-                            ordinaryMatrix, ordinaryRhs, phaseData, stablePhaseAmounts,
-                            nc, np, fixedSlotIndex);
-
-            equilibriumMatrix = converted.matrix;
-            equilibriumRhs = converted.rhs;
-
-            solveEquilibriumMatrix();
-
-            double deltaT = deltaPhaseAmounts[fixedSlotIndex];
-            deltaPhaseAmounts[fixedSlotIndex] = 0.0;
-
-            calculateInternalCorrections();
-
-            previousMu = (mu != null) ? mu.clone() : new double[nc];
-            previousTotalG = 0.0;
-
-            double[] newLambdaChecked = newLambda.clone();
-            for (int A = 0; A < nc; A++) {
-                if (!Double.isFinite(newLambdaChecked[A])) {
-                    throw new IllegalStateException(
-                            "Non-finite newLambda[" + A + "]: " + newLambdaChecked[A]);
-                }
-            }
-
-            for (int k = 0; k < np; k++) {
-
-                PhaseWork work = stableSlots.get(k);
-
-                if (k == fixedSlotIndex) {
-                    phaseAmounts[k] = fixedAmount;
-                } else {
-                    double trial = phaseAmounts[k] + deltaPhaseAmounts[k];
-                    phaseAmounts[k] = Math.max(trial, MIN_PHASE_AMOUNT);
-                }
-
-                double[] dy = deltaPhaseInternalVars[k];
-                double[] newY = new double[work.y.length];
-                for (int i = 0; i < newY.length; i++) {
-                    double v = work.y[i] + dy[i];
-                    if (v < 1.0e-14) v = 1.0e-14;
-                    if (v > 1.0) v = 1.0;
-                    newY[i] = v;
-                }
-                work.y = newY;
-
-                if (!Double.isFinite(phaseAmounts[k])) {
-                    throw new IllegalStateException(
-                            "Non-finite phase amount for stable slot " + k);
-                }
-
-                int phaseIndex = stablePhases[k];
-                phaseInternalVars[phaseIndex] = work.y.clone();
-
-                evaluatePhaseWork(work);
-                work.mu = newLambdaChecked.clone();
-                recomputeSublatticeMultipliers(work);
-            }
-
-            mu = newLambdaChecked.clone();
-
-            if (!Double.isFinite(deltaT)) {
-                throw new IllegalStateException("Non-finite DeltaT: " + deltaT);
-            }
-
-            this.T += deltaT;
-
-            if (checkConvergence() && Math.abs(deltaT) < tolerance * Math.max(1.0, Math.abs(this.T))) {
-                return this.T;
-            }
-        }
-
-        throw new IllegalStateException(
-                "Boundary solve (releasing T) did not converge within "
+                "Boundary solve (releasing " + released + ") did not converge within "
                 + maxIterations + " iterations.");
     }
 

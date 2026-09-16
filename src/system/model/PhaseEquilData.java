@@ -68,12 +68,26 @@ public final class PhaseEquilData {
     public final double[] dM_dT;
 
     /**
+     * dM_dP[A] = Σ_m dM_A/dy[m] * cP[m], length nc -- the pressure-release
+     * analogue of {@link #dM_dT}, needed to release P as a Newton unknown
+     * the same way T can be released (see {@code
+     * GlobalEquilibriumMatrixAssembler.convertToFixedPhaseAmountSystemReleasingP}).
+     */
+    public final double[] dM_dP;
+
+    /**
      * dG/dT at fixed y -- the phase's own Gibbs-energy T-sensitivity
      * (from {@link system.model.GibbsEnergyModel#dG_dT}), needed as the
      * ΔT coefficient in this phase's OWN phase-equilibrium row when T is
      * released as a Newton unknown: {@code M_A*lambda_A - dG_dT*deltaT = G}.
      */
     public final double dG_dT;
+
+    /**
+     * dG/dP at fixed y (from {@link system.model.GibbsEnergyModel#dG_dP}),
+     * the pressure-release analogue of {@link #dG_dT}.
+     */
+    public final double dG_dP;
 
     /** Diagnostic energy list. */
     public final double[] eList;
@@ -89,7 +103,9 @@ public final class PhaseEquilData {
                           double[] cT,
                           double[] cP,
                           double[] dM_dT,
+                          double[] dM_dP,
                           double dG_dT,
+                          double dG_dP,
                           double[] eList) {
         this.G      = G;
         this.dely   = dely;
@@ -102,7 +118,9 @@ public final class PhaseEquilData {
         this.cT     = cT;
         this.cP     = cP;
         this.dM_dT  = dM_dT;
+        this.dM_dP  = dM_dP;
         this.dG_dT  = dG_dT;
+        this.dG_dP  = dG_dP;
         this.eList  = eList;
     }
 }

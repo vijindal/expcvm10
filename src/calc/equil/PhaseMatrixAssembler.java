@@ -167,6 +167,16 @@ public final class PhaseMatrixAssembler {
             dM_dT[A] = sum;
         }
 
+        // dM_A/dP -- P-release analogue of dM_dT, using cP instead of cT.
+        double[] dM_dP = new double[nc];
+        for (int A = 0; A < nc; A++) {
+            double sum = 0.0;
+            for (int m = 0; m < nip; m++) {
+                sum += dM[A][m] * cP[m];
+            }
+            dM_dP[A] = sum;
+        }
+
         // mA = M_A^phase (Sundman Eq. 2): moles of component A per formula
         // unit, unnormalized.
         double[] mA = model.moles(y);
@@ -196,7 +206,9 @@ public final class PhaseMatrixAssembler {
         }
 
         double dGdT = model.dG_dT(T, P, y);
+        double dGdP = model.dG_dP(T, P, y);
 
-        return new PhaseEquilData(G, delyN, delnN, x, mA, eMat, eMatNC, cG, cT, cP, dM_dT, dGdT, null);
+        return new PhaseEquilData(G, delyN, delnN, x, mA, eMat, eMatNC, cG, cT, cP,
+                dM_dT, dM_dP, dGdT, dGdP, null);
     }
 }

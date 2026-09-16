@@ -173,10 +173,12 @@ final class EquilibriumSolveHelper {
 
     /**
      * Calls {@link EquilibriumSolverV2#solveBoundaryReleasingT} (the
-     * temperature-release variant of Algorithm C2, used to locate a
-     * genuine invariant node where the stable set jumps by more than one
-     * phase at a single point -- see that method's javadoc), returning
-     * {@code null} instead of throwing if the solve fails to converge.
+     * temperature-release variant of Algorithm C2, used when the walk
+     * axis being followed at the crossing is TEMPERATURE -- Sundman 2021
+     * Fig. 6 releases whichever condition is the walk's own active axis,
+     * confirmed against OpenCalphad's {@code map_calcnode}, {@code
+     * jax=abs(mapline%axandir)}, smp2A.F90), returning {@code null}
+     * instead of throwing if the solve fails to converge.
      */
     static EquilibriumSolverV2.BoundarySolveResult solveBoundaryReleasingTOrNull(
             double t,
@@ -190,6 +192,31 @@ final class EquilibriumSolveHelper {
         try {
 
             return new EquilibriumSolverV2().solveBoundaryReleasingT(
+                    t, p, comp, candidates, seed, fixedPhaseName, fixedAmount);
+
+        } catch (RuntimeException e) {
+
+            return null;
+        }
+    }
+
+    /**
+     * As {@link #solveBoundaryReleasingTOrNull}, but releases PRESSURE --
+     * used when the walk axis being followed at the crossing is
+     * PRESSURE, the direct P-analogue of the T case.
+     */
+    static EquilibriumSolverV2.BoundarySolveResult solveBoundaryReleasingPOrNull(
+            double t,
+            double p,
+            double[] comp,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult seed,
+            String fixedPhaseName,
+            double fixedAmount) {
+
+        try {
+
+            return new EquilibriumSolverV2().solveBoundaryReleasingP(
                     t, p, comp, candidates, seed, fixedPhaseName, fixedAmount);
 
         } catch (RuntimeException e) {

@@ -194,7 +194,13 @@ public final class MapTracer {
          * More than one phase changed and the crossing could not be resolved
          * to a single-phase boundary (matches {@link #trace}'s incomplete-crossing fallback).
          */
-        UNRESOLVED_MULTI_PHASE_CHANGE
+        UNRESOLVED_MULTI_PHASE_CHANGE,
+        /**
+         * The mid-line {@link PhaseDiagramEngine#isGloballyStable} check
+         * (§2.3.3's "regular intervals along a line") failed at an
+         * ordinary, non-crossing point.
+         */
+        GLOBALLY_UNSTABLE
     }
 
     /**
@@ -461,6 +467,29 @@ public final class MapTracer {
             double[] compAtStart,
             List<GibbsEnergyModel> candidates,
             EquilibriumResult startResult) {
+        return walkOneSegment(startWalkValue, startStableNames, walkAxis, releaseAxis,
+                fixedT, fixedP, compAtStart, candidates, startResult, 0);
+    }
+
+    /**
+     * As {@link #walkOneSegment(double, Set, AxisConfig, AxisConfig,
+     * double, double, double[], List, EquilibriumResult)}, additionally
+     * running the mid-line {@code GLOBAL STABILITY CHECK} (§2.3.3) every
+     * {@code globalCheckInterval} ordinary (non-crossing) points -- {@code
+     * 0} disables it. See {@link StepTracer#DEFAULT_GLOBAL_CHECK_INTERVAL}
+     * for OC's own default (shared with {@link StepTracer}, not duplicated).
+     */
+    public SegmentResult walkOneSegment(
+            double startWalkValue,
+            Set<String> startStableNames,
+            AxisConfig walkAxis,
+            AxisConfig releaseAxis,
+            double fixedT,
+            double fixedP,
+            double[] compAtStart,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult startResult,
+            int globalCheckInterval) {
 
         if (releaseAxis.type != AxisConfig.Type.COMPOSITION) {
             throw new IllegalArgumentException(
@@ -470,7 +499,7 @@ public final class MapTracer {
         }
 
         return walkOneSegmentInternal(startWalkValue, startStableNames, walkAxis, releaseAxis,
-                fixedT, fixedP, compAtStart, candidates, startResult);
+                fixedT, fixedP, compAtStart, candidates, startResult, globalCheckInterval);
     }
 
     /**
@@ -527,7 +556,7 @@ public final class MapTracer {
         double fixedP = conds.fixedPressure();
 
         return walkOneSegmentInternal(startWalkValue, startStableNames, walkAxis, releaseAxis,
-                fixedT, fixedP, compAtStart, candidates, startResult);
+                fixedT, fixedP, compAtStart, candidates, startResult, 0);
     }
 
     /**
@@ -548,7 +577,8 @@ public final class MapTracer {
             double fixedP,
             double[] compAtStart,
             List<GibbsEnergyModel> candidates,
-            EquilibriumResult startResult) {
+            EquilibriumResult startResult,
+            int globalCheckInterval) {
 
         double[] comp = compAtStart.clone();
         Set<String> runNames = startStableNames;
@@ -589,6 +619,12 @@ public final class MapTracer {
                 points.add(current);
                 previousWalkValue = v;
                 previousResult = current;
+
+                if (globalCheckInterval > 0 && points.size() % globalCheckInterval == 0
+                        && !PhaseDiagramEngine.isGloballyStable(current, candidates)) {
+                    return new SegmentResult(coords, points, SegmentEnd.GLOBALLY_UNSTABLE,
+                            v, comp.clone(), null, null, current);
+                }
                 continue;
             }
 
@@ -598,6 +634,7 @@ public final class MapTracer {
 
             double effectiveWalkValue = v;
             double effectiveT = t;
+            double effectiveP = p;
             double[] effectiveComp = comp;
             Set<String> effectiveCurrentNames = currentNames;
 
@@ -611,11 +648,11 @@ public final class MapTracer {
                     appearingOrDisappearing = retried.appearingOrDisappearing;
                     effectiveCurrentNames = retried.currentNames;
                     effectiveWalkValue = retried.walkValue;
-                    // effectiveT only changes when the walk axis IS temperature
-                    // (retried.walkValue is the walk axis's own value, not
-                    // necessarily T -- previously hardcoded assuming
-                    // walkAxis.type == TEMPERATURE, now generalized per Step 5b).
+                    // effectiveT/effectiveP only change when the walk axis IS
+                    // that variable (retried.walkValue is the walk axis's own
+                    // value).
                     effectiveT = walkAxis.type == AxisConfig.Type.TEMPERATURE ? retried.walkValue : fixedT;
+                    effectiveP = walkAxis.type == AxisConfig.Type.PRESSURE ? retried.walkValue : fixedP;
                     effectiveComp = retried.comp;
                 }
             }
@@ -626,17 +663,65 @@ public final class MapTracer {
                         v, comp.clone(), effectiveCurrentNames, null, current);
             }
 
-            EquilibriumSolverV2.BoundarySolveResult boundary =
-                    EquilibriumSolveHelper.solveBoundaryOrNull(
-                            effectiveT, p, effectiveComp, candidates, previousResult,
+            /*
+             * Sundman 2021 Fig. 6 (Algorithm C2): "fix the phase with 0
+             * amount, RELEASE THE AXIS CONDITION" -- the released
+             * condition is whichever variable the walk is currently
+             * incrementing, not always composition. Confirmed directly
+             * against OpenCalphad's own implementation
+             * (src/stepmapplot/smp2A.F90, map_calcnode: "remove here the
+             * axis condition, abs(mapline%axandir) gives active axis" --
+             * jax=abs(mapline%axandir), the SAME active-axis index C1
+             * uses and can change mid-line). This walker only ever fixes
+             * ONE walk axis per segment (no in-segment axis switching),
+             * so walkAxis.type alone determines which release mechanism
+             * applies; releaseAxis (always COMPOSITION today, see this
+             * class's public walkOneSegment overloads) is used only to
+             * pick WHICH composition component to report/plot when the
+             * walk axis itself is T or P.
+             */
+            EquilibriumSolverV2.BoundarySolveResult boundary;
+            switch (walkAxis.type) {
+                case TEMPERATURE:
+                    boundary = EquilibriumSolveHelper.solveBoundaryReleasingTOrNull(
+                            effectiveT, effectiveP, effectiveComp, candidates, previousResult,
+                            appearingOrDisappearing, 0.0);
+                    break;
+                case PRESSURE:
+                    boundary = EquilibriumSolveHelper.solveBoundaryReleasingPOrNull(
+                            effectiveT, effectiveP, effectiveComp, candidates, previousResult,
+                            appearingOrDisappearing, 0.0);
+                    break;
+                default:
+                    boundary = EquilibriumSolveHelper.solveBoundaryOrNull(
+                            effectiveT, effectiveP, effectiveComp, candidates, previousResult,
                             appearingOrDisappearing, 0.0,
                             releaseAxis.componentIndex);
-
-            double crossingReleaseValue = effectiveComp[releaseAxis.componentIndex];
-            if (boundary != null) {
-                crossingReleaseValue = boundary.releasedComponentValue;
-                effectiveComp[releaseAxis.componentIndex] = crossingReleaseValue;
             }
+
+            if (boundary != null) {
+                switch (walkAxis.type) {
+                    case TEMPERATURE:
+                        effectiveT = boundary.releasedComponentValue;
+                        effectiveWalkValue = effectiveT;
+                        break;
+                    case PRESSURE:
+                        effectiveP = boundary.releasedComponentValue;
+                        effectiveWalkValue = effectiveP;
+                        break;
+                    default:
+                        effectiveComp[releaseAxis.componentIndex] = boundary.releasedComponentValue;
+                }
+            }
+
+            // effectiveComp already reflects the boundary-converged overall
+            // composition in every case: the COMPOSITION-release branch
+            // writes the solved value into it directly above; the T/P-release
+            // branches never touch targetAmounts (only T or P moves), so
+            // effectiveComp is unchanged from the input composition, which
+            // IS the boundary-converged one (Algorithm C2 holds composition
+            // fixed while releasing the walk axis in that case).
+            double crossingReleaseValue = effectiveComp[releaseAxis.componentIndex];
 
             Set<String> nodeNames = new LinkedHashSet<>(runNames);
             nodeNames.addAll(effectiveCurrentNames);
@@ -644,7 +729,7 @@ public final class MapTracer {
             SegmentEnd end = SegmentEnd.CROSSING;
             if (nodeNames.size() >= 3) {
                 List<InvariantExitFinder.ExitCandidate> exits =
-                        checkInvariant(nodeNames, candidates, effectiveT, p, effectiveComp,
+                        checkInvariant(nodeNames, candidates, effectiveT, effectiveP, effectiveComp,
                                 appearingOrDisappearing);
                 if (!exits.isEmpty()) {
                     end = SegmentEnd.INVARIANT;
