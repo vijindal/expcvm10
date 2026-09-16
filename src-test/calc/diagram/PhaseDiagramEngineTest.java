@@ -6,7 +6,9 @@ import system.model.GibbsEnergyModel;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -188,20 +190,173 @@ public class PhaseDiagramEngineTest {
     }
 
     @Test
-    void mergeDedupNetworkIsNotYetImplemented() {
-        assertThrows(UnsupportedOperationException.class,
-                () -> PhaseDiagramEngine.mergeDedupNetwork(new NodeRegistry()));
+    void mergeDedupNetworkFiltersExcludedLinesOnly() {
+        // Node identity is governed by Node.matches (stable phases, T/P,
+        // chemical potentials), so build the two nodes via the registry's
+        // own findOrCreate rather than constructing Node directly.
+        NodeRegistry registry = new NodeRegistry();
+        Node registryStart = registry.findOrCreate(
+                dummyEquilibrium(1000.0), new double[] { 1000.0, 0.5 }, new double[] { 0.5, 0.5 });
+        Node registryEnd = registry.findOrCreate(
+                dummyEquilibrium(1050.0), new double[] { 1050.0, 0.5 }, new double[] { 0.6, 0.4 });
+
+        Line keptLine = new Line(registryStart, List.of(), 0, +1);
+        keptLine.startWalking();
+        keptLine.terminateAtNode(registryEnd);
+        registryStart.addLine(keptLine);
+
+        Line excludedLine = new Line(registryStart, List.of(), 0, -1);
+        excludedLine.startWalking();
+        excludedLine.terminateAtNode(registryEnd);
+        excludedLine.markExcluded();
+        registryStart.addLine(excludedLine);
+
+        List<Line> result = PhaseDiagramEngine.mergeDedupNetwork(registry);
+
+        assertEquals(1, result.size());
+        assertTrue(result.contains(keptLine));
     }
 
     @Test
-    void identifyPhaseRegionsIsNotYetImplemented() {
-        assertThrows(UnsupportedOperationException.class,
-                () -> PhaseDiagramEngine.identifyPhaseRegions(new NodeRegistry()));
+    void mergeDedupNetworkOnEmptyRegistryReturnsEmptyList() {
+        assertTrue(PhaseDiagramEngine.mergeDedupNetwork(new NodeRegistry()).isEmpty());
+    }
+
+    private static system.ports.EquilibriumResult dummyEquilibrium(double t) {
+        system.ports.EquilibriumResult.PhaseResult liquid = new system.ports.EquilibriumResult.PhaseResult(
+                "LIQUID", "CEF", 1.0, new double[] { 0.5, 0.5 }, new double[] { 0.5, 0.5 },
+                -1000.0, 0.0, 1.0);
+        return new system.ports.EquilibriumResult(t, 101325.0, new double[] { -1000.0, -1000.0 },
+                List.of(liquid), List.of(), true, 5);
     }
 
     @Test
-    void classifyPlotIsNotYetImplemented() {
+    void identifyPhaseRegionsLabelsNodesAndLines() {
+        NodeRegistry registry = new NodeRegistry();
+        Node startNode = registry.findOrCreate(
+                dummyEquilibrium(1000.0), new double[] { 1000.0, 0.5 }, new double[] { 0.5, 0.5 });
+        Node endNode = registry.findOrCreate(
+                twoPhaseEquilibrium(1050.0), new double[] { 1050.0, 0.5 }, new double[] { 0.6, 0.4 });
+
+        Line line = new Line(startNode, List.of(), 0, +1);
+        line.startWalking();
+        line.addPoint(twoPhaseEquilibrium(1010.0), new double[] { 1010.0, 0.5 });
+        line.terminateAtNode(endNode);
+        startNode.addLine(line);
+
+        PhaseRegions regions = PhaseDiagramEngine.identifyPhaseRegions(registry);
+
+        assertEquals(Set.of("LIQUID"), regions.nodeLabels().get(startNode));
+        assertEquals(Set.of("LIQUID", "FCC_A1"), regions.nodeLabels().get(endNode));
+        assertEquals(Set.of("LIQUID", "FCC_A1"), regions.lineLabels().get(line));
+        assertTrue(regions.tieTriangles().isEmpty());
+    }
+
+    @Test
+    void identifyPhaseRegionsBuildsTieTriangleAtThreePhaseNode() {
+        NodeRegistry registry = new NodeRegistry();
+        Node node = registry.findOrCreate(
+                threePhaseEquilibrium(), new double[] { 1000.0, 0.5 }, new double[] { 0.34, 0.33 });
+
+        PhaseRegions regions = PhaseDiagramEngine.identifyPhaseRegions(registry);
+
+        assertEquals(1, regions.tieTriangles().size());
+        PhaseRegions.TieTriangle triangle = regions.tieTriangles().get(0);
+        assertEquals(node, triangle.node);
+        assertEquals(List.of("LIQUID", "FCC_A1", "BCC_A2"), triangle.phaseNames);
+        assertEquals(3, triangle.vertices.size());
+        // Each vertex IS the corresponding phase's own composition --
+        // Sundman 2021 §2.4's "corners indicate the compositions of the
+        // three phases in equilibrium" -- no separate geometry computed.
+        assertArrayEquals(new double[] { 0.2, 0.8 }, triangle.vertices.get(0), 1e-12);
+        assertArrayEquals(new double[] { 0.9, 0.1 }, triangle.vertices.get(1), 1e-12);
+        assertArrayEquals(new double[] { 0.05, 0.95 }, triangle.vertices.get(2), 1e-12);
+    }
+
+    private static system.ports.EquilibriumResult twoPhaseEquilibrium(double t) {
+        system.ports.EquilibriumResult.PhaseResult liquid = new system.ports.EquilibriumResult.PhaseResult(
+                "LIQUID", "CEF", 0.5, new double[] { 0.5, 0.5 }, new double[] { 0.5, 0.5 },
+                -1000.0, 0.0, 1.0);
+        system.ports.EquilibriumResult.PhaseResult fcc = new system.ports.EquilibriumResult.PhaseResult(
+                "FCC_A1", "CEF", 0.5, new double[] { 0.7, 0.3 }, new double[] { 0.7, 0.3 },
+                -900.0, 0.0, 1.0);
+        return new system.ports.EquilibriumResult(t, 101325.0, new double[] { -1000.0, -1000.0 },
+                List.of(liquid, fcc), List.of(), true, 5);
+    }
+
+    private static system.ports.EquilibriumResult threePhaseEquilibrium() {
+        system.ports.EquilibriumResult.PhaseResult liquid = new system.ports.EquilibriumResult.PhaseResult(
+                "LIQUID", "CEF", 0.34, new double[] { 0.2, 0.8 }, new double[] { 0.2, 0.8 },
+                -1000.0, 0.0, 1.0);
+        system.ports.EquilibriumResult.PhaseResult fcc = new system.ports.EquilibriumResult.PhaseResult(
+                "FCC_A1", "CEF", 0.33, new double[] { 0.9, 0.1 }, new double[] { 0.9, 0.1 },
+                -900.0, 0.0, 1.0);
+        system.ports.EquilibriumResult.PhaseResult bcc = new system.ports.EquilibriumResult.PhaseResult(
+                "BCC_A2", "CEF", 0.33, new double[] { 0.05, 0.95 }, new double[] { 0.05, 0.95 },
+                -950.0, 0.0, 1.0);
+        return new system.ports.EquilibriumResult(1000.0, 101325.0, new double[] { -1000.0, -1000.0 },
+                List.of(liquid, fcc, bcc), List.of(), true, 5);
+    }
+
+    @Test
+    void classifyPlotBinaryTxConvertsNodeRegistryToPhaseDiagramResult() {
+        NodeRegistry registry = new NodeRegistry();
+        Node startNode = registry.findOrCreate(
+                dummyEquilibrium(1000.0), new double[] { 1000.0, 0.5 }, new double[] { 0.5, 0.5 });
+        Node endNode = registry.findOrCreate(
+                twoPhaseEquilibrium(1050.0), new double[] { 1050.0, 0.6 }, new double[] { 0.6, 0.4 });
+
+        Line line = new Line(startNode, List.of(), 0, +1);
+        line.startWalking();
+        line.addPoint(dummyEquilibrium(1000.0), new double[] { 1000.0, 0.5 });
+        line.addPoint(twoPhaseEquilibrium(1050.0), new double[] { 1050.0, 0.6 });
+        line.terminateAtNode(endNode);
+        startNode.addLine(line);
+
+        PhaseDiagramResult result = PhaseDiagramEngine.classifyPlot(
+                registry, PhaseDiagramEngine.PlotType.BINARY_T_X,
+                new String[] { "T", "x(Cu)" }, new double[] { 900.0, 0.0 }, new double[] { 1100.0, 1.0 });
+
+        assertEquals(1, result.getLines().size());
+        assertEquals(2, result.getNodes().size());
+        assertEquals(2, result.getLines().get(0).size());
+        for (PhaseDiagramResult.NodePoint node : result.getNodes()) {
+            assertEquals(PhaseDiagramResult.NodePoint.Type.CROSSING, node.type,
+                    "2 or fewer stable phases on a 2-axis diagram is an ordinary crossing, not an invariant");
+        }
+    }
+
+    @Test
+    void classifyPlotRejectsWrongAxisCount() {
+        assertThrows(IllegalArgumentException.class,
+                () -> PhaseDiagramEngine.classifyPlot(
+                        new NodeRegistry(), PhaseDiagramEngine.PlotType.BINARY_T_X,
+                        new String[] { "T" }, new double[] { 900.0 }, new double[] { 1100.0 }),
+                "BINARY_T_X needs 2 axes -- VALIDATE PLOT should reject 1");
+    }
+
+    @Test
+    void classifyPlotPropertyOrStepDiagramAcceptsOneAxis() {
+        PhaseDiagramResult result = PhaseDiagramEngine.classifyPlot(
+                new NodeRegistry(), PhaseDiagramEngine.PlotType.PROPERTY_OR_STEP_DIAGRAM,
+                new String[] { "T" }, new double[] { 900.0 }, new double[] { 1100.0 });
+        assertTrue(result.getLines().isEmpty());
+        assertTrue(result.getNodes().isEmpty());
+    }
+
+    @Test
+    void classifyPlotStillThrowsForUnimplementedPlotTypes() {
         assertThrows(UnsupportedOperationException.class,
-                () -> PhaseDiagramEngine.classifyPlot(new NodeRegistry(), PhaseDiagramEngine.PlotType.BINARY_T_X));
+                () -> PhaseDiagramEngine.classifyPlot(
+                        new NodeRegistry(), PhaseDiagramEngine.PlotType.ACTIVITY_OR_CHEMICAL_POTENTIAL,
+                        new String[] { "T", "AC(CU)" }, new double[] { 900.0, 0.0 }, new double[] { 1100.0, 1.0 }));
+        assertThrows(UnsupportedOperationException.class,
+                () -> PhaseDiagramEngine.classifyPlot(
+                        new NodeRegistry(), PhaseDiagramEngine.PlotType.H_X_S_X_G_X,
+                        new String[] { "x(Cu)", "H" }, new double[] { 0.0, 0.0 }, new double[] { 1.0, 1.0 }));
+        assertThrows(UnsupportedOperationException.class,
+                () -> PhaseDiagramEngine.classifyPlot(
+                        new NodeRegistry(), PhaseDiagramEngine.PlotType.MULTICOMPONENT_ISOPLETH_OR_PSEUDO_ISOTHERMAL,
+                        new String[] { "T", "x" }, new double[] { 0.0, 0.0 }, new double[] { 1.0, 1.0 }));
     }
 }

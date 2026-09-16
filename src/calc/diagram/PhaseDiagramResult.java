@@ -1,11 +1,17 @@
-package ui.result;
+package calc.diagram;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 /**
- * Output DTO for a phase diagram calculation.
+ * Output DTO for a phase diagram calculation -- the flowchart's {@code
+ * CLASSIFY REQUESTED PLOT / VALIDATE PLOT} box's return type ({@link
+ * PhaseDiagramEngine#classifyPlot}). Lives in {@code calc.diagram}, not
+ * {@code ui.result}: the calculation layer hands the UI layer a complete,
+ * ready-to-render result -- {@code calc/} must not import {@code ui/}
+ * (see README's boundary rules), so this DTO is a {@code calc/diagram}
+ * type {@code ui/} imports, not the reverse.
  *
  * <p>Contains rendering-ready data:
  * <ul>

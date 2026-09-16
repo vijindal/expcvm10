@@ -2,7 +2,7 @@ package ui.gui;
 
 import system.ports.EquilibriumResult;
 import ui.result.CalculationResult;
-import ui.result.PhaseDiagramResult;
+import calc.diagram.PhaseDiagramResult;
 import ui.result.PropertyScanResult;
 import util.AppLevel;
 import util.LoggingConfig;

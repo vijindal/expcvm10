@@ -168,4 +168,54 @@ public class PhaseDiagramEngineEndToEndTest {
                 "chained defineSystem->drainStepLoop should find OC's own confirmed "
                 + "liquidus crossing at T=1176.13K");
     }
+
+    @Test
+    void chainsDrainC1LoopThroughClassifyPlotForABinaryMap() throws IOException {
+        // SAME OC-confirmed Ag-Cu liquidus crossing as
+        // chainsDefineSystemThroughDrainC1LoopForABinaryMap, now also
+        // pushed through classifyPlot -- proving the whole flowchart
+        // sequence (drainC1Loop -> mergeDedupNetwork (inside classifyPlot)
+        // -> classifyPlot) reaches a real, OC-verifiable
+        // PhaseDiagramResult, not just a NodeRegistry.
+        var system = PhaseDiagramEngine.defineSystem(
+                "data/agcu.TDB", List.of("AG", "CU"), List.of("LIQUID", "FCC_A1"));
+
+        double startT = PhaseDiagramEngine.generateStartingPoints(1150.0).get(0)[0];
+
+        AxisConfig walkAxis = new AxisConfig("T / K", AxisConfig.Type.TEMPERATURE, 1150.0, 1230.0, 5.0);
+        AxisConfig releaseAxis = new AxisConfig("x(Cu)", 1, 0.01, 0.6, 0.01);
+
+        NodeRegistry registry = PhaseDiagramEngine.drainC1Loop(
+                walkAxis, releaseAxis, startT, 101325.0, startT,
+                new double[] { 0.95, 0.05 }, system.phaseModels());
+
+        PhaseDiagramResult result = PhaseDiagramEngine.classifyPlot(
+                registry, PhaseDiagramEngine.PlotType.BINARY_T_X,
+                new String[] { walkAxis.name, releaseAxis.name },
+                new double[] { walkAxis.min, releaseAxis.min },
+                new double[] { walkAxis.max, releaseAxis.max });
+
+        assertTrue(result.getLines().size() >= 1, "should have at least one plotted ZPF line");
+
+        boolean foundOcConfirmedLiquidusNode = false;
+        for (PhaseDiagramResult.NodePoint node : result.getNodes()) {
+            double t = node.axisValues[0];
+            if (t >= 1176.0 && t <= 1180.0 && Set.copyOf(node.stablePhases).equals(Set.of("FCC_A1", "LIQUID"))) {
+                foundOcConfirmedLiquidusNode = true;
+            }
+        }
+        assertTrue(foundOcConfirmedLiquidusNode,
+                "classifyPlot's own PhaseDiagramResult should still carry OC's own confirmed "
+                + "liquidus crossing near T=1176.13K");
+
+        boolean foundLineThroughLiquidusPhases = false;
+        for (PhaseDiagramResult.LineSegment line : result.getLines()) {
+            if (Set.copyOf(line.stablePhases).equals(Set.of("FCC_A1", "LIQUID"))) {
+                foundLineThroughLiquidusPhases = true;
+                assertTrue(line.size() >= 2, "a plotted ZPF line should carry more than one sampled point");
+            }
+        }
+        assertTrue(foundLineThroughLiquidusPhases,
+                "should have a plotted LineSegment labeled with the same FCC_A1+LIQUID stable set");
+    }
 }

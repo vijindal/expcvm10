@@ -4,7 +4,7 @@ import calc.diagram.AxisConfig;
 import session.CalculationSession;
 import system.ports.EquilibriumResult;
 import ui.result.CoarseDiagramResult;
-import ui.result.PhaseDiagramResult;
+import calc.diagram.PhaseDiagramResult;
 
 import java.io.IOException;
 import java.util.List;

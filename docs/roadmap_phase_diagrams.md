@@ -113,20 +113,39 @@ DATABASE
                                   └──────→ back to C1
     │
     ▼
-[❌] MERGE / DEDUP NETWORK
+[✅] MERGE / DEDUP NETWORK
         └── PhaseDiagramEngine.mergeDedupNetwork
-            (final implementation cleanup;
-             C2 should already perform node reuse)
+            (post-hoc filter of Line.isExcluded() lines, ported
+             from OC's ocplot2/ocplot3 EXCLUDEDLINE guard;
+             node-matching dedup was already inline via
+             NodeRegistry.findOrCreate/Node.matches)
     │
     ▼
-[❌] IDENTIFY / LABEL PHASE REGIONS
+[✅] IDENTIFY / LABEL PHASE REGIONS
         └── PhaseDiagramEngine.identifyPhaseRegions
-            (no computational-geometry algorithm specified
-             by Sundman 2021)
+            (returns PhaseRegions: Line/Node stable-phase-set
+             labels, plus a TieTriangle per 3-phase node per
+             §2.4/§4.2's "green triangles"; formatter-verified
+             against a real OC eutectic capture on agcu.TDB.
+             Enclosed-area polygons for single-/two-phase
+             regions stay out of scope -- neither OC nor the
+             paper produces one)
     │
     ▼
-[❌] CLASSIFY REQUESTED PLOT / VALIDATE PLOT
+[⚠️] CLASSIFY REQUESTED PLOT / VALIDATE PLOT
         └── PhaseDiagramEngine.classifyPlot
+            (BINARY_T_X/PROPERTY_OR_STEP_DIAGRAM/TERNARY_ISOTHERMAL/
+             TERNARY_ISOPLETH implemented -- builds the complete
+             PhaseDiagramResult directly from NodeRegistry/Line,
+             calc/diagram now owns PhaseDiagramResult itself per
+             this project's "calc hands ui a complete result,
+             never the reverse" layering rule; formatter-verified
+             against the Ag-Cu liquidus, PhaseDiagramEngineEndToEndTest.
+             ACTIVITY_OR_CHEMICAL_POTENTIAL/H_X_S_X_G_X/
+             MULTICOMPONENT_ISOPLETH_OR_PSEUDO_ISOTHERMAL still
+             throw -- need a reference-state convention, H/S
+             computation, and ternary GUI rendering respectively,
+             each a separate follow-up)
     │
     ▼
 PHASE DIAGRAM / PROPERTY DIAGRAM

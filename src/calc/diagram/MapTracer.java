@@ -1,11 +1,10 @@
 package calc.diagram;
 
 import calc.equil.EquilibriumSolverV2;
+import calc.diagram.PhaseDiagramResult.LineSegment;
+import calc.diagram.PhaseDiagramResult.NodePoint;
 import system.model.GibbsEnergyModel;
 import system.ports.EquilibriumResult;
-import ui.result.PhaseDiagramResult;
-import ui.result.PhaseDiagramResult.LineSegment;
-import ui.result.PhaseDiagramResult.NodePoint;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;

@@ -1,0 +1,235 @@
+
+3A unfished preparations for XTDB
+
+
+Open Calphad (OC) software version   6.129 , linked 2026-09-14 09:41
+with command line monitor version  75
+
+This program is available with a GNU General Public License.
+either version 2 of the License, or any later version.
+It includes the General Thermodynamic Package, version GTP-3.31,
+Hillert's equilibrium calculation algorithm version HMS-3.0 ,
+step/map/plot software version SMP-2.30 using GNUPLOT 5.2 graphics.
+Numerical routines are extracted from LAPACK and BLAS and
+the assessment procedure uses LMDIF from ANL.
+
+Linked with OpenMp for parallel execution
+ Warning, no environment variable OCHOME and no help file
+ Working directory is: /mnt/d/codes/opencalphad/examples/macros
+--->OC6:new Y
+ No step or map results to delete
+ All data removed, reinitiating
+
+3A unfished preparations for XTDB
+
+ Warning, no environment variable OCHOME and no help file
+ Working directory is: /mnt/d/codes/opencalphad/examples/macros
+--->OC6:
+--->OC6:set echo Y
+--->OC6:r t ./agcu
+... echo: r t ./agcu
+ 3E Database file name ./agcu.TDB
+Database has  2 elements: AG CU
+Give the elements to select, finish with empty line
+Select elements /all/:
+ All elements selected
+3E reading database file: ./agcu.TDB
+3E Out of    15 model parameters    15 have been entered
+
+There are     3 bibliographic references
+REF283          'Alan Dinsdale, SGTE Data for Pure Elements, Calphad Vol 
+                 15(1991) p 317-425, also in NPL Report DMA(A)195 Rev. August 
+                 1990'
+REF137          'F.H. Hayes, H.L. Lukas, G. Effenberg, G. Petzow, Z. fur 
+                 Metallkde, Vol 77 (1986), No 11, p 749-754; AG-CU-PB'
+REF135          'Unassessed parameter, inserted to make this phase less 
+                 stable.'
+
+--->OC6:set cond t=1055.8 p=1e5 n=1 x(cu)=.32
+... echo: set cond t=1055.8 p=1e5 n=1 x(cu)=.32
+--->OC6:c e
+... echo: c e
+ 3Y Composition set(s) created:            1
+Gridmin:     128 points   8.83E-04 s and       2 clockcycles, T= 1055.80
+ 3Y leaving global_gridmin
+Equilibrium result:   9 its,  2.7250E-03 s,      8 cc, GS= -5.7685656E+04 J/mol
+--->OC6:l r 2
+... echo: l r 2
+
+OC version  6.129  equilibrium:   1, DEFAULT_EQUILIBRIUM        2026.09.16
+Conditions .................................................:
+  1:T=1055.8, 2:P=100000, 3:N=1, 4:X(CU)=0.32
+ Degrees of freedom are   0
+
+Some global data, reference state SER ......................:
+T=   1055.80 K (   782.65 C), P=  1.0000E+05 Pa, V=  0.0000E+00 m3
+N=   1.0000E+00 moles, B=   9.3686E+01 g, RT=   8.7785E+03 J/mol
+G= -5.76857E+04 J, G/N=-5.7686E+04 J/mol, H= 2.3712E+04 J, S= 7.710E+01 J/K
+
+Some data for components ...................................:
+Component name    Moles      Mole-fr  Chem.pot/RT  Activities  Ref.state
+AG                6.8000E-01  0.68000 -6.9653E+00  9.4412E-04  SER (default)   
+CU                3.2000E-01  0.32000 -5.7341E+00  3.2339E-03  SER (default)   
+
+Some data for phases .......................................:
+Name                Status Moles      Volume    Form.Units Cmp/FU dGm/RT  Comp:
+FCC_A1#1................ E  7.694E-01  0.00E+00  7.69E-01    1.00  0.00E+00  X:
+ AG     8.70105E-01  CU     1.29895E-01
+Constitution: Sublattice  1 with     2 constituents and     1.000000 sites
+ AG     8.70105E-01  CU     1.29895E-01
+              Sublattice  2 with     1 constituents and     1.000000 sites
+ VA     1.00000E+00
+
+FCC_A1_AUTO#2........... E  2.306E-01  0.00E+00  2.31E-01    1.00  0.00E+00  X:
+ CU     9.54265E-01  AG     4.57353E-02
+Constitution: Sublattice  1 with     2 constituents and     1.000000 sites
+ CU     9.54265E-01  AG     4.57353E-02
+              Sublattice  2 with     1 constituents and     1.000000 sites
+ VA     1.00000E+00
+
+--->OC6:
+--->OC6:set cond t=1055.9
+... echo: set cond t=1055.9
+--->OC6:c e
+... echo: c e
+Gridmin:     128 points   3.91E-04 s and       1 clockcycles, T= 1055.90
+ 3Y leaving global_gridmin
+Phase change iteration:     4  +FCC_A1_AUTO#2
+Phase change iteration:     5  +FCC_A1_AUTO#2
+Phase change iteration:     6  +FCC_A1_AUTO#2
+Phase change iteration:     7  +FCC_A1_AUTO#2
+MM Too many stable phases at iter   7, phase   3 replaced by   4, T=  1055.90
+Phase change iteration:    11  -FCC_A1_AUTO#2
+Phase change iteration:    15  +FCC_A1#1
+Phase change iteration:    19  +FCC_A1_AUTO#2
+MM Removing phase:    4   3#2
+MM Restoring phase:      4    5  FCC_A1_AUTO#2       9.4278E-04
+Equilibrium result:  23 its,  2.1420E-03 s,      2 cc, GS= -5.7691456E+04 J/mol
+--->OC6:l r 2
+... echo: l r 2
+
+OC version  6.129  equilibrium:   1, DEFAULT_EQUILIBRIUM        2026.09.16
+Conditions .................................................:
+  1:T=1055.9, 2:P=100000, 3:N=1, 4:X(CU)=0.32
+ Degrees of freedom are   0
+
+Some global data, reference state SER ......................:
+T=   1055.90 K (   782.75 C), P=  1.0000E+05 Pa, V=  0.0000E+00 m3
+N=   1.0000E+00 moles, B=   9.3686E+01 g, RT=   8.7793E+03 J/mol
+G= -5.76915E+04 J, G/N=-5.7691E+04 J/mol, H= 3.2681E+04 J, S= 8.559E+01 J/K
+
+Some data for components ...................................:
+Component name    Moles      Mole-fr  Chem.pot/RT  Activities  Ref.state
+AG                6.8000E-01  0.68000 -6.9657E+00  9.4373E-04  SER (default)   
+CU                3.2000E-01  0.32000 -5.7333E+00  3.2364E-03  SER (default)   
+
+Some data for phases .......................................:
+Name                Status Moles      Volume    Form.Units Cmp/FU dGm/RT  Comp:
+LIQUID.................. E  6.650E-01  0.00E+00  6.65E-01    1.00  0.00E+00  X:
+ AG     5.84351E-01  CU     4.15649E-01
+Constitution: There are     2 constituents:
+ AG     5.84351E-01  CU     4.15649E-01
+
+FCC_A1#1................ E  3.350E-01  0.00E+00  3.35E-01    1.00  0.00E+00  X:
+ AG     8.69833E-01  CU     1.30167E-01
+Constitution: Sublattice  1 with     2 constituents and     1.000000 sites
+ AG     8.69833E-01  CU     1.30167E-01
+              Sublattice  2 with     1 constituents and     1.000000 sites
+ VA     1.00000E+00
+
+FCC_A1_AUTO#2........... E  0.000E+00  0.00E+00  0.00E+00    1.00  9.43E-04  X:
+ CU     9.54319E-01  AG     4.56811E-02
+Constitution: Sublattice  1 with     2 constituents and     1.000000 sites
+ CU     9.54319E-01  AG     4.56811E-02
+              Sublattice  2 with     1 constituents and     1.000000 sites
+ VA     1.00000E+00
+
+
+ *** There are phase(s) which would like to be stable:
+   FCC_A1  9.4278E-04
+--->OC6:
+--->OC6:set cond t=1055.7
+... echo: set cond t=1055.7
+--->OC6:c e
+... echo: c e
+Gridmin:     128 points   1.97E-04 s and       0 clockcycles, T= 1055.70
+ 3Y leaving global_gridmin
+Equilibrium result:   9 its,  5.4000E-04 s,      1 cc, GS= -5.7677947E+04 J/mol
+--->OC6:l r 2
+... echo: l r 2
+
+OC version  6.129  equilibrium:   1, DEFAULT_EQUILIBRIUM        2026.09.16
+Conditions .................................................:
+  1:T=1055.7, 2:P=100000, 3:N=1, 4:X(CU)=0.32
+ Degrees of freedom are   0
+
+Some global data, reference state SER ......................:
+T=   1055.70 K (   782.55 C), P=  1.0000E+05 Pa, V=  0.0000E+00 m3
+N=   1.0000E+00 moles, B=   9.3686E+01 g, RT=   8.7776E+03 J/mol
+G= -5.76779E+04 J, G/N=-5.7678E+04 J/mol, H= 2.3708E+04 J, S= 7.709E+01 J/K
+
+Some data for components ...................................:
+Component name    Moles      Mole-fr  Chem.pot/RT  Activities  Ref.state
+AG                6.8000E-01  0.68000 -6.9650E+00  9.4437E-04  SER (default)   
+CU                3.2000E-01  0.32000 -5.7338E+00  3.2347E-03  SER (default)   
+
+Some data for phases .......................................:
+Name                Status Moles      Volume    Form.Units Cmp/FU dGm/RT  Comp:
+FCC_A1#1................ E  7.694E-01  0.00E+00  7.69E-01    1.00  0.00E+00  X:
+ AG     8.70157E-01  CU     1.29843E-01
+Constitution: Sublattice  1 with     2 constituents and     1.000000 sites
+ AG     8.70157E-01  CU     1.29843E-01
+              Sublattice  2 with     1 constituents and     1.000000 sites
+ VA     1.00000E+00
+
+FCC_A1_AUTO#2........... E  2.306E-01  0.00E+00  2.31E-01    1.00  0.00E+00  X:
+ CU     9.54289E-01  AG     4.57109E-02
+Constitution: Sublattice  1 with     2 constituents and     1.000000 sites
+ CU     9.54289E-01  AG     4.57109E-02
+              Sublattice  2 with     1 constituents and     1.000000 sites
+ VA     1.00000E+00
+
+--->OC6:
+--->OC6:set cond t=1055.75
+... echo: set cond t=1055.75
+--->OC6:c e
+... echo: c e
+Gridmin:     128 points   1.51E-04 s and       0 clockcycles, T= 1055.75
+ 3Y leaving global_gridmin
+Equilibrium result:   9 its,  4.8700E-04 s,      0 cc, GS= -5.7681802E+04 J/mol
+--->OC6:l r 2
+... echo: l r 2
+
+OC version  6.129  equilibrium:   1, DEFAULT_EQUILIBRIUM        2026.09.16
+Conditions .................................................:
+  1:T=1055.75, 2:P=100000, 3:N=1, 4:X(CU)=0.32
+ Degrees of freedom are   0
+
+Some global data, reference state SER ......................:
+T=   1055.75 K (   782.60 C), P=  1.0000E+05 Pa, V=  0.0000E+00 m3
+N=   1.0000E+00 moles, B=   9.3686E+01 g, RT=   8.7780E+03 J/mol
+G= -5.76818E+04 J, G/N=-5.7682E+04 J/mol, H= 2.3710E+04 J, S= 7.709E+01 J/K
+
+Some data for components ...................................:
+Component name    Moles      Mole-fr  Chem.pot/RT  Activities  Ref.state
+AG                6.8000E-01  0.68000 -6.9651E+00  9.4425E-04  SER (default)   
+CU                3.2000E-01  0.32000 -5.7339E+00  3.2343E-03  SER (default)   
+
+Some data for phases .......................................:
+Name                Status Moles      Volume    Form.Units Cmp/FU dGm/RT  Comp:
+FCC_A1#1................ E  7.694E-01  0.00E+00  7.69E-01    1.00  0.00E+00  X:
+ AG     8.70131E-01  CU     1.29869E-01
+Constitution: Sublattice  1 with     2 constituents and     1.000000 sites
+ AG     8.70131E-01  CU     1.29869E-01
+              Sublattice  2 with     1 constituents and     1.000000 sites
+ VA     1.00000E+00
+
+FCC_A1_AUTO#2........... E  2.306E-01  0.00E+00  2.31E-01    1.00  0.00E+00  X:
+ CU     9.54277E-01  AG     4.57231E-02
+Constitution: Sublattice  1 with     2 constituents and     1.000000 sites
+ CU     9.54277E-01  AG     4.57231E-02
+              Sublattice  2 with     1 constituents and     1.000000 sites
+ VA     1.00000E+00
+
+--->OC6:
+--->OC6:

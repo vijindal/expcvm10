@@ -633,7 +633,7 @@ public class CliApp {
         CalculationInterface.StepParams params =
                 new CalculationInterface.StepParams(p.axis, p.T, p.P, p.composition);
 
-        ui.result.PhaseDiagramResult result;
+        calc.diagram.PhaseDiagramResult result;
         try {
             result = CalculationInterface.runCalculating(
                     session, CalculationKind.STEP, model, params);
@@ -987,7 +987,7 @@ public class CliApp {
         CalculationInterface.MapParams params =
                 new CalculationInterface.MapParams(p.axis1, p.axis2, p.T, p.P, p.composition);
 
-        ui.result.PhaseDiagramResult result;
+        calc.diagram.PhaseDiagramResult result;
         try {
             result = CalculationInterface.runCalculating(
                     session, CalculationKind.MAP, model, params);
@@ -999,7 +999,7 @@ public class CliApp {
         printPhaseDiagramResult(result);
     }
 
-    private static void printPhaseDiagramResult(ui.result.PhaseDiagramResult result) {
+    private static void printPhaseDiagramResult(calc.diagram.PhaseDiagramResult result) {
         System.out.println("Calculation complete: " + result.isComplete());
         if (!result.getMessage().isEmpty()) {
             System.out.println("Message: " + result.getMessage());
@@ -1007,15 +1007,15 @@ public class CliApp {
         System.out.printf("  Lines: %d%n", result.getLines().size());
         System.out.printf("  Nodes: %d%n", result.getNodes().size());
         java.util.Set<String> regions = new java.util.TreeSet<>();
-        for (ui.result.PhaseDiagramResult.LineSegment line : result.getLines()) {
+        for (calc.diagram.PhaseDiagramResult.LineSegment line : result.getLines()) {
             regions.add(line.label());
         }
         if (!regions.isEmpty()) {
             System.out.println("  Lines found:");
             for (String r : regions) System.out.println("    " + r);
         }
-        for (ui.result.PhaseDiagramResult.NodePoint node : result.getNodes()) {
-            if (node.type == ui.result.PhaseDiagramResult.NodePoint.Type.INVARIANT) {
+        for (calc.diagram.PhaseDiagramResult.NodePoint node : result.getNodes()) {
+            if (node.type == calc.diagram.PhaseDiagramResult.NodePoint.Type.INVARIANT) {
                 System.out.println("  Invariant node: " + String.join("+", node.stablePhases)
                         + " at " + Arrays.toString(node.axisValues));
             }

@@ -1,6 +1,8 @@
 package calc.diagram;
 
 import calc.equil.GridMinimizer;
+import calc.diagram.PhaseDiagramResult.LineSegment;
+import calc.diagram.PhaseDiagramResult.NodePoint;
 import system.ThermodynamicSystem;
 import system.model.GibbsEnergyModel;
 import system.ports.EquilibriumResult;
@@ -447,29 +449,42 @@ public final class PhaseDiagramEngine {
     // ------------------------------------------------------------------
 
     /**
-     * {@code MERGE / DEDUP NETWORK} (flowchart): collapse nodes reached
-     * from two directions via node matching, remove/suppress lines
-     * rejected by the global stability check, and remove duplicate
-     * representations (implementation cleanup, not paper-sourced).
+     * {@code MERGE / DEDUP NETWORK} (flowchart, §2.3.3): "the automatic
+     * procedure is to abandon this line and suppress it in a subsequent
+     * plot." Node-matching dedup ({@link NodeRegistry#findOrCreate},
+     * {@link Node#matches}) already runs INLINE at creation time -- this
+     * stage is exclusively the POST-HOC half: filtering {@link
+     * Line#isExcluded() excluded} lines out of the plotted network.
      *
-     * <p><b>Partially implemented.</b> {@link NodeRegistry#findOrCreate}
-     * (Step 1/2) performs node-matching dedup INLINE, at creation time,
-     * for the ordinary case -- there is no separate post-hoc merge pass.
-     * {@link Node#matches} now ports OC's own {@code map_newnode}
-     * comparison (T/P gate, then chemical potentials, both at OC's own
-     * tight tolerances -- closing the roadmap's earlier "nodes reached
-     * from different walk directions" gap), so the REMAINING work here
-     * is exclusively global-stability-check-based line suppression
-     * across the whole registry (a POST-HOC pass over already-created
-     * nodes/lines, distinct from the per-node check {@link
-     * PhaseDiagramEngine#isGloballyStable} already runs inline at node
-     * creation) -- NOT implemented.
+     * <p>Ported directly from OC's own plot-time behavior ({@code
+     * smp2B.F90}'s {@code ocplot2}/{@code ocplot3}): every line-emitting
+     * loop there is guarded by a single {@code btest(mapline%status,
+     * EXCLUDEDLINE)} check (this codebase's {@link Line#isExcluded()}) --
+     * OC does not re-run any stability check or geometric node-merge at
+     * plot time, only this flag filter (confirmed by reading {@code
+     * smp2.F90}/{@code smp2A.F90}/{@code smp2B.F90}: the only other plot-
+     * time bookkeeping is OC's {@code done} field, a "don't emit the same
+     * line twice" visited-flag needed because OC's doubly-linked {@code
+     * map_line} records are reachable from both endpoints -- NOT needed
+     * here, since in this codebase a {@link Line} is attached only to its
+     * {@link Line#startNode}, never also to {@link Line#getEndNode()}, so
+     * {@link NodeRegistry#getNodes()}'s nodes each own a disjoint set of
+     * lines already).
+     *
+     * @return every {@link Line} in {@code registry}, across all nodes,
+     *         with {@link Line#isExcluded() excluded} lines filtered out
+     *         -- the network {@code classifyPlot} should render
      */
-    public static void mergeDedupNetwork(NodeRegistry registry) {
-        throw new UnsupportedOperationException(
-                "Post-hoc line suppression (global-stability-check-based) not yet "
-                + "implemented -- node-matching dedup itself is done (NodeRegistry.findOrCreate, "
-                + "Node.matches), see docs/roadmap_phase_diagrams.md's MERGE / DEDUP NETWORK box.");
+    public static List<Line> mergeDedupNetwork(NodeRegistry registry) {
+        List<Line> kept = new java.util.ArrayList<>();
+        for (Node node : registry.getNodes()) {
+            for (Line line : node.getLines()) {
+                if (!line.isExcluded()) {
+                    kept.add(line);
+                }
+            }
+        }
+        return kept;
     }
 
     // ------------------------------------------------------------------
@@ -477,23 +492,75 @@ public final class PhaseDiagramEngine {
     // ------------------------------------------------------------------
 
     /**
-     * {@code IDENTIFY / LABEL PHASE REGIONS} (flowchart, §2.4): ZPF
-     * lines separate regions where a phase is present from regions
-     * where it is not. The paper states this defining property but
-     * gives no computational-geometry algorithm, and neither does OC's
-     * source (confirmed: {@code smp2A.F90}/{@code smp2B.F90} mention
-     * "region" only in comments, never as a data structure or
-     * algorithm) -- this is genuinely new implementation work, not a
-     * port from either source.
+     * {@code IDENTIFY / LABEL PHASE REGIONS} (flowchart, §2.4): "ZPF
+     * lines separate regions in a phase diagram where a phase is
+     * present from regions where it is not present."
      *
-     * <p><b>Not implemented.</b> No region/polygon construction exists
-     * anywhere in this codebase yet.
+     * <p><b>Scope, per the paper's own Sections 2.4/4.2 (not just OC's
+     * source comments, which say nothing further -- confirmed by
+     * reading &sect;4's actual plotted-diagram discussion):</b> the
+     * paper and OC's own rendered output both only ever LABEL single-/
+     * two-phase areas by their bounding {@link Line}/{@link Node}
+     * stable-phase set -- neither computes or renders an enclosed
+     * polygon for those (OC's {@code ocplot2}/{@code ocplot3} color
+     * lines by stable-phase set, never fill an area). The one region
+     * SHAPE the paper does specify explicitly is the 3-phase
+     * tie-triangle (&sect;2.4, Fig. 3(a): "The green triangles define
+     * 3-phase regions; their corners indicate the compositions of the
+     * three phases in equilibrium"; &sect;4.2/Fig. 11's "tie-triangles"),
+     * whose vertices are simply each stable phase's own composition --
+     * already on {@link system.ports.EquilibriumResult.PhaseResult#x},
+     * no line-graph polygon-extraction algorithm needed. See {@link
+     * PhaseRegions}'s own javadoc for the full line-labeling vs.
+     * tie-triangle distinction.
+     *
+     * @return every {@link Line}/{@link Node}'s bounding stable-phase
+     *         set, plus one {@link PhaseRegions.TieTriangle} per node
+     *         with exactly 3 stable phases
      */
-    public static void identifyPhaseRegions(NodeRegistry registry) {
-        throw new UnsupportedOperationException(
-                "Phase-region identification/labeling not yet implemented -- this is new "
-                + "implementation work with no algorithm to port from the paper or OC. "
-                + "See docs/phase_diagram_engine_flowchart.md's IDENTIFY/LABEL PHASE REGIONS box.");
+    public static PhaseRegions identifyPhaseRegions(NodeRegistry registry) {
+        java.util.Map<Line, java.util.Set<String>> lineLabels = new java.util.LinkedHashMap<>();
+        java.util.Map<Node, java.util.Set<String>> nodeLabels = new java.util.LinkedHashMap<>();
+        List<PhaseRegions.TieTriangle> tieTriangles = new java.util.ArrayList<>();
+
+        for (Node node : registry.getNodes()) {
+            nodeLabels.put(node, node.stablePhaseNames);
+
+            if (node.stablePhaseNames.size() == 3) {
+                List<String> phaseNames = new java.util.ArrayList<>();
+                List<double[]> vertices = new java.util.ArrayList<>();
+                for (EquilibriumResult.PhaseResult pr : node.equilibrium.getStablePhases()) {
+                    phaseNames.add(pr.phaseName);
+                    vertices.add(pr.x);
+                }
+                tieTriangles.add(new PhaseRegions.TieTriangle(node, phaseNames, vertices));
+            }
+
+            for (Line line : node.getLines()) {
+                lineLabels.put(line, lineStablePhaseNames(line));
+            }
+        }
+
+        return new PhaseRegions(lineLabels, nodeLabels, tieTriangles);
+    }
+
+    /**
+     * The stable-phase set bounding {@code line} -- every point sampled
+     * along it shares the same stable-phase set by construction (a
+     * {@link Line} terminates exactly when that set changes), so the
+     * first sampled point's set suffices; empty if no points were
+     * sampled (e.g. a line terminated immediately at an axis limit).
+     */
+    private static java.util.Set<String> lineStablePhaseNames(Line line) {
+        List<EquilibriumResult> points = line.getPoints();
+        if (points.isEmpty()) {
+            return java.util.Set.of();
+        }
+        java.util.Set<String> names = new java.util.LinkedHashSet<>();
+        for (EquilibriumResult.PhaseResult pr : points.get(0).getStablePhases()) {
+            names.add(pr.phaseName);
+        }
+        return names;
     }
 
     // ------------------------------------------------------------------
@@ -512,23 +579,143 @@ public final class PhaseDiagramEngine {
     }
 
     /**
-     * {@code CLASSIFY REQUESTED PLOT} + {@code VALIDATE PLOT}
-     * (flowchart): render the same stored {@link Node}/{@link Line}
-     * data as whichever plot type was requested; may overlay results
-     * from separate {@link #defineSystem} runs with different candidate
-     * -phase sets (Fig. 2c's stable-vs-"metastable" overlay) -- each
-     * run is a full, independent pass through this whole engine, the
-     * overlay itself is a plotting-stage step only.
+     * {@code CLASSIFY REQUESTED PLOT} + {@code VALIDATE PLOT} (flowchart):
+     * converts the stored {@link Node}/{@link Line} network -- already
+     * post-processed by {@link #mergeDedupNetwork} (excluded lines
+     * dropped) -- into the complete, renderable {@link PhaseDiagramResult}
+     * for {@code requestedType}. Per this codebase's own layering rule
+     * (README's boundary rules: {@code calc/} hands {@code ui/} a
+     * complete result, {@code calc/} never imports {@code ui/}), {@link
+     * PhaseDiagramResult} itself is a {@code calc.diagram} type for
+     * exactly this reason.
      *
-     * <p><b>Not implemented.</b> No rendering/plot-classification layer
-     * exists for this engine yet (the GUI's existing {@code
-     * PhaseDiagramPanel}/{@code CoarseDiagramPanel} render {@link
-     * StepTracer}/{@link CoarseDiagramTracer} output directly, not this
-     * class's {@link Node}/{@link Line} graph).
+     * <p><b>VALIDATE PLOT</b>: {@code axisNames}/{@code axisMin}/{@code
+     * axisMax} must have {@code numAxes} entries matching {@code
+     * requestedType}'s own expected axis count (1 for {@link
+     * PlotType#PROPERTY_OR_STEP_DIAGRAM}, 2 for every other implemented
+     * type here) -- a mismatch is not a well-posed diagram. Sundman 2021
+     * gives no further algorithm for well-posedness (confirmed: neither
+     * the paper nor OC's source specifies one beyond this), so this axis-
+     * count check is this codebase's own minimal implementation of that
+     * box, not a port.
+     *
+     * <p><b>Implemented plot types</b> -- {@link PlotType#BINARY_T_X},
+     * {@link PlotType#PROPERTY_OR_STEP_DIAGRAM}, {@link
+     * PlotType#TERNARY_ISOTHERMAL}, {@link PlotType#TERNARY_ISOPLETH}:
+     * all four are a straight relabeling of already-computed {@link
+     * Node}/{@link Line} data -- each {@link Line}'s own stored walk-axis/
+     * release-axis coordinates ({@link Line#getAxisCoords()}) become
+     * {@link LineSegment#coords} directly (matching exactly what {@link
+     * MapTracer#trace}/{@link StepTracer#trace} already compute inline,
+     * just sourced from the {@link NodeRegistry} graph instead of a
+     * separate walk); no new physics or geometry. Every {@link Node} in a
+     * {@link NodeRegistry} is a real phase-set-change point -- {@link
+     * Line#terminateAtAxisLimit} never creates a {@link Node}, only a
+     * dangling {@link Line} with no end node -- so {@link
+     * NodePoint.Type#BOUNDARY} never arises here; {@link
+     * NodePoint.Type#CROSSING} vs. {@link NodePoint.Type#INVARIANT} is
+     * derived per-node from Gibbs phase rule (a node with more stable
+     * phases than the diagram's own ordinary crossing count, {@code
+     * numAxes+1}, is an invariant -- {@code f=0} in {@link
+     * #classifyNode}'s own Eq. 8 terms).
+     *
+     * <p><b>Not yet implemented</b> -- {@link
+     * PlotType#ACTIVITY_OR_CHEMICAL_POTENTIAL} (needs a reference-state
+     * convention -- OC's own {@code set_reference_state}/{@code
+     * calcg_endmember}, {@code gtp3A.F90}/{@code gtp3F.F90}, defaults to
+     * SER but is user-selectable per component; this codebase's {@code
+     * mu[]} is already SER-relative, so the SER-default case only needs
+     * plumbing an existing {@code UnaryGibbs.ghser} lookup through, not
+     * new physics -- deferred as a separate follow-up, not attempted
+     * here); {@link PlotType#H_X_S_X_G_X} (G alone -- {@link
+     * EquilibriumResult.PhaseResult#G} -- would be reachable the same way
+     * as the four implemented types above, but H/S need a &part;G/&part;T
+     * capability {@link GibbsEnergyModel} does not expose anywhere in
+     * this codebase today, so the whole enum value is left unimplemented
+     * rather than half-implemented); {@link
+     * PlotType#MULTICOMPONENT_ISOPLETH_OR_PSEUDO_ISOTHERMAL} (the
+     * underlying {@link Node}/{@link Line} data generalizes the same way,
+     * but {@code PhaseDiagramPanel} has no 3+-axis rendering -- a
+     * separate GUI-layer follow-up, not a {@code calc/diagram} gap).
+     *
+     * @param axisNames diagram axis names, length = {@code
+     *                  requestedType}'s expected axis count
+     * @param axisMin   diagram axis minimums, same length
+     * @param axisMax   diagram axis maximums, same length
      */
-    public static void classifyPlot(NodeRegistry registry, PlotType requestedType) {
-        throw new UnsupportedOperationException(
-                "Plot classification/rendering not yet implemented for the Node/Line engine -- "
-                + "see docs/phase_diagram_engine_flowchart.md's CLASSIFY REQUESTED PLOT box.");
+    public static PhaseDiagramResult classifyPlot(
+            NodeRegistry registry,
+            PlotType requestedType,
+            String[] axisNames,
+            double[] axisMin,
+            double[] axisMax) {
+
+        int expectedAxes = expectedAxisCount(requestedType);
+        if (axisNames.length != expectedAxes || axisMin.length != expectedAxes || axisMax.length != expectedAxes) {
+            throw new IllegalArgumentException(
+                    requestedType + " requires exactly " + expectedAxes + " axis/axes, got "
+                    + axisNames.length + " names / " + axisMin.length + " mins / "
+                    + axisMax.length + " maxes -- not a well-posed diagram (VALIDATE PLOT).");
+        }
+
+        switch (requestedType) {
+            case BINARY_T_X:
+            case PROPERTY_OR_STEP_DIAGRAM:
+            case TERNARY_ISOTHERMAL:
+            case TERNARY_ISOPLETH:
+                return buildResult(registry, axisNames, axisMin, axisMax);
+
+            case ACTIVITY_OR_CHEMICAL_POTENTIAL:
+            case H_X_S_X_G_X:
+            case MULTICOMPONENT_ISOPLETH_OR_PSEUDO_ISOTHERMAL:
+            default:
+                throw new UnsupportedOperationException(
+                        requestedType + " not yet implemented -- see "
+                        + "PhaseDiagramEngine#classifyPlot's own javadoc for what's missing "
+                        + "and docs/phase_diagram_engine_flowchart.md's CLASSIFY REQUESTED PLOT box.");
+        }
+    }
+
+    /** VALIDATE PLOT's own axis-count expectation per {@link PlotType} -- see {@link #classifyPlot}'s javadoc. */
+    private static int expectedAxisCount(PlotType type) {
+        return type == PlotType.PROPERTY_OR_STEP_DIAGRAM ? 1 : 2;
+    }
+
+    /**
+     * The actual {@link Node}/{@link Line} -&gt; {@link PhaseDiagramResult}
+     * conversion shared by every implemented {@link PlotType} in {@link
+     * #classifyPlot} -- see that method's javadoc for what this does and
+     * does not compute.
+     */
+    private static PhaseDiagramResult buildResult(
+            NodeRegistry registry, String[] axisNames, double[] axisMin, double[] axisMax) {
+
+        PhaseDiagramResult result = new PhaseDiagramResult(axisNames, axisMin, axisMax);
+        int numAxes = axisNames.length;
+
+        for (Line line : mergeDedupNetwork(registry)) {
+            List<EquilibriumResult> points = line.getPoints();
+            if (points.isEmpty()) {
+                continue;
+            }
+            String fixedPhase = line.fixedPhases.isEmpty() ? null : line.fixedPhases.get(0);
+            result.addLine(new LineSegment(
+                    line.getAxisCoords(), fixedPhase, new java.util.ArrayList<>(lineStablePhaseNames(line))));
+        }
+
+        for (Node node : registry.getNodes()) {
+            // Every Node in a NodeRegistry is a real phase-set-change
+            // point -- an axis-limit termination (Line#terminateAtAxisLimit)
+            // never creates a Node at all, only a dangling Line with no
+            // end node (see Line.getEndNode()'s javadoc), so
+            // NodePoint.Type.BOUNDARY does not arise from this graph.
+            NodePoint.Type type = node.stablePhaseNames.size() > numAxes + 1
+                    ? NodePoint.Type.INVARIANT
+                    : NodePoint.Type.CROSSING;
+            result.addNode(new NodePoint(
+                    node.axisValues, new java.util.ArrayList<>(node.stablePhaseNames), type));
+        }
+
+        return result;
     }
 }

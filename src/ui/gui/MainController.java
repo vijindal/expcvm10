@@ -7,7 +7,7 @@ import ui.layer.ModelBrowseService;
 import ui.request.PropertyScanRequest;
 import ui.result.PropertyScanResult;
 import ui.request.PhaseDiagramRequest;
-import ui.result.PhaseDiagramResult;
+import calc.diagram.PhaseDiagramResult;
 import session.CalculationSession;
 import session.calctype.CalculationInterface;
 import session.calctype.CalculationKind;

@@ -2,9 +2,9 @@ package diagnostics;
 
 import calc.diagram.AxisConfig;
 import session.CalculationSession;
-import ui.result.PhaseDiagramResult;
-import ui.result.PhaseDiagramResult.LineSegment;
-import ui.result.PhaseDiagramResult.NodePoint;
+import calc.diagram.PhaseDiagramResult;
+import calc.diagram.PhaseDiagramResult.LineSegment;
+import calc.diagram.PhaseDiagramResult.NodePoint;
 
 import java.util.Arrays;
 

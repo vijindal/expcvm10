@@ -4,7 +4,7 @@ import org.junit.jupiter.api.Test;
 import system.ThermodynamicSystem;
 import system.model.GibbsEnergyModel;
 import system.ports.EquilibriumResult;
-import ui.result.PhaseDiagramResult;
+import calc.diagram.PhaseDiagramResult;
 
 import java.io.IOException;
 import java.util.LinkedHashSet;
@@ -317,9 +317,9 @@ public class MultiDiagramTypeSuiteTest {
         // Tier 2 (exact-value): the CROSSING node (as opposed to the
         // BOUNDARY nodes at the axis endpoints) should land within the
         // OC-confirmed [1176, 1177] bracket.
-        ui.result.PhaseDiagramResult.NodePoint crossing = null;
-        for (ui.result.PhaseDiagramResult.NodePoint node : result.getNodes()) {
-            if (node.type == ui.result.PhaseDiagramResult.NodePoint.Type.CROSSING) crossing = node;
+        calc.diagram.PhaseDiagramResult.NodePoint crossing = null;
+        for (calc.diagram.PhaseDiagramResult.NodePoint node : result.getNodes()) {
+            if (node.type == calc.diagram.PhaseDiagramResult.NodePoint.Type.CROSSING) crossing = node;
         }
         assertTrue(crossing != null, "should find exactly one CROSSING node");
         double transitionT = crossing.axisValues[0];
@@ -382,6 +382,7 @@ public class MultiDiagramTypeSuiteTest {
         // itself cover).
         org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class,
                 () -> PhaseDiagramEngine.classifyPlot(
-                        new NodeRegistry(), PhaseDiagramEngine.PlotType.ACTIVITY_OR_CHEMICAL_POTENTIAL));
+                        new NodeRegistry(), PhaseDiagramEngine.PlotType.ACTIVITY_OR_CHEMICAL_POTENTIAL,
+                        new String[] { "T", "AC" }, new double[] { 0.0, 0.0 }, new double[] { 1.0, 1.0 }));
     }
 }
