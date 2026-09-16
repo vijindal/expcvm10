@@ -16,6 +16,7 @@ import session.calctype.CalculationOutcome;
 import session.calctype.ModelSelection;
 import calc.diagram.AxisConfig;
 import calc.diagram.AxisConfig.Type;
+import ui.result.EquilibriumReport;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -542,6 +543,9 @@ public class CliApp {
             }
             System.out.println();
         }
+
+        System.out.println();
+        System.out.println(EquilibriumReport.format(result, elements));
     }
 
     // ──────────────────────────────────────────────────────────────────

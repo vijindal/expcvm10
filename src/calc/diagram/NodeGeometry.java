@@ -55,6 +55,11 @@ final class NodeGeometry {
             case INVARIANT:
                 attachInvariantExits(node, arrivedViaPhase, walkAxisIndex);
                 break;
+            case STEP_CONTINUATION:
+                throw new IllegalArgumentException(
+                        "STEP_CONTINUATION needs the arriving line's walk direction -- call "
+                        + "attachExits(Node, NodeClass, String, int, int) instead, which "
+                        + "StepDiagramTracer uses directly (it always knows its own direction).");
             case ISOPLETH_CROSSING:
                 throw new UnsupportedOperationException(
                         "ISOPLETH_CROSSING exit geometry (3 exits) is Step 5e's work -- "
@@ -63,6 +68,34 @@ final class NodeGeometry {
             default:
                 throw new IllegalStateException("Unhandled NodeClass: " + nodeClass);
         }
+    }
+
+    /**
+     * {@link #attachExits(Node, PhaseDiagramEngine.NodeClass, String, int)}
+     * overload for {@link PhaseDiagramEngine.NodeClass#STEP_CONTINUATION}
+     * (Sundman 2021 §3.2, see that enum constant's javadoc): exactly 1
+     * exit, continuing the SAME {@code direction} the arriving {@link
+     * Line} was already walking -- distinguishes it from the step's own
+     * START node, which {@link StepDiagramTracer} attaches 2 exits to
+     * directly (one per direction), not through this method.
+     *
+     * @param direction the direction the arriving line was walking
+     *                  (+1 or -1); the single exit continues in this
+     *                  same direction
+     */
+    static void attachExits(
+            Node node,
+            PhaseDiagramEngine.NodeClass nodeClass,
+            String arrivedViaPhase,
+            int walkAxisIndex,
+            int direction) {
+
+        if (nodeClass != PhaseDiagramEngine.NodeClass.STEP_CONTINUATION) {
+            throw new IllegalArgumentException(
+                    "The direction-taking overload is for STEP_CONTINUATION only; got " + nodeClass
+                    + " -- use attachExits(Node, NodeClass, String, int) instead.");
+        }
+        node.addLine(new Line(node, List.of(arrivedViaPhase), walkAxisIndex, direction));
     }
 
     /**
