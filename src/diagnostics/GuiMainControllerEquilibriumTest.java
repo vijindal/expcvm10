@@ -8,14 +8,11 @@ import java.util.ArrayList;
 
 /**
  * Verifies {@link MainController#runSinglePoint} -- the GUI's production
- * single-point call site, unchanged in signature -- now routes through
- * {@link session.CalculationSession} (per
- * {@code docs/plan-3layer-core-dataflow.md}, Step 7) and reproduces the
- * same known-good calG values already confirmed via
- * {@code CalculationSessionCalGTest} (in-process), {@code CalculationApiServerTest}
- * (REST), and {@code CliEquilibriumCommandTest} (CLI) -- so all four
- * consumers of {@code CalculationSession} are now independently verified
- * to produce identical results for the same scenario.
+ * single-point call site -- routes through {@link
+ * session.CalculationSession} and reproduces the OC-verified calG values
+ * (see {@link CliEquilibriumCommandTest}'s javadoc for the OC cross-check)
+ * already confirmed via {@code CalculationSessionCalGTest} (in-process)
+ * and {@code CalculationApiServerTest} (REST).
  *
  * <p>No GUI/Swing code is exercised here -- {@code runSinglePoint} is a
  * plain method on {@code MainController}, callable directly.
@@ -50,8 +47,8 @@ public class GuiMainControllerEquilibriumTest {
         boolean pass = result.isConverged()
                 && result.getStablePhases().size() == 1
                 && "V2ZR".equals(result.getStablePhases().get(0).phaseName)
-                && Math.abs(result.getStablePhases().get(0).G - (-137349.4480)) < 0.01
-                && Math.abs(result.getMu()[0] - 116674.3539155658) < 0.01;
+                && Math.abs(result.getStablePhases().get(0).G - (-150885.5871)) < 0.01
+                && Math.abs(result.getMu()[0] - (-44941.4461)) < 0.01;
 
         System.out.println(pass
                 ? "PASS: MainController.runSinglePoint() via CalculationSession matches known-good calG values"

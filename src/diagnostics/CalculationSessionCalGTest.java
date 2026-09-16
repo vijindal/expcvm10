@@ -23,23 +23,18 @@ import java.util.List;
  * overall composition is 2 mol V + 1 mol Zr per formula unit, i.e.
  * x_Zr = 1/3, matching the composition requested here.
  *
- * <p><b>Known limitation, found by this test (2026-09-10), not fixed
- * here:</b> {@code EquilibriumSolver} converges in 1 iteration to a
- * DISORDERED constitution (partial V/Zr mixing on both sublattices) at
- * this composition, giving G &asymp; -137.35 kJ/mol -- but the true ordered
- * V:ZR end member (y=[1,0,0,1], confirmed via
- * {@link CefLiteratureBaselineTest}'s direct CEF evaluation) gives
- * G &asymp; -150.69 kJ/mol, a deeper (more stable) minimum the solver misses.
- * At exactly one composition constraint with 2 internal degrees of freedom
- * on this phase, there is a one-parameter family of constitutions giving
- * the same overall x_Zr=1/3; the grid minimizer's initial guess apparently
- * doesn't land near the true (ordered, stoichiometric) minimum for this
- * case, and Newton iteration from there doesn't escape to it. This is a
- * genuine {@code EquilibriumSolver}/{@code GridMinimizer} gap, independent
- * of {@code CalculationSession} wiring -- flagged here, not fixed, per
- * explicit direction to continue with step/GUI wiring first. This test
- * therefore checks only that the solver runs and reports a single stable
- * V2ZR phase, NOT that its G matches the literature value.
+ * <p><b>Resolved (originally found 2026-09-10, confirmed fixed this
+ * session via OC cross-check).</b> This test originally documented a
+ * solver gap: {@code EquilibriumSolver} converged to a DISORDERED
+ * constitution (G &asymp; -137.35 kJ/mol) instead of the true ordered V:ZR
+ * end member (G &asymp; -150.69 kJ/mol, confirmed via {@link
+ * CefLiteratureBaselineTest}'s direct CEF evaluation). The solver now
+ * converges to the ordered minimum -- G=-150885.5871 J/mol.f.u.,
+ * confirmed deterministic across repeated runs and independently matching
+ * a real {@code oc7C} run at this exact condition (OC: G/N=-5.0295E+04
+ * J/mol = -150885.6 J/mol.f.u. over 3 atoms/f.u.; see {@link
+ * CliEquilibriumCommandTest}'s javadoc). Asserted directly below, not just
+ * "a single V2ZR phase was found."
  */
 public class CalculationSessionCalGTest {
 
@@ -73,10 +68,12 @@ public class CalculationSessionCalGTest {
         System.out.println("mu = " + java.util.Arrays.toString(result.getMu()));
 
         boolean pass = result.getStablePhases().size() == 1
-                && "V2ZR".equals(result.getStablePhases().get(0).phaseName);
+                && "V2ZR".equals(result.getStablePhases().get(0).phaseName)
+                && Math.abs(result.getStablePhases().get(0).G - (-150885.5871)) < 0.01;
         System.out.println(pass
-                ? "PASS: single-phase (V2ZR) equilibrium ran end-to-end through CalculationSession"
-                : "FAIL: expected exactly one stable phase, V2ZR");
+                ? "PASS: single-phase (V2ZR) equilibrium ran end-to-end through CalculationSession, "
+                    + "converging to the OC-verified ordered minimum"
+                : "FAIL: expected exactly one stable V2ZR phase at the OC-verified G value");
         if (!pass) {
             System.exit(1);
         }

@@ -10,12 +10,11 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Verifies the CLI's new {@code equilibrium} command (wired through
- * {@link session.CalculationSession}, per
- * {@code docs/plan-3layer-core-dataflow.md}) reproduces the same known-good
- * calG values as {@link CalculationSessionCalGTest} and
- * {@link CalculationApiServerTest}, driven this time from
- * {@link CliApp#run(String[])} exactly as a real CLI invocation would.
+ * Verifies the CLI's {@code equilibrium} command reproduces OC-verified
+ * values for the default V-Zr/V2ZR condition, driven from {@link
+ * CliApp#run(String[])}. Values cross-checked against a real {@code oc7C}
+ * run this session (G/N=-5.0295E+04 J/mol, mu(V)/RT=-5.4052) -- the
+ * previous hardcoded values here did not match OC and were stale.
  */
 public class CliEquilibriumCommandTest {
 
@@ -27,8 +26,8 @@ public class CliEquilibriumCommandTest {
         String output = runCli(new String[]{"equilibrium"});
 
         check(output.contains("Converged:   true"), "CLI reports convergence");
-        check(output.contains("G=-137349.4480"), "CLI reports the known-good G value (-137349.4480)");
-        check(output.contains("116674.3539155658"), "CLI reports the known-good mu[0] value");
+        check(output.contains("G=-150885.5871"), "CLI reports the OC-verified G value");
+        check(output.contains("-44941.44608318"), "CLI reports the OC-verified mu[0] value");
         check(output.contains("V2ZR"), "CLI reports V2ZR as the stable phase");
 
         String customOutput = runCli(new String[]{"equilibrium", "--T", "1500", "--composition", "0.5,0.5"});

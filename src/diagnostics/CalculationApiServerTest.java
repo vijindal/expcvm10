@@ -10,12 +10,11 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 
 /**
- * End-to-end verification of {@link CalculationApiServer} per the checklist
- * in {@code docs/plan-rest-api-calculation-session.md}: full session
- * lifecycle over real HTTP, using the same calG scenario as
- * {@code CalculationSessionCalGTest} to cross-check the JSON response
- * against the known-good Java-side numbers, plus error-status mapping and
- * session isolation.
+ * End-to-end verification of {@link CalculationApiServer}: full session
+ * lifecycle over real HTTP, using the same calG scenario as {@code
+ * CalculationSessionCalGTest} to cross-check the JSON response against
+ * OC-verified values (see {@link CliEquilibriumCommandTest}'s javadoc for
+ * the OC cross-check), plus error-status mapping and session isolation.
  */
 public class CalculationApiServerTest {
 
@@ -71,8 +70,8 @@ public class CalculationApiServerTest {
         Response calc = request("POST", "/sessions/" + sessionId + "/calculations/equilibrium", calcBody);
         check(calc.status == 200, "POST .../calculations/equilibrium returns 200");
         check(calc.body.contains("\"phaseName\":\"V2ZR\""), "response contains V2ZR stable phase");
-        check(calc.body.contains("-137349.44"), "response G matches CalculationSessionCalGTest's known value (-137349.4480)");
-        check(calc.body.contains("116674.35"), "response mu[0] matches known value (116674.3539155658)");
+        check(calc.body.contains("-150885.58"), "response G matches OC-verified value (-150885.5871)");
+        check(calc.body.contains("-44941.44"), "response mu[0] matches OC-verified value (-44941.446)");
 
         Response deleted = request("DELETE", "/sessions/" + sessionId, null);
         check(deleted.status == 204, "DELETE /sessions/{id} returns 204");
