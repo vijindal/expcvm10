@@ -1,0 +1,10 @@
+new Y
+r t ./cost507R
+al mg zn
+
+set cond t=700 p=1e5 n=1 x(mg)=.05 x(zn)=.1
+
+c e
+l r 2
+exit
+Y

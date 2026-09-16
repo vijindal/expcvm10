@@ -1,0 +1,15 @@
+new Y
+r t ./agcu
+
+ag cu
+
+set cond t=1176 p=1e5 n=1 x(cu)=.05
+
+c e
+l r 2
+set cond t=1177 p=1e5 n=1 x(cu)=.05
+
+c e
+l r 2
+exit
+Y

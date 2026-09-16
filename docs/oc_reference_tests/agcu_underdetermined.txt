@@ -1,0 +1,8 @@
+new Y
+r t ./agcu
+
+set cond t=1070 p=1e5
+
+c e
+exit
+Y

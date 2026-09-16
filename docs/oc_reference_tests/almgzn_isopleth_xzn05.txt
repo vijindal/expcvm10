@@ -1,0 +1,22 @@
+new Y
+r t ./cost507R
+al mg zn
+
+set cond t=750 p=1e5 n=1 x(mg)=.03 x(zn)=.05
+
+c e
+l r 2
+set cond t=750 p=1e5 n=1 x(mg)=.08 x(zn)=.05
+
+c e
+l r 2
+set cond t=780 p=1e5 n=1 x(mg)=.03 x(zn)=.05
+
+c e
+l r 2
+set cond t=780 p=1e5 n=1 x(mg)=.08 x(zn)=.05
+
+c e
+l r 2
+exit
+Y

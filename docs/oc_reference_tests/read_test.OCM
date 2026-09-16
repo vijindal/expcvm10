@@ -1,0 +1,4 @@
+new Y
+set echo Y
+r t ./agcu
+exit

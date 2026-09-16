@@ -1,0 +1,8 @@
+new Y
+r t ./agcu
+
+set cond t=1070 p=1e5 n=1 x(cu)=.2 x(ag)=.7
+
+c e
+exit
+Y

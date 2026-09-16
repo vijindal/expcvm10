@@ -1,0 +1,10 @@
+new Y
+r t ./agcu
+
+set cond t=1050 p=1e5 n=1 x(cu)=.3
+c e
+set ax 1 x(cu) 0.05 0.6 0.05
+set ax 2 t 1000 1100 20
+map
+l r 2
+exit

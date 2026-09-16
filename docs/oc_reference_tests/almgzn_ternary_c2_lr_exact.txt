@@ -1,0 +1,116 @@
+﻿
+3A unfished preparations for XTDB
+
+
+Open Calphad (OC) software version   6.129 , linked 2026-09-14 09:41
+with command line monitor version  75
+
+This program is available with a GNU General Public License.
+either version 2 of the License, or any later version.
+It includes the General Thermodynamic Package, version GTP-3.31,
+Hillert's equilibrium calculation algorithm version HMS-3.0 ,
+step/map/plot software version SMP-2.30 using GNUPLOT 5.2 graphics.
+Numerical routines are extracted from LAPACK and BLAS and
+the assessment procedure uses LMDIF from ANL.
+
+Linked with OpenMp for parallel execution
+ Warning, no environment variable OCHOME and no help file
+ Working directory is: /mnt/d/codes/opencalphad/examples/macros
+--->OC6:new Y
+ No step or map results to delete
+ All data removed, reinitiating
+
+3A unfished preparations for XTDB
+
+ Warning, no environment variable OCHOME and no help file
+ Working directory is: /mnt/d/codes/opencalphad/examples/macros
+--->OC6:r t ./cost507R
+ 3E Database file name ./cost507R.TDB
+
+This database has information to users, please read carefully
+ DATABASE_INFO about the COST 507 database
+ This thermodynamic database is the result of the European COST 507 project.
+ It contains about 70 assessed binary and a few ternary system for 20 elements,
+ Many binaries and ternaries have no data and cannot be calculated.
+ A simple test is to list the data for the liquid phase: "list ph liq data"
+ If there are no EXCESS parameters for a system in the liquid
+ the system has not been assessed.  General reference:
+
+ Luxembourg: Office for Official Publications of the European Communities, 1998
+ Volume 2: ISBN 92-828-3902-8
+ Volumes 1 to 3: ISBN 92-828-3900-1
+
+ For the each assessed model parameter a bibliographic reference is provided. !
+
+Database has 20 elements: AL B  C  CE CR CU FE LI MG MN N  ND NI SI SN TI V  Y 
+  ZN ZR
+Give the elements to select, finish with empty line
+Select elements /all/:al mg zn
+Selected  3 elements: AL MG ZN
+Select elements /no more/:
+Selected  3 elements: AL MG ZN
+3E reading database file: ./cost507R.TDB
+3E Out of  1192 model parameters    76 have been entered
+
+There are    13 bibliographic references
+REF1            'S.G.T.E., solution data-base (1991), unaries'
+REF11           'N. Saunders, Calphad, 14, 1, 61-70, (1990), Al-Mg, Mg-Li'
+REF78           'S. an Mey, Zeit. fur Metallkde, 84, (7), 451-455 (1993), Al
+                 -Zn'
+REF33           'R. Agarwal, S.G. Fries, H.L. Lukas, G. Petzow, F. Sommer, 
+                 T.G. Chart, G. Effenberg, Zeit. fur Metallkde., 83, 4, 216
+                 -223 (1992), Mg-Zn'
+REF76           'M. Seiersten, private communication, Al-Fe'
+REF72           'N. Saunders, Rep. ThermoTech, (1992), Cr-Ti, Mn-Ti'
+REF105          'T.G. Chart, private communication, Al-Li-Mg'
+REF13           'N. Saunders, Rep. Univ. of Surrey, (1990), Al-Ti, Al-V, Ti
+                 -V'
+REF0            'Not assessed'
+REF70           'Marek, and P. Spencer, private communication, Cu-Zn'
+REF129          'I Ansara, added to make phase unstable'
+REF20           'C.A. Coughnanowr, I. Ansara, R. Luoma, M. Hamalainen, and 
+                 H.L. Lukas, Zeit. fur Metallkde., 82, 7, 574-581 (1991), Cu
+                 -Mg'
+REF64           'H.L. Lukas 1992, private communication, Mg-Y'
+
+--->OC6:set cond t=700 p=1e5 n=1 x(mg)=.05 x(zn)=.050236
+--->OC6:c e
+3Y For BCC_B2  512 additional disordered gridpoints calculated
+3Y Removed  1 gridpoints by merging
+ 3Y Composition set(s) created:            1
+Gridmin:    4700 points   5.06E-03 s and       7 clockcycles, T=  700.00
+ 3Y leaving global_gridmin
+Phase change iteration:     4  -FCC_A1_AUTO#2
+Phase change iteration:     8  +MGZN2
+Phase change iteration:    12  -MGZN2
+Equilibrium result:  15 its,  7.6240E-03 s,     13 cc, GS= -2.6969718E+04 J/mol
+--->OC6:l r 2
+
+OC version  6.129  equilibrium:   1, DEFAULT_EQUILIBRIUM        2026.09.16
+Conditions .................................................:
+  1:T=700, 2:P=100000, 3:N=1, 4:X(MG)=.05, 5:X(ZN)=.050236
+ Degrees of freedom are   0
+
+Some global data, reference state SER ......................:
+T=    700.00 K (   426.85 C), P=  1.0000E+05 Pa, V=  0.0000E+00 m3
+N=   1.0000E+00 moles, B=   2.8777E+01 g, RT=   5.8202E+03 J/mol
+G= -2.69697E+04 J, G/N=-2.6970E+04 J/mol, H= 1.1883E+04 J, S= 5.550E+01 J/K
+
+Some data for components ...................................:
+Component name    Moles      Mole-fr  Chem.pot/RT  Activities  Ref.state
+AL                8.9976E-01  0.89976 -4.3611E+00  1.2765E-02  SER (default)   
+MG                5.0000E-02  0.05000 -6.9789E+00  9.3131E-04  SER (default)   
+ZN                5.0236E-02  0.05024 -7.1854E+00  7.5755E-04  SER (default)   
+
+Some data for phases .......................................:
+Name                Status Moles      Volume    Form.Units Cmp/FU dGm/RT  Comp:
+FCC_A1#1................ E  1.000E+00  0.00E+00  1.00E+00    1.00  0.00E+00  X:
+ AL     8.99764E-01  ZN     5.02360E-02  MG     5.00000E-02
+Constitution: Sublattice  1 with     3 constituents and     1.000000 sites
+ AL     8.99764E-01  ZN     5.02360E-02  MG     5.00000E-02
+              Sublattice  2 with     1 constituents and     1.000000 sites
+ VA     1.00000E+00
+
+--->OC6:exit
+Are you sure? /N/: Y
+STOP Ha en bra dag

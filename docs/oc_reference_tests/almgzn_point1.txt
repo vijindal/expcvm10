@@ -1,0 +1,10 @@
+new Y
+r t ./cost507_expcvm
+al mg zn
+
+set cond t=700 p=1e5 n=1 x(mg)=.05 x(zn)=.05
+
+c e
+l r 2
+exit
+Y
