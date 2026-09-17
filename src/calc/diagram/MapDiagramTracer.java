@@ -247,12 +247,16 @@ public final class MapDiagramTracer {
                 startNodeComp, tpMatchTolerance, muMatchTolerance);
         compositionByNodeId.putIfAbsent(startNode.id, startNodeComp);
 
-        // The START node has no arriving line, so no fixed phase of its
-        // own to form an isopleth crossing with -- its 2 exits are always
-        // the ordinary case, exactly the AxisConfig overload's own
-        // start-node construction.
-        startNode.addLine(new Line(startNode, List.of(), 0, +1));
-        startNode.addLine(new Line(startNode, List.of(), 0, -1));
+        // Sundman 2021 §3.3: "A first node point will be created with the
+        // appearing/disappearing phase as fix with zero amount and with
+        // two exits" -- matches OC's own map_startpoint (linefixph copied
+        // onto both exits for tieline_inplane>0, smp2A.F90 ~1533-1541).
+        // The START node still has no ARRIVING line, so no already-fixed
+        // phase of its own to form an isopleth crossing with (that
+        // distinction stays NodeGeometry's, for nodes found mid-walk).
+        List<String> startNodeFixedPhase = List.of(initial.segment.changedPhase);
+        startNode.addLine(new Line(startNode, startNodeFixedPhase, 0, +1));
+        startNode.addLine(new Line(startNode, startNodeFixedPhase, 0, -1));
 
         LineFollower.SegmentWalker walker = (line, walkCandidates) ->
                 walkAndResolve(line, conds, walkAxis, releaseAxis, fixedT, fixedP,

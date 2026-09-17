@@ -6,6 +6,7 @@ import system.model.GibbsEnergyModel;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -56,6 +57,35 @@ public class MapDiagramTracerAgCuTest {
 
     private static List<GibbsEnergyModel> candidates() throws IOException {
         return ThermodynamicSystem.build(TDB, ELEMENTS, PHASES).phaseModels();
+    }
+
+    @Test
+    void setUpStartNodeMatchesOcsExactFirstNodeBeforeC1Runs() throws IOException {
+        // OC reference (docs/oc_reference_tests/agcu_full_map_clean_xcu05_output.txt):
+        //   set cond t=1150 p=1e5 n=1 x(cu)=.05 / set ax 1 x(cu) .. / set ax 2 t 1150 1230 5 / map
+        //   -> "New line:   1 T= 1176.13 with: LIQUID + FCC_A1#1"
+        // setUp() performs the same initial search C1 has not run yet --
+        // its start node should already match OC's own first node exactly,
+        // before any further line-walking happens.
+        AxisConfig walkAxis = new AxisConfig("T / K", AxisConfig.Type.TEMPERATURE, 1150.0, 1230.0, 5.0);
+        AxisConfig releaseAxis = new AxisConfig("x(Cu)", 1, 0.01, 0.6, 0.01);
+
+        LineFollower.Setup setup = new MapDiagramTracer().setUp(
+                walkAxis, releaseAxis, 1150.0, FIXED_P, 1150.0,
+                new double[] { 0.95, 0.05 }, candidates(), null);
+
+        Node start = setup.registry().getNodes().get(0);
+        assertEquals(Set.of("LIQUID", "FCC_A1"), start.stablePhaseNames);
+        assertEquals(1176.13, start.axisValues[0], 0.5,
+                "setUp()'s start node T should match OC's exact first-node T=1176.13K");
+
+        // Sundman 2021 §3.3 / OC's map_startpoint (linefixph, smp2A.F90
+        // ~1533-1541): both START-node exits carry the appearing/
+        // disappearing phase fixed at zero amount, not an empty list.
+        for (Line line : start.getLines()) {
+            assertEquals(1, line.fixedPhases.size());
+            assertTrue(line.fixedPhases.get(0).equals("LIQUID") || line.fixedPhases.get(0).equals("FCC_A1"));
+        }
     }
 
     @Test
