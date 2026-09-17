@@ -1,0 +1,135 @@
+
+3A unfished preparations for XTDB
+
+
+Open Calphad (OC) software version   6.129 , linked 2026-09-14 09:41
+with command line monitor version  75
+
+This program is available with a GNU General Public License.
+either version 2 of the License, or any later version.
+It includes the General Thermodynamic Package, version GTP-3.31,
+Hillert's equilibrium calculation algorithm version HMS-3.0 ,
+step/map/plot software version SMP-2.30 using GNUPLOT 5.2 graphics.
+Numerical routines are extracted from LAPACK and BLAS and
+the assessment procedure uses LMDIF from ANL.
+
+Linked with OpenMp for parallel execution
+ Warning, no environment variable OCHOME and no help file
+ Working directory is: /mnt/d/codes/opencalphad/examples/macros
+--->OC6:new Y
+ No step or map results to delete
+ All data removed, reinitiating
+
+3A unfished preparations for XTDB
+
+ Warning, no environment variable OCHOME and no help file
+ Working directory is: /mnt/d/codes/opencalphad/examples/macros
+--->OC6:set echo Y
+--->OC6:r t ./agcu
+... echo: r t ./agcu
+ 3E Database file name ./agcu.TDB
+Database has  2 elements: AG CU
+Give the elements to select, finish with empty line
+Select elements /all/:
+ All elements selected
+3E reading database file: ./agcu.TDB
+3E Out of    15 model parameters    15 have been entered
+
+There are     3 bibliographic references
+REF283          'Alan Dinsdale, SGTE Data for Pure Elements, Calphad Vol 
+                 15(1991) p 317-425, also in NPL Report DMA(A)195 Rev. August 
+                 1990'
+REF137          'F.H. Hayes, H.L. Lukas, G. Effenberg, G. Petzow, Z. fur 
+                 Metallkde, Vol 77 (1986), No 11, p 749-754; AG-CU-PB'
+REF135          'Unassessed parameter, inserted to make this phase less 
+                 stable.'
+
+--->OC6:set cond t=1000 p=1e5 n=1 x(cu)=.2
+... echo: set cond t=1000 p=1e5 n=1 x(cu)=.2
+--->OC6:c e
+... echo: c e
+ 3Y Composition set(s) created:            1
+Gridmin:     128 points   1.10E-03 s and      32 clockcycles, T= 1000.00
+ 3Y leaving global_gridmin
+Equilibrium result:   9 its,  2.2420E-03 s,     48 cc, GS= -5.4659668E+04 J/mol
+--->OC6:set ax 1 x(cu) 0 1 0.025
+... echo: set ax 1 x(cu) 0 1 0.025
+--->OC6:set ax 2 t 800 1500 10
+... echo: set ax 2 t 800 1500 10
+--->OC6:map
+... echo: map
+The map command is fragile, please send problematic diagrams to the
+OC development team
+
+ There are            1  start equilibria
+ Entering map_startpoint           2
+ Tie-lines in the plane and start equilibrium with several stable phases
+ SMP2A call map_doallines
+
+New line:   1 T= 1000.00 with: FCC_A1_AUTO#2 + FCC_A1#1
+Creating a node at    1056.12 where LIQUID appears
+Finishing line with    13 equilibria at T= 1056.12, xaxis:  1.3006E-01 
+
+New line:   2 T= 1000.00 with: FCC_A1_AUTO#2 + FCC_A1#1
+Equilibria calculated     20
+At axis low limit  8.0000E+02
+Terminating line with   27 equilibria at axis limit   8.0000E+02
+
+New line:   3 T= 1056.12 with: LIQUID + FCC_A1_AUTO#2
+Equilibria calculated     20
+Equilibria calculated     40
+At axis high limit  1.0000E+00
+Terminating line with   41 equilibria at axis limit   1.0000E+00
+
+New line:   4 T= 1056.12 with: FCC_A1#1 + LIQUID
+Equilibria calculated     20
+At axis low limit  2.5000E-08
+Terminating line with   36 equilibria at axis limit   2.5000E-08
+
+Finished step/map with   118 equilibria in   1.2975E-01 CPU s and     137 cc
+--->OC6:
+--->OC6:l r 2
+... echo: l r 2
+
+OC version  6.129  equilibrium:   1, DEFAULT_EQUILIBRIUM        2026.09.17
+
+ *** The results listed below may be inconsistent with the current conditions
+
+Conditions .................................................:
+  1:T=1000, 2:P=100000, 3:N=1, 4:X(CU)=0.2
+ Degrees of freedom are   0
+
+Some global data, reference state SER ......................:
+T=   1000.00 K (   726.85 C), P=  1.0000E+05 Pa, V=  0.0000E+00 m3
+N=   1.0000E+00 moles, B=   1.0330E+02 g, RT=   8.3145E+03 J/mol
+G= -5.56405E+04 J, G/N=-5.5641E+04 J/mol, H= 2.1879E+04 J, S= 7.752E+01 J/K
+
+Some data for components ...................................:
+Component name    Moles      Mole-fr  Chem.pot/RT  Activities  Ref.state
+AG                8.9693E-01  0.89693 -6.8174E+00  1.0945E-03  SER (default)   
+CU                1.0307E-01  0.10307 -5.6004E+00  3.6964E-03  SER (default)   
+
+Some data for phases .......................................:
+Name                Status Moles      Volume    Form.Units Cmp/FU dGm/RT  Comp:
+FCC_A1#1................ E  1.000E+00  0.00E+00  1.00E+00    1.00  0.00E+00  X:
+ AG     8.96932E-01  CU     1.03068E-01
+Constitution: Sublattice  1 with     2 constituents and     1.000000 sites
+ AG     8.96932E-01  CU     1.03068E-01
+              Sublattice  2 with     1 constituents and     1.000000 sites
+ VA     1.00000E+00
+
+FCC_A1_AUTO#2........... E  0.000E+00  0.00E+00  0.00E+00    1.00  0.00E+00  X:
+ CU     9.66326E-01  AG     3.36741E-02
+Constitution: Sublattice  1 with     2 constituents and     1.000000 sites
+ CU     9.66326E-01  AG     3.36741E-02
+              Sublattice  2 with     1 constituents and     1.000000 sites
+ VA     1.00000E+00
+
+
+ *** The results listed above may be inconsistent with the current conditions
+
+--->OC6:exit
+... echo: exit
+Are you sure? /N/: Y
+... echo: Y
+STOP Ha en bra dag
