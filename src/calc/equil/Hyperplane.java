@@ -140,10 +140,8 @@ public final class Hyperplane {
                 rhs[i] = energies[idx];
             }
 
-            double[] solved;
-            try {
-                solved = solveLinearSystem(tieline, rhs);
-            } catch (RuntimeException e) {
+            double[] solved = solveLinearSystem(tieline, rhs);
+            if (solved[0] == SINGULAR_SENTINEL) {
                 break; // singular tieline matrix -- stop, matching pycalphad
             }
             candidatePotentials = solved;
@@ -283,10 +281,34 @@ public final class Hyperplane {
         return best;
     }
 
+    /**
+     * Sentinel returned by {@link #solveLinearSystem} in place of a
+     * solution when {@code a} is singular -- pycalphad's own {@code solve}
+     * (hyperplane.pyx) does exactly this ("Special for our case: singular
+     * matrix results get set to a special value") rather than raising,
+     * specifically so a degenerate trial simplex is naturally deprioritized
+     * by the pivot search's own {@code argmax(smallestFractions)}/{@code
+     * == SINGULAR_SENTINEL} checks instead of aborting the whole search.
+     * A degenerate trial simplex is an expected, not exceptional, outcome
+     * of this pivot search: e.g. two sampled points from different phases
+     * sharing the same pure-component endmember composition (confirmed
+     * directly: Ag-Cu, T=950K, x(Cu)=0.05 -- LIQUID's and FCC_A1's own
+     * pure-Ag endmembers coincide at x(Cu)=0, and the search's own
+     * most-negative-driving-force heuristic can propose exactly that pair
+     * as a trial simplex before it settles on the true answer).
+     */
+    private static final double SINGULAR_SENTINEL = -1e19;
+
     private static double[] solveLinearSystem(double[][] a, double[] b) {
-        Matrix matA = new Matrix(a);
-        Matrix matB = new Matrix(b, b.length);
-        Matrix x = matA.solve(matB);
-        return x.getColumnPackedCopy();
+        try {
+            Matrix matA = new Matrix(a);
+            Matrix matB = new Matrix(b, b.length);
+            Matrix x = matA.solve(matB);
+            return x.getColumnPackedCopy();
+        } catch (RuntimeException e) {
+            double[] sentinel = new double[b.length];
+            java.util.Arrays.fill(sentinel, SINGULAR_SENTINEL);
+            return sentinel;
+        }
     }
 }
