@@ -118,7 +118,8 @@ final class LineFollower {
      * @param line the pending line, already {@link Line#startWalking() started}
      * @param axis the axis this line walks
      * @param stepper the equilibrium solver
-     * @param onCrossing called once the stable phase set changes, to resolve the boundary and node
+     * @param onCrossing called once the stable phase set changes, to resolve the boundary and
+     *        node; build with {@link NodeTerminator#crossingHandlerFor}
      * @param candidates candidate phase models
      */
     static void walkLineAlgorithmC1(
