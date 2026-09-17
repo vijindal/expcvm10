@@ -72,11 +72,15 @@ public final class PhaseDiagramEngine {
     }
 
     /**
-     * Algorithm B orchestration: full diagram tracing from conditions
-     * through classification. Solves the initial equilibrium once, then
+     * Algorithm B orchestration: the single top-to-bottom entry point for
+     * automated phase-diagram tracing, from condition validation through
+     * plot classification. Validates the n+2 condition count, generates
+     * the starting point(s), solves the initial equilibrium once, then
      * branches on axis count to either STEP (single-axis) or MAP (two-axis)
      * draining, and returns the complete classified result.
      *
+     * @param numComponents number of independent components (n), for the
+     *                      n+2 condition-count check
      * @param axes 1 or 2 axes; if 2 axes, axes[1] must be COMPOSITION
      * @param startValues starting value per axis
      * @param fixedT temperature (used if not an axis)
@@ -89,6 +93,7 @@ public final class PhaseDiagramEngine {
      * @throws IllegalStateException if initial equilibrium fails to converge
      */
     public static PhaseDiagramResult calculatePhaseDiagram(
+            int numComponents,
             AxisConfig[] axes,
             double[] startValues,
             double fixedT,
@@ -110,6 +115,11 @@ public final class PhaseDiagramEngine {
             throw new IllegalArgumentException(
                     "For 2-axis MAP, axes[1] must be COMPOSITION; got " + axes[1].type);
         }
+
+        // --- VALIDATE n+2 EQUILIBRIUM CONDITIONS / GENERATE STARTING POINT(S) ---
+        validateConditionCount(numComponents, numComponents + 2);
+        generateStartingPoints(startValues[0]);
+
         // --- Algorithm A: solve ONCE at the starting conditions ---
         // Use the FIRST axis's starting value for the initial solve
         EquilibriumResult initialEquilibrium = solveInitialEquilibrium(

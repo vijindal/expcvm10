@@ -394,7 +394,7 @@ public class PhaseDiagramEngineTest {
         AxisConfig axis = new AxisConfig("T / K", AxisConfig.Type.TEMPERATURE, 1100.0, 1250.0, 5.0);
 
         PhaseDiagramResult result = PhaseDiagramEngine.calculatePhaseDiagram(
-                new AxisConfig[] { axis },
+                2, new AxisConfig[] { axis },
                 new double[] { 1100.0 },
                 1100.0, 101325.0,
                 new double[] { 0.95, 0.05 }, candidates);
@@ -413,7 +413,7 @@ public class PhaseDiagramEngineTest {
         AxisConfig releaseAxis = new AxisConfig("x(Cu)", 1, 0.01, 0.6, 0.01);
 
         PhaseDiagramResult result = PhaseDiagramEngine.calculatePhaseDiagram(
-                new AxisConfig[] { walkAxis, releaseAxis },
+                2, new AxisConfig[] { walkAxis, releaseAxis },
                 new double[] { 1150.0, 0.05 },
                 1150.0, 101325.0,
                 new double[] { 0.95, 0.05 }, candidates);
@@ -437,7 +437,7 @@ public class PhaseDiagramEngineTest {
 
         assertThrows(IllegalArgumentException.class,
                 () -> PhaseDiagramEngine.calculatePhaseDiagram(
-                        threeAxes, new double[] { 1100.0, 0.5, 0.5 },
+                        3, threeAxes, new double[] { 1100.0, 0.5, 0.5 },
                         1100.0, 101325.0,
                         new double[] { 0.5, 0.25, 0.25 }, candidates));
     }
@@ -452,7 +452,7 @@ public class PhaseDiagramEngineTest {
 
         assertThrows(IllegalArgumentException.class,
                 () -> PhaseDiagramEngine.calculatePhaseDiagram(
-                        new AxisConfig[] { axis0, axis1 },
+                        2, new AxisConfig[] { axis0, axis1 },
                         new double[] { 1100.0, 1e5 },
                         1100.0, 101325.0,
                         new double[] { 0.95, 0.05 }, candidates));
