@@ -18,17 +18,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * call -- {@link PhaseDiagramEngine#defineSystem} &#8594; {@link
  * PhaseDiagramEngine#validateConditionCount} &#8594; {@link
  * PhaseDiagramEngine#generateStartingPoints} &#8594; {@link
- * PhaseDiagramEngine#drainC1Loop}/{@link
+ * PhaseDiagramEngine#drainMapLoop}/{@link
  * PhaseDiagramEngine#drainStepLoop} -- rather than each stage tested in
  * isolation the way {@link PhaseDiagramEngineTest} already does.
  *
  * <p>Closes {@code docs/roadmap_phase_diagrams.md}'s "FOR EACH STARTING
  * POINT" gap: every sub-box under it (STEP, C1, C2, NODE MATCHING, NODE
  * CLASSIFICATION + EXIT GEOMETRY) was individually ✅, but {@link
- * PhaseDiagramEngine#drainC1Loop} itself only wrapped {@link
+ * PhaseDiagramEngine#drainMapLoop} itself only wrapped {@link
  * MapDiagramTracer}'s binary-only {@code AxisConfig} overload, and there
  * was no {@link PhaseDiagramEngine}-level entry point for STEP at all.
- * Both gaps are fixed ({@link PhaseDiagramEngine#drainC1Loop(
+ * Both gaps are fixed ({@link PhaseDiagramEngine#drainMapLoop(
  * ConditionSet, int, int, double, double[], List)}, {@link
  * PhaseDiagramEngine#drainStepLoop}); this test proves the SINGLE
  * top-to-bottom entry point the class javadoc claims actually reaches
@@ -41,7 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class PhaseDiagramEngineEndToEndTest {
 
     @Test
-    void chainsDefineSystemThroughDrainC1LoopForABinaryMap() throws IOException {
+    void chainsDefineSystemThroughDrainMapLoopForABinaryMap() throws IOException {
         // OC reference (this session's C2 generalization work): Ag-Cu,
         // x(Cu)=0.05, liquidus crossing at T=1176.13K
         // (docs/oc_reference_tests/agcu_step_xcu05_full_walk.txt).
@@ -58,9 +58,9 @@ public class PhaseDiagramEngineEndToEndTest {
         AxisConfig walkAxis = new AxisConfig("T / K", AxisConfig.Type.TEMPERATURE, 1150.0, 1230.0, 5.0);
         AxisConfig releaseAxis = new AxisConfig("x(Cu)", 1, 0.01, 0.6, 0.01);
 
-        NodeRegistry registry = PhaseDiagramEngine.drainC1Loop(
+        NodeRegistry registry = PhaseDiagramEngine.drainMapLoop(
                 walkAxis, releaseAxis, startT, 101325.0, startT,
-                new double[] { 0.95, 0.05 }, system.phaseModels());
+                new double[] { 0.95, 0.05 }, system.phaseModels(), null);
 
         // This walk's 5K grid snaps the reported node to the grid point
         // PAST OC's own exact crossing (T=1176.13K -- see
@@ -80,12 +80,12 @@ public class PhaseDiagramEngineEndToEndTest {
             }
         }
         assertTrue(foundOcConfirmedLiquidus,
-                "chained defineSystem->drainC1Loop should find OC's own confirmed "
+                "chained defineSystem->drainMapLoop should find OC's own confirmed "
                 + "liquidus crossing near T=1176.13K");
     }
 
     @Test
-    void chainsDefineSystemThroughDrainC1LoopForATernaryIsopleth() throws IOException {
+    void chainsDefineSystemThroughDrainMapLoopForATernaryIsopleth() throws IOException {
         // OC reference (this session's NODE CLASSIFICATION + EXIT
         // GEOMETRY work): Al-Mg-Zn isopleth at x(Mg)=0.05, crossing at
         // T=699.58K where MGZN2 disappears
@@ -115,7 +115,7 @@ public class PhaseDiagramEngineEndToEndTest {
         double xZnStart = 0.05;
         double[] compOverall = { 1.0 - fixedXMg - xZnStart, fixedXMg, xZnStart };
 
-        NodeRegistry registry = PhaseDiagramEngine.drainC1Loop(
+        NodeRegistry registry = PhaseDiagramEngine.drainMapLoop(
                 conds, 0, 1, startT, compOverall, system.phaseModels());
 
         Node crossingNode = null;
@@ -127,7 +127,7 @@ public class PhaseDiagramEngineEndToEndTest {
             }
         }
         assertTrue(crossingNode != null,
-                "chained defineSystem->drainC1Loop should find OC's own confirmed "
+                "chained defineSystem->drainMapLoop should find OC's own confirmed "
                 + "isopleth crossing near T=699.58K");
 
         // The node itself should be classified genuinely as an isopleth
@@ -159,7 +159,7 @@ public class PhaseDiagramEngineEndToEndTest {
         AxisConfig axis = new AxisConfig("T / K", AxisConfig.Type.TEMPERATURE, startT, 1230.0, 5.0);
 
         NodeRegistry registry = PhaseDiagramEngine.drainStepLoop(
-                axis, 0.0, 101325.0, new double[] { 0.95, 0.05 }, system.phaseModels());
+                axis, 0.0, 101325.0, new double[] { 0.95, 0.05 }, system.phaseModels(), null);
 
         boolean foundOcConfirmedLiquidus = false;
         for (Node node : registry.getNodes()) {
@@ -174,11 +174,11 @@ public class PhaseDiagramEngineEndToEndTest {
     }
 
     @Test
-    void chainsDrainC1LoopThroughClassifyPlotForABinaryMap() throws IOException {
+    void chainsDrainMapLoopThroughClassifyPlotForABinaryMap() throws IOException {
         // SAME OC-confirmed Ag-Cu liquidus crossing as
-        // chainsDefineSystemThroughDrainC1LoopForABinaryMap, now also
+        // chainsDefineSystemThroughDrainMapLoopForABinaryMap, now also
         // pushed through classifyPlot -- proving the whole flowchart
-        // sequence (drainC1Loop -> mergeDedupNetwork (inside classifyPlot)
+        // sequence (drainMapLoop -> mergeDedupNetwork (inside classifyPlot)
         // -> classifyPlot) reaches a real, OC-verifiable
         // PhaseDiagramResult, not just a NodeRegistry.
         var system = PhaseDiagramEngine.defineSystem(
@@ -189,9 +189,9 @@ public class PhaseDiagramEngineEndToEndTest {
         AxisConfig walkAxis = new AxisConfig("T / K", AxisConfig.Type.TEMPERATURE, 1150.0, 1230.0, 5.0);
         AxisConfig releaseAxis = new AxisConfig("x(Cu)", 1, 0.01, 0.6, 0.01);
 
-        NodeRegistry registry = PhaseDiagramEngine.drainC1Loop(
+        NodeRegistry registry = PhaseDiagramEngine.drainMapLoop(
                 walkAxis, releaseAxis, startT, 101325.0, startT,
-                new double[] { 0.95, 0.05 }, system.phaseModels());
+                new double[] { 0.95, 0.05 }, system.phaseModels(), null);
 
         PhaseDiagramResult result = PhaseDiagramEngine.classifyPlot(
                 registry, PhaseDiagramEngine.PlotType.BINARY_T_X,

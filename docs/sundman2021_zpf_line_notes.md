@@ -725,7 +725,7 @@ OpenCalphad (`D:\codes\opencalphad\src\stepmapplot\smp2A.F90`, `src/models
     `PhaseDiagramEngine.solveInitialEquilibrium` (the shared `A` box,
     called once in `calculatePhaseDiagram` before the fork), plus
     `EquilibriumResult`-accepting overloads threaded through
-    `PhaseDiagramEngine.drainStepLoop`/`drainC1Loop`,
+    `PhaseDiagramEngine.drainStepLoop`/`drainMapLoop`,
     `StepDiagramTracer.drain`, `MapDiagramTracer.drain` (both the
     `AxisConfig`-pair and `ConditionSet` forms), and two new
     `MapTracer.findInitialBoundary` overloads that accept the

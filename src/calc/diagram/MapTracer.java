@@ -97,7 +97,7 @@ import java.util.Set;
  * the overall system composition (explicitly named as the Fig. 10(b)
  * mistake case). {@link PhaseDiagramEngine#classifyPlot} (the {@code
  * diagram} CLI command's pipeline, via {@link
- * PhaseDiagramEngine#drainC1Loop}/{@link NodeRegistry}/{@link Line})
+ * PhaseDiagramEngine#drainMapLoop}/{@link NodeRegistry}/{@link Line})
  * fixes this by splitting each two-phase {@link Line} into one {@link
  * PhaseDiagramResult.LineSegment} per stable phase, reading each
  * phase's own {@link system.ports.EquilibriumResult.PhaseResult#x} off

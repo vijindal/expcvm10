@@ -48,16 +48,16 @@ public class PhaseDiagramEngineTest {
     }
 
     @Test
-    void drainC1LoopIsImplementedForTheOrdinaryMapCase() throws IOException {
+    void drainMapLoopIsImplementedForTheOrdinaryMapCase() throws IOException {
         List<GibbsEnergyModel> candidates =
                 ThermodynamicSystem.build(TDB, ELEMENTS, PHASES).phaseModels();
 
         AxisConfig walkAxis = new AxisConfig("T / K", AxisConfig.Type.TEMPERATURE, 1150.0, 1230.0, 5.0);
         AxisConfig releaseAxis = new AxisConfig("x(Cu)", 1, 0.01, 0.6, 0.01);
 
-        NodeRegistry registry = PhaseDiagramEngine.drainC1Loop(
+        NodeRegistry registry = PhaseDiagramEngine.drainMapLoop(
                 walkAxis, releaseAxis, 1150.0, 101325.0, 1150.0,
-                new double[] { 0.95, 0.05 }, candidates);
+                new double[] { 0.95, 0.05 }, candidates, null);
 
         assertTrue(registry.size() >= 1, "the drain loop should have produced at least a start node");
     }

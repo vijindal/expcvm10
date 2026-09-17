@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * point wiring {@link calc.diagram.PhaseDiagramEngine}'s full flowchart
  * sequence (defineSystem is skipped here since {@link
  * CalculationSession#setModel} already built the system; {@code
- * validateConditionCount -> generateStartingPoints -> drainC1Loop/
+ * validateConditionCount -> generateStartingPoints -> drainMapLoop/
  * drainStepLoop -> classifyPlot}) into {@link CalculationSession}, closing
  * the "not yet wired into any UI" gap {@code PhaseDiagramEngine}'s own
  * class javadoc used to describe.

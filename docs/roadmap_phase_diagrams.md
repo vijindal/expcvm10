@@ -25,7 +25,7 @@ DATABASE
 [✅] FOR EACH STARTING POINT
     │   (checked truly end-to-end, chaining defineSystem->
     │    validateConditionCount->generateStartingPoints->
-    │    drainC1Loop/drainStepLoop in ONE call:
+    │    drainMapLoop/drainStepLoop in ONE call:
     │    PhaseDiagramEngineEndToEndTest.java)
     │
     ├── STEP (1 axis)
@@ -36,7 +36,7 @@ DATABASE
     │                OcFormatterComparisonTest.java)
     │
     └── MAPPING (2 axes)
-          └── [✅] PhaseDiagramEngine.drainC1Loop
+          └── [✅] PhaseDiagramEngine.drainMapLoop
                     → MapDiagramTracer.drain (MapDiagramTracer.java;
                       ONE loop implementation serving both an
                       AxisConfig-pair overload -- for binary T-x

@@ -376,7 +376,7 @@ public class CliApp {
      * Automated binary phase-diagram tracing via {@link
      * calc.diagram.PhaseDiagramEngine} -- unlike {@code map} (a single
      * ZPF line, {@link calc.diagram.MapTracer}), this walks {@link
-     * calc.diagram.PhaseDiagramEngine#drainC1Loop} to stitch the WHOLE
+     * calc.diagram.PhaseDiagramEngine#drainMapLoop} to stitch the WHOLE
      * connected diagram from one starting point (Sundman Algorithms
      * B/C1/C2/D). Axis convention matches {@code map}'s own: axis0 is
      * walked in fixed increments (typically TEMPERATURE), axis1 is

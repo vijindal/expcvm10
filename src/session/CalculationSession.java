@@ -326,35 +326,13 @@ public final class CalculationSession {
 
     /**
      * Runs a full, automated phase-diagram calculation against the
-     * currently held system -- multi-line/node ZPF stitching (Sundman
-     * Algorithms B/C1/C2/D), not a single line like {@link #calculateMap}.
-     * Delegates to {@link calc.diagram.PhaseDiagramEngine}'s own
-     * top-to-bottom sequence ({@code defineSystem} is skipped here since
-     * {@link #currentSystem} is already built; {@code
-     * validateConditionCount} -&gt; {@code generateStartingPoints} -&gt;
-     * {@code drainC1Loop}/{@code drainStepLoop} -&gt; {@code classifyPlot}).
-     * Stores the result; read it back via {@link #currentPhaseDiagram()}.
+     * currently held system -- multi-line/node ZPF stitching, not a
+     * single line like {@link #calculateMap}. Stores the result; read it
+     * back via {@link #currentPhaseDiagram()}.
      *
-     * <p>{@code axes.length} selects the branch, matching how {@link
-     * #calculateStep}/{@link #calculateMap} already split 1-axis vs.
-     * 2-axis calculations:
-     * <ul>
-     *   <li>1 axis: STEP branch ({@code drainStepLoop}, {@code
-     *       PlotType.PROPERTY_OR_STEP_DIAGRAM}) -- no phase is ever fixed
-     *       at zero amount.</li>
-     *   <li>2 axes: MAPPING branch ({@code drainC1Loop}'s {@link
-     *       AxisConfig} overload, {@code PlotType.BINARY_T_X}) -- {@code
-     *       axes[0]} is walked, {@code axes[1]} is released and must be
-     *       {@link AxisConfig.Type#COMPOSITION} (the SAME convention
-     *       {@link #calculateMap}'s {@code axis0}/{@code axis1} already
-     *       use). Ternary isothermal/isopleth diagrams need the {@link
-     *       calc.diagram.ConditionSet}-driven {@code drainC1Loop}
-     *       overload instead -- not reachable through this {@link
-     *       AxisConfig}-array signature yet.</li>
-     * </ul>
-     *
-     * @param axes       1 or 2 axes (see above); {@code startAxes} supplies
-     *                   each axis's own starting value, same length/order
+     * @param axes       1 axis (STEP) or 2 axes (binary MAP, axes[1] must
+     *                   be COMPOSITION); {@code startAxes} supplies each
+     *                   axis's own starting value, same length/order
      * @param startAxes  starting value per axis, same length as {@code axes}
      * @throws IllegalStateException if {@link #setModel} hasn't been called yet
      * @throws IllegalArgumentException if {@code axes.length} is not 1 or 2,
@@ -365,7 +343,6 @@ public final class CalculationSession {
                                        double fixedT, double fixedP, double[] comp) {
         ThermodynamicSystem system = currentSystem();
 
-        // ---- "set conditions" (Fig. 4, before the STEP/MAP fork) --------
         if (startAxes.length != axes.length) {
             throw new IllegalArgumentException(
                     "startAxes.length (" + startAxes.length + ") must match axes.length ("
@@ -375,7 +352,7 @@ public final class CalculationSession {
             throw new IllegalArgumentException(
                     "calculatePhaseDiagram supports 1 axis (STEP) or 2 axes (binary MAP) only; got "
                     + axes.length + ". Ternary isothermal/isopleth diagrams need the "
-                    + "ConditionSet-driven PhaseDiagramEngine.drainC1Loop overload, not yet reachable "
+                    + "ConditionSet-driven PhaseDiagramEngine.drainMapLoop overload, not yet reachable "
                     + "through this AxisConfig-array entry point.");
         }
         if (axes.length == 2 && axes[1].type != AxisConfig.Type.COMPOSITION) {
@@ -408,7 +385,7 @@ public final class CalculationSession {
                     new double[] { axes[0].max },
                     -1, -1);
         } else {
-            NodeRegistry registry = PhaseDiagramEngine.drainC1Loop(
+            NodeRegistry registry = PhaseDiagramEngine.drainMapLoop(
                     axes[0], axes[1], fixedT, fixedP, startAxes[0], comp, system.phaseModels(),
                     initialEquilibrium);
 

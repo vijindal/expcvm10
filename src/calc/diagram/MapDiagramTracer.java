@@ -8,65 +8,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The C1 drain loop from {@code docs/phase_diagram_engine_flowchart.md}:
- * given a starting equilibrium, repeatedly picks a pending {@link Line}
- * from the {@link NodeRegistry}, walks it via {@link
- * MapTracer#walkOneSegment}, and on a crossing either reuses an existing
- * {@link Node} (Algorithm C2's "already found?" check) or creates one and
- * attaches its exit lines -- until no pending lines remain.
- *
- * <p><b>Every diagram type this engine's {@link ConditionSet} can
- * express</b> -- binary T-x, ternary isothermal (two free composition
- * axes), or a ternary+ isopleth (T + one free composition, one or more
- * OTHER compositions FIXED) -- runs through the SAME {@link
- * #drain(ConditionSet, int, int, double, double[], List)} loop below.
- * {@link #drain(AxisConfig, AxisConfig, double, double, double,
- * double[], List)} is a thin translation layer over it (via {@link
- * ConditionSet#fromBinaryAxes}) kept for existing callers that only ever
- * describe a binary T-x map with {@code AxisConfig} pairs (e.g. {@link
- * PhaseDiagramEngine#drainC1Loop}) -- both overloads share one
- * implementation, not two copies.
- *
- * <p><b>Scope, matching {@code docs/roadmap_phase_diagrams.md}'s
- * step-by-step build order:</b> a resolved {@link
- * MapTracer.SegmentEnd#CROSSING} is classified via {@link
- * PhaseDiagramEngine#classifyNode(ConditionSet, int)} (Eq. 8 plus the
- * paper's own §3.3 tie-line-in-plane/isopleth distinction) and given
- * exits via {@link NodeGeometry} -- {@code TIE_LINE_IN_PLANE} (2 exits)
- * for the ordinary case, {@code ISOPLETH_CROSSING} (2 or 3 exits,
- * depending on whether the arriving line already had a fixed phase of
- * its own) for an isopleth-shaped diagram, or a genuine {@link
- * MapTracer.SegmentEnd#INVARIANT} routed through Algorithm D ({@link
- * InvariantExitFinder}). {@link
- * MapTracer.SegmentEnd#UNRESOLVED_MULTI_PHASE_CHANGE} is still out of
- * scope -- that crossing could not even be resolved to a specific node
- * (more than one phase changed and neither an ordinary nor an invariant
- * resolution succeeded), so it is registered with no exit lines, a
- * deliberate, documented limitation, not a silent gap. No known
- * end-to-end case in this codebase yet exercises a genuine resolved
- * {@code INVARIANT} through a real walk (V-Zr's own documented
- * peritectic is confirmed {@code UNRESOLVED_MULTI_PHASE_CHANGE}, not
- * {@code INVARIANT}) -- {@link NodeGeometry}'s invariant-exit wiring is
- * unit-tested directly ({@code NodeGeometryTest}) against a synthetic
- * node built from literature data, not through this drain loop.
- *
- * <p>Also single-walk-axis only: every {@link Line} varies the SAME
- * axis the caller names as {@code searchAxisIndex}/{@code walkAxis}
- * (direction +1 or -1); the flowchart's "select the fastest-varying
- * axis" reselection during a walk is not implemented here -- a ternary
- * isothermal or isopleth caller picks ONE of its axes to walk for the
- * whole diagram, same as the binary case always has.
- *
- * <p><b>Global stability check (Step 6b, §2.3.3).</b> Every newly
- * created {@code CROSSING}/{@code INVARIANT} node is checked via
- * {@link PhaseDiagramEngine#isGloballyStable}, matching OC's {@code
- * global_equil_check1} at node creation; a failing node gets no exits
- * and its arriving {@link Line} is {@link Line#markExcluded marked
- * excluded} rather than terminated normally. NOT checked: the START
- * node (no arriving line to exclude if it fails -- a separate, smaller
- * follow-up) and every ordinary walked point mid-line (OC's own
- * cheaper, off-by-default {@code check_all_phases} interval check,
- * confirmed unrelated to line abandonment -- see the roadmap doc).
+ * Drains the C1 mapping loop: given a starting equilibrium, repeatedly
+ * walks a pending {@link Line} via {@link MapTracer#walkOneSegment} and
+ * on a crossing either reuses an existing {@link Node} or creates one
+ * with its exit lines, until no pending lines remain. Supports binary
+ * T-x, ternary isothermal, and isopleth diagrams via {@link
+ * ConditionSet}; single-walk-axis only.
  */
 public final class MapDiagramTracer {
 
@@ -95,35 +42,22 @@ public final class MapDiagramTracer {
     }
 
     /**
-     * Drains the C1 loop starting from one initial equilibrium, which may
-     * be SINGLE-phase (Step 3b): the true start {@link Node} is located
-     * by {@link MapTracer#findInitialBoundary}'s search along {@code
-     * walkAxis} (holding {@code releaseAxis} fixed, per the flowchart's
-     * map-branch initialization, Section 3.3) from the caller's starting
-     * condition -- not the starting condition itself, unless it already
-     * happens to sit exactly on a boundary.
+     * Drains a binary MAP calculation. The true start {@link Node} is
+     * located by searching {@code walkAxis} from {@code startWalkValue}
+     * (holding {@code releaseAxis} fixed), not necessarily the starting
+     * condition itself.
      *
-     * @param walkAxis    the axis searched initially, then walked by
-     *                    every line in the diagram (e.g. TEMPERATURE);
-     *                    see the class javadoc for why every line,
-     *                    including the start node's own exits, walks
-     *                    this SAME axis in this version's binary-only scope
-     * @param releaseAxis the composition axis solved for exactly at each
-     *                    boundary; must have {@code type == COMPOSITION}
-     *                    (same constraint as {@link MapTracer})
-     * @param fixedT      temperature when {@code walkAxis.type != TEMPERATURE}
-     * @param fixedP      pressure when {@code walkAxis.type != PRESSURE}
-     * @param startWalkValue the axis value of the CALLER's starting
-     *                       condition (usually {@code walkAxis.min}) --
-     *                       not necessarily where the start node ends up
-     * @param compOverall starting overall composition
-     * @param candidates  candidate phase models
-     * @return the populated registry: 1 start node (located by the
-     *         initial search), plus any nodes created by resolved
-     *         crossings, and every line walked
+     * @param walkAxis       axis searched initially, then walked by every line
+     * @param releaseAxis    composition axis solved for exactly at each boundary
+     * @param fixedT         temperature when {@code walkAxis.type != TEMPERATURE}
+     * @param fixedP         pressure when {@code walkAxis.type != PRESSURE}
+     * @param startWalkValue the caller's starting value for {@code walkAxis}
+     * @param compOverall    starting overall composition
+     * @param candidates     candidate phase models
+     * @return the populated registry: start node plus any nodes created
+     *         by resolved crossings, and every line walked
      * @throws IllegalStateException if the initial search finds no
-     *         stable-set change anywhere in {@code walkAxis}'s range --
-     *         there is nothing for the drain loop to start from
+     *         stable-set change anywhere in {@code walkAxis}'s range
      */
     public NodeRegistry drain(
             AxisConfig walkAxis,
@@ -138,22 +72,35 @@ public final class MapDiagramTracer {
     }
 
     /**
-     * Same as {@link #drain(AxisConfig, AxisConfig, double, double,
-     * double, double[], List)}, but for a caller (Algorithm B's own
-     * dispatcher -- {@link PhaseDiagramEngine}/{@code CalculationSession})
-     * that already holds the ONE shared initial equilibrium Algorithm B
-     * solves before branching STEP vs. MAP (Sundman 2021 Section 3: "the
-     * simplest way to start is to set the appropriate conditions for a
-     * single equilibrium calculation and THEN select one or more
-     * conditions as axis variable"). Passing {@code null} re-solves the
-     * starting point internally, matching the other overload's behavior
-     * exactly (kept for standalone callers, e.g. tests, that have no such
-     * shared result to offer).
+     * As {@link #drain(AxisConfig, AxisConfig, double, double, double,
+     * double[], List)}, with a pre-solved starting equilibrium.
      *
-     * @param startResult the already-solved equilibrium at {@code
-     *                    startWalkValue}, or {@code null} to solve it here
+     * @param startResult pre-solved initial equilibrium, or null to solve it here
      */
     public NodeRegistry drain(
+            AxisConfig walkAxis,
+            AxisConfig releaseAxis,
+            double fixedT,
+            double fixedP,
+            double startWalkValue,
+            double[] compOverall,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult startResult) {
+
+        LineFollower.Setup setup = setUp(
+                walkAxis, releaseAxis, fixedT, fixedP, startWalkValue, compOverall, candidates, startResult);
+        LineFollower.drain(setup, candidates);
+        return setup.registry();
+    }
+
+    /**
+     * As {@link #setUp(ConditionSet, int, int, double, double[], List,
+     * EquilibriumResult)}, translating {@code walkAxis}/{@code
+     * releaseAxis} into a binary {@link ConditionSet} first.
+     *
+     * @throws IllegalArgumentException if {@code releaseAxis.type != COMPOSITION}
+     */
+    LineFollower.Setup setUp(
             AxisConfig walkAxis,
             AxisConfig releaseAxis,
             double fixedT,
@@ -176,7 +123,7 @@ public final class MapDiagramTracer {
         // second -- see its own source. Index 0/1 here is not a
         // coincidence to re-derive per call; it is that method's own
         // fixed construction order.
-        return drain(conds, 0, 1, startWalkValue, compOverall, candidates, startResult);
+        return setUp(conds, 0, 1, startWalkValue, compOverall, candidates, startResult);
     }
 
     /** Returns an {@link AxisConfig} with the same range but a step whose sign matches {@code direction}. */
@@ -189,44 +136,18 @@ public final class MapDiagramTracer {
     }
 
     /**
-     * The actual C1 drain loop -- see the class javadoc. Drains the loop
-     * for ANY diagram type expressible as a {@link ConditionSet}: binary
-     * T-x, ternary isothermal (two free composition axes), or a
-     * ternary+ isopleth (T + one free composition, one or more OTHER
-     * compositions FIXED). {@link
-     * PhaseDiagramEngine#classifyNode(ConditionSet, int)} genuinely
-     * distinguishes {@code TIE_LINE_IN_PLANE} from {@code
-     * ISOPLETH_CROSSING} here, and the arriving {@link Line}'s own
-     * {@link Line#fixedPhases} is threaded into {@link NodeGeometry} so
-     * a genuine isopleth crossing gets its paper-derived 3 exits (see
-     * {@link NodeGeometry#attachExits(Node, PhaseDiagramEngine.NodeClass,
-     * String, String, int)}'s javadoc for the exact mechanism, ported
-     * directly from OpenCalphad's own {@code map_newnode case(3)}).
+     * Drains a MAP calculation for any diagram type expressible as a
+     * {@link ConditionSet}: binary T-x, ternary isothermal, or isopleth.
      *
      * @param conds            the full condition set (n+2 conditions)
-     * @param searchAxisIndex  index into {@code conds.axisConditions()}
-     *                         of the axis searched initially, then walked
-     *                         by every line in the diagram -- this
-     *                         version's single-walk-axis scope (see the
-     *                         class javadoc) still applies: every line
-     *                         walks this SAME axis, no per-line
-     *                         reselection
-     * @param releaseAxisIndex index into {@code conds.axisConditions()}
-     *                         of the composition axis Algorithm C2
-     *                         releases at every crossing
-     * @param startSearchValue the search axis's value at the caller's
-     *                         starting condition
-     * @param compOverall      starting overall composition (length
-     *                         {@code conds.numComponents()}); any
-     *                         composition condition's FIXED value must
-     *                         already be baked in here (this method does
-     *                         not re-derive it from {@code conds} beyond
-     *                         what {@link ConditionSet#initialComposition()}
-     *                         would give a fresh caller)
+     * @param searchAxisIndex  index of the axis searched initially, then
+     *                         walked by every line in the diagram
+     * @param releaseAxisIndex index of the composition axis released at every crossing
+     * @param startSearchValue the search axis's value at the caller's starting condition
+     * @param compOverall      starting overall composition (length {@code conds.numComponents()})
      * @param candidates       candidate phase models
-     * @return the populated registry: 1 start node (located by the
-     *         initial search), plus any nodes created by resolved
-     *         crossings, and every line walked
+     * @return the populated registry: start node plus any nodes created
+     *         by resolved crossings, and every line walked
      * @throws IllegalStateException if the initial search finds no
      *         stable-set change anywhere in the search axis's range
      */
@@ -242,18 +163,38 @@ public final class MapDiagramTracer {
     }
 
     /**
-     * Same as {@link #drain(ConditionSet, int, int, double, double[],
-     * List)}, but for a caller that already holds the ONE shared initial
-     * equilibrium Algorithm B solves before branching STEP vs. MAP -- see
-     * {@link #drain(AxisConfig, AxisConfig, double, double, double,
-     * double[], List, EquilibriumResult)}'s javadoc for the paper
-     * citation. Passing {@code null} re-solves the starting point
-     * internally, matching the other overload's behavior exactly.
+     * As {@link #drain(ConditionSet, int, int, double, double[], List)},
+     * with a pre-solved starting equilibrium.
      *
-     * @param startResult the already-solved equilibrium at {@code
-     *                    startSearchValue}, or {@code null} to solve it here
+     * @param startResult pre-solved initial equilibrium, or null to solve it here
      */
     public NodeRegistry drain(
+            ConditionSet conds,
+            int searchAxisIndex,
+            int releaseAxisIndex,
+            double startSearchValue,
+            double[] compOverall,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult startResult) {
+
+        LineFollower.Setup setup = setUp(
+                conds, searchAxisIndex, releaseAxisIndex, startSearchValue, compOverall, candidates, startResult);
+        LineFollower.drain(setup, candidates);
+        return setup.registry();
+    }
+
+    /**
+     * Fig. 4's MAP branch up to "+node, 2 exits": searches for the first
+     * stable-set change, creates the start node and its 2 pending exits,
+     * without yet handing off to C1.
+     *
+     * @param startResult pre-solved initial equilibrium, or null to solve it here
+     * @return the registry (with its start node) and the {@link
+     *         LineFollower.SegmentWalker} to drain it with
+     * @throws IllegalStateException if the initial search finds no
+     *         stable-set change anywhere in the search axis's range
+     */
+    LineFollower.Setup setUp(
             ConditionSet conds,
             int searchAxisIndex,
             int releaseAxisIndex,
@@ -313,91 +254,102 @@ public final class MapDiagramTracer {
         startNode.addLine(new Line(startNode, List.of(), 0, +1));
         startNode.addLine(new Line(startNode, List.of(), 0, -1));
 
-        while (registry.hasPendingWork()) {
+        LineFollower.SegmentWalker walker = (line, walkCandidates) ->
+                walkAndResolve(line, conds, walkAxis, releaseAxis, fixedT, fixedP,
+                        walkCandidates, tracer, registry);
+        return new LineFollower.Setup(registry, walker);
+    }
 
-            Line line = registry.nextPendingLine();
-            Node fromNode = line.startNode;
-            String arrivingLineFixedPhase = line.fixedPhases.isEmpty() ? null : line.fixedPhases.get(0);
-            line.startWalking();
+    /** {@link LineFollower.SegmentWalker} body for MAP: walks one segment then resolves the crossing, if any. */
+    private void walkAndResolve(
+            Line line,
+            ConditionSet conds,
+            AxisConfig walkAxis,
+            AxisConfig releaseAxis,
+            double fixedT,
+            double fixedP,
+            List<GibbsEnergyModel> candidates,
+            MapTracer tracer,
+            NodeRegistry registry) {
 
-            AxisConfig directedWalkAxis = directed(walkAxis, line.direction);
-            double[] compAtStart = compositionByNodeId.get(fromNode.id);
+        Node fromNode = line.startNode;
+        String arrivingLineFixedPhase = line.fixedPhases.isEmpty() ? null : line.fixedPhases.get(0);
 
-            MapTracer.SegmentResult seg = tracer.walkOneSegment(
-                    fromNode.axisValues[0], fromNode.stablePhaseNames,
-                    directedWalkAxis, releaseAxis, fixedT, fixedP,
-                    compAtStart, candidates, fromNode.equilibrium,
-                    StepTracer.DEFAULT_GLOBAL_CHECK_INTERVAL);
+        AxisConfig directedWalkAxis = directed(walkAxis, line.direction);
+        double[] compAtStart = compositionByNodeId.get(fromNode.id);
 
-            for (int i = 0; i < seg.points.size(); i++) {
-                line.addPoint(seg.points.get(i), seg.coords.get(i));
-            }
+        MapTracer.SegmentResult seg = tracer.walkOneSegment(
+                fromNode.axisValues[0], fromNode.stablePhaseNames,
+                directedWalkAxis, releaseAxis, fixedT, fixedP,
+                compAtStart, candidates, fromNode.equilibrium,
+                StepTracer.DEFAULT_GLOBAL_CHECK_INTERVAL);
 
-            switch (seg.end) {
-                case AXIS_LIMIT:
-                case NON_CONVERGENT:
-                    line.terminateAtAxisLimit();
-                    break;
-
-                case GLOBALLY_UNSTABLE:
-                    line.terminateAtAxisLimit();
-                    line.markExcluded();
-                    break;
-
-                case CROSSING: {
-                    Node endNode = registry.findOrCreate(
-                            seg.lastResult,
-                            new double[] { seg.endWalkValue, seg.endComposition[releaseAxis.componentIndex] },
-                            seg.endComposition, tpMatchTolerance, muMatchTolerance);
-                    compositionByNodeId.putIfAbsent(endNode.id, seg.endComposition);
-                    line.terminateAtNode(endNode);
-                    if (endNode.getLines().isEmpty()) {
-                        if (!PhaseDiagramEngine.isGloballyStable(seg.lastResult, candidates)) {
-                            line.markExcluded();
-                            break;
-                        }
-                        PhaseDiagramEngine.NodeClass nodeClass = PhaseDiagramEngine.classifyNode(
-                                conds, endNode.stablePhaseNames.size());
-                        if (nodeClass == PhaseDiagramEngine.NodeClass.ISOPLETH_CROSSING) {
-                            NodeGeometry.attachExits(endNode, nodeClass,
-                                    seg.changedPhase, arrivingLineFixedPhase, 0);
-                        } else {
-                            NodeGeometry.attachExits(endNode, nodeClass, seg.changedPhase, 0);
-                        }
-                    }
-                    break;
-                }
-
-                case INVARIANT: {
-                    Node endNode = registry.findOrCreate(
-                            seg.lastResult,
-                            new double[] { seg.endWalkValue, seg.endComposition[releaseAxis.componentIndex] },
-                            seg.endComposition, tpMatchTolerance, muMatchTolerance);
-                    compositionByNodeId.putIfAbsent(endNode.id, seg.endComposition);
-                    line.terminateAtNode(endNode);
-                    if (endNode.getLines().isEmpty()) {
-                        if (!PhaseDiagramEngine.isGloballyStable(seg.lastResult, candidates)) {
-                            line.markExcluded();
-                            break;
-                        }
-                        NodeGeometry.attachExits(endNode, PhaseDiagramEngine.NodeClass.INVARIANT,
-                                seg.changedPhase, 0);
-                    }
-                    break;
-                }
-
-                case UNRESOLVED_MULTI_PHASE_CHANGE: {
-                    Node endNode = registry.findOrCreate(
-                            seg.lastResult,
-                            new double[] { seg.endWalkValue, seg.endComposition[releaseAxis.componentIndex] },
-                            seg.endComposition, tpMatchTolerance, muMatchTolerance);
-                    compositionByNodeId.putIfAbsent(endNode.id, seg.endComposition);
-                    line.terminateAtNode(endNode);
-                    break;
-                }
-            }
+        for (int i = 0; i < seg.points.size(); i++) {
+            line.addPoint(seg.points.get(i), seg.coords.get(i));
         }
 
-        return registry;
+        switch (seg.end) {
+            case AXIS_LIMIT:
+            case NON_CONVERGENT:
+                line.terminateAtAxisLimit();
+                break;
+
+            case GLOBALLY_UNSTABLE:
+                line.terminateAtAxisLimit();
+                line.markExcluded();
+                break;
+
+            case CROSSING: {
+                Node endNode = registry.findOrCreate(
+                        seg.lastResult,
+                        new double[] { seg.endWalkValue, seg.endComposition[releaseAxis.componentIndex] },
+                        seg.endComposition, tpMatchTolerance, muMatchTolerance);
+                compositionByNodeId.putIfAbsent(endNode.id, seg.endComposition);
+                line.terminateAtNode(endNode);
+                if (endNode.getLines().isEmpty()) {
+                    if (!PhaseDiagramEngine.isGloballyStable(seg.lastResult, candidates)) {
+                        line.markExcluded();
+                        break;
+                    }
+                    PhaseDiagramEngine.NodeClass nodeClass = PhaseDiagramEngine.classifyNode(
+                            conds, endNode.stablePhaseNames.size());
+                    if (nodeClass == PhaseDiagramEngine.NodeClass.ISOPLETH_CROSSING) {
+                        NodeGeometry.attachExits(endNode, nodeClass,
+                                seg.changedPhase, arrivingLineFixedPhase, 0);
+                    } else {
+                        NodeGeometry.attachExits(endNode, nodeClass, seg.changedPhase, 0);
+                    }
+                }
+                break;
+            }
+
+            case INVARIANT: {
+                Node endNode = registry.findOrCreate(
+                        seg.lastResult,
+                        new double[] { seg.endWalkValue, seg.endComposition[releaseAxis.componentIndex] },
+                        seg.endComposition, tpMatchTolerance, muMatchTolerance);
+                compositionByNodeId.putIfAbsent(endNode.id, seg.endComposition);
+                line.terminateAtNode(endNode);
+                if (endNode.getLines().isEmpty()) {
+                    if (!PhaseDiagramEngine.isGloballyStable(seg.lastResult, candidates)) {
+                        line.markExcluded();
+                        break;
+                    }
+                    NodeGeometry.attachExits(endNode, PhaseDiagramEngine.NodeClass.INVARIANT,
+                            seg.changedPhase, 0);
+                }
+                break;
+            }
+
+            case UNRESOLVED_MULTI_PHASE_CHANGE: {
+                Node endNode = registry.findOrCreate(
+                        seg.lastResult,
+                        new double[] { seg.endWalkValue, seg.endComposition[releaseAxis.componentIndex] },
+                        seg.endComposition, tpMatchTolerance, muMatchTolerance);
+                compositionByNodeId.putIfAbsent(endNode.id, seg.endComposition);
+                line.terminateAtNode(endNode);
+                break;
+            }
+        }
     }
 }

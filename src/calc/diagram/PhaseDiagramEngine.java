@@ -115,15 +115,15 @@ public final class PhaseDiagramEngine {
         EquilibriumResult initialEquilibrium = solveInitialEquilibrium(
                 axes[0], fixedT, fixedP, startValues[0], compOverall, candidates);
                 
-        // --- Branch on axis count: STEP vs. MAP ---    
-        NodeRegistry registry;
+        // --- Branch on axis count: STEP vs. MAP, each up to "+node, 2 exits" ---
+        LineFollower.Setup setup;
         PhaseDiagramEngine.PlotType plotType;
         String[] axisNames;
         double[] axisMin, axisMax;
         int compositionAxisIndex, compositionComponentIndex;
 
         if (axes.length == 1) {
-            registry = drainStepLoop(
+            setup = new StepDiagramTracer().setUp(
                     axes[0], fixedT, fixedP, compOverall, candidates, initialEquilibrium);
 
             plotType = PlotType.PROPERTY_OR_STEP_DIAGRAM;
@@ -133,7 +133,7 @@ public final class PhaseDiagramEngine {
             compositionAxisIndex = -1;
             compositionComponentIndex = -1;
         } else {
-            registry = drainC1Loop(
+            setup = new MapDiagramTracer().setUp(
                     axes[0], axes[1], fixedT, fixedP, startValues[0], compOverall, candidates,
                     initialEquilibrium);
 
@@ -145,7 +145,10 @@ public final class PhaseDiagramEngine {
             compositionComponentIndex = axes[1].componentIndex;
         }
 
-        return classifyPlot(registry, plotType, axisNames, axisMin, axisMax,
+        // --- C1 (Fig. 5): both branches hand off here ---
+        LineFollower.drain(setup, candidates);
+
+        return classifyPlot(setup.registry(), plotType, axisNames, axisMin, axisMax,
                 compositionAxisIndex, compositionComponentIndex);
     }
 
@@ -190,45 +193,21 @@ public final class PhaseDiagramEngine {
     }
 
     /**
-     * Drains the mapping diagram (2-axis ZPF tracing) from one starting point.
-     * Walks the first axis while keeping a phase at zero amount.
-     *
-     * @param walkAxis axis to walk along
-     * @param releaseAxis axis to release (must be COMPOSITION for binary MAP)
-     * @param fixedT temperature
-     * @param fixedP pressure
-     * @param startWalkValue starting value for walkAxis
-     * @param compOverall overall composition
-     * @param candidates candidate phase models
-     * @return registry of traced nodes and lines
-     */
-    public static NodeRegistry drainC1Loop(
-            AxisConfig walkAxis,
-            AxisConfig releaseAxis,
-            double fixedT,
-            double fixedP,
-            double startWalkValue,
-            double[] compOverall,
-            List<GibbsEnergyModel> candidates) {
-
-        return drainC1Loop(walkAxis, releaseAxis, fixedT, fixedP, startWalkValue, compOverall, candidates, null);
-    }
-
-    /**
-     * Drains the mapping diagram with a pre-solved starting equilibrium.
-     * Avoids re-solving when Algorithm B has already solved it once.
+     * Drains the map diagram (2-axis ZPF tracing) from one starting point --
+     * the 2-axis counterpart of {@link #drainStepLoop}. Walks the first
+     * axis while keeping a phase at zero amount.
      *
      * @param walkAxis axis to walk
-     * @param releaseAxis axis to release
+     * @param releaseAxis axis to release (must be COMPOSITION for binary MAP)
      * @param fixedT temperature
      * @param fixedP pressure
      * @param startWalkValue starting walk value
      * @param compOverall overall composition
      * @param candidates candidate phase models
-     * @param startResult pre-solved initial equilibrium (may be null)
+     * @param startResult pre-solved initial equilibrium, or null to solve it here
      * @return registry of traced nodes and lines
      */
-    public static NodeRegistry drainC1Loop(
+    public static NodeRegistry drainMapLoop(
             AxisConfig walkAxis,
             AxisConfig releaseAxis,
             double fixedT,
@@ -243,8 +222,8 @@ public final class PhaseDiagramEngine {
     }
 
     /**
-     * Drains the mapping diagram using a ConditionSet for generalized
-     * diagram types (binary, ternary isothermal, isopleth, etc.).
+     * Drains the map diagram using a ConditionSet for generalized diagram
+     * types (binary, ternary isothermal, isopleth, etc.).
      *
      * @param conds full condition set for the diagram
      * @param searchAxisIndex index of the axis to search/walk
@@ -254,7 +233,7 @@ public final class PhaseDiagramEngine {
      * @param candidates candidate phase models
      * @return registry of traced nodes and lines
      */
-    public static NodeRegistry drainC1Loop(
+    public static NodeRegistry drainMapLoop(
             ConditionSet conds,
             int searchAxisIndex,
             int releaseAxisIndex,
@@ -274,27 +253,7 @@ public final class PhaseDiagramEngine {
      * @param fixedP pressure
      * @param compOverall overall composition
      * @param candidates candidate phase models
-     * @return registry of traced nodes and lines
-     */
-    public static NodeRegistry drainStepLoop(
-            AxisConfig axis,
-            double fixedT,
-            double fixedP,
-            double[] compOverall,
-            List<GibbsEnergyModel> candidates) {
-
-        return drainStepLoop(axis, fixedT, fixedP, compOverall, candidates, null);
-    }
-
-    /**
-     * Drains the step diagram with a pre-solved starting equilibrium.
-     *
-     * @param axis the axis to walk
-     * @param fixedT temperature
-     * @param fixedP pressure
-     * @param compOverall overall composition
-     * @param candidates candidate phase models
-     * @param startResult pre-solved initial equilibrium (may be null)
+     * @param startResult pre-solved initial equilibrium, or null to solve it here
      * @return registry of traced nodes and lines
      */
     public static NodeRegistry drainStepLoop(
