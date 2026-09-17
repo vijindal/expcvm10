@@ -189,6 +189,39 @@ public final class MapTracer {
     }
 
     /**
+     * Same as {@link #findInitialBoundary(AxisConfig, double, AxisConfig,
+     * double, double, double[], List)}, but for a caller that already
+     * holds the shared initial equilibrium Algorithm B solves ONCE before
+     * branching into STEP vs. MAP (Sundman 2021 Section 3 -- "the
+     * simplest way to start is to set the appropriate conditions for a
+     * single equilibrium calculation and THEN select one or more
+     * conditions as axis variable"; Section 3.3: "**After an initial
+     * equilibrium calculation**, two conditions are set as axes... One of
+     * the axes... is then incremented"). Does not re-solve the starting
+     * point.
+     *
+     * @param startResult the already-solved equilibrium at {@code
+     *                    startSearchValue} -- Algorithm B's own shared
+     *                    initial equilibrium, not this method's to compute
+     */
+    public InitialBoundaryResult findInitialBoundary(
+            AxisConfig searchAxis,
+            double startSearchValue,
+            AxisConfig releaseAxis,
+            double fixedT,
+            double fixedP,
+            double[] compAtStart,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult startResult) {
+
+        SegmentResult seg = walkOneSegment(
+                startSearchValue, stablePhaseNames(startResult), searchAxis, releaseAxis,
+                fixedT, fixedP, compAtStart, candidates, startResult);
+
+        return toInitialBoundaryResult(seg);
+    }
+
+    /**
      * {@code ConditionSet}-driven form of {@link #findInitialBoundary(
      * AxisConfig, double, AxisConfig, double, double, double[], List)},
      * generalizing the map branch's initial search (Sundman 2021 Section
@@ -230,6 +263,48 @@ public final class MapTracer {
 
         SegmentResult seg = walkOneSegment(
                 startSearchValue, searchAxis, releaseAxis, fixedT, fixedP, compAtStart, candidates);
+
+        return toInitialBoundaryResult(seg);
+    }
+
+    /**
+     * Same as {@link #findInitialBoundary(ConditionSet, int, double, int,
+     * double[], List)}, but for a caller that already holds the shared
+     * initial equilibrium Algorithm B solves ONCE before branching into
+     * STEP vs. MAP -- see {@link #findInitialBoundary(AxisConfig, double,
+     * AxisConfig, double, double, double[], List, EquilibriumResult)}'s
+     * javadoc for the paper citation. Does not re-solve the starting
+     * point.
+     *
+     * @param startResult the already-solved equilibrium at {@code
+     *                    startSearchValue}
+     */
+    public InitialBoundaryResult findInitialBoundary(
+            ConditionSet conds,
+            int searchAxisIndex,
+            double startSearchValue,
+            int releaseAxisIndex,
+            double[] compAtStart,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult startResult) {
+
+        List<Condition> axes = conds.axisConditions();
+        AxisConfig searchAxis = axes.get(searchAxisIndex).toAxisConfig();
+        Condition releaseCondition = axes.get(releaseAxisIndex);
+
+        if (releaseCondition.variable != Condition.Variable.COMPOSITION) {
+            throw new IllegalArgumentException(
+                    "The release axis must be a COMPOSITION condition; got "
+                    + releaseCondition.variable + " (" + releaseCondition + ")");
+        }
+
+        AxisConfig releaseAxis = releaseCondition.toAxisConfig();
+        double fixedT = conds.fixedTemperature();
+        double fixedP = conds.fixedPressure();
+
+        SegmentResult seg = walkOneSegment(
+                startSearchValue, stablePhaseNames(startResult), searchAxis, releaseAxis,
+                fixedT, fixedP, compAtStart, candidates, startResult);
 
         return toInitialBoundaryResult(seg);
     }

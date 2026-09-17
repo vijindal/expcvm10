@@ -365,21 +365,41 @@ public final class CalculationSession {
                                        double fixedT, double fixedP, double[] comp) {
         ThermodynamicSystem system = currentSystem();
 
+        // ---- "set conditions" (Fig. 4, before the STEP/MAP fork) --------
         if (startAxes.length != axes.length) {
             throw new IllegalArgumentException(
                     "startAxes.length (" + startAxes.length + ") must match axes.length ("
                     + axes.length + ")");
         }
+        if (axes.length != 1 && axes.length != 2) {
+            throw new IllegalArgumentException(
+                    "calculatePhaseDiagram supports 1 axis (STEP) or 2 axes (binary MAP) only; got "
+                    + axes.length + ". Ternary isothermal/isopleth diagrams need the "
+                    + "ConditionSet-driven PhaseDiagramEngine.drainC1Loop overload, not yet reachable "
+                    + "through this AxisConfig-array entry point.");
+        }
+        if (axes.length == 2 && axes[1].type != AxisConfig.Type.COMPOSITION) {
+            throw new IllegalArgumentException(
+                    "axes[1] (the released axis) must be COMPOSITION; got " + axes[1].type
+                    + " (" + axes[1] + ") -- same scope constraint as calculateMap's axis1.");
+        }
 
         int numComponents = currentKey.elements().size();
+        PhaseDiagramEngine.validateConditionCount(numComponents, numComponents + 2);
+        PhaseDiagramEngine.generateStartingPoints(startAxes[0]);
 
+        // ---- shared "A" (Fig. 4, before the STEP/MAP fork) --------------
+        // Algorithm B calls Algorithm A exactly ONCE at the starting
+        // conditions, THEN branches on axis count -- both branches act on
+        // this SAME solved equilibrium, never re-deriving it (Sundman 2021
+        // Section 3; see PhaseDiagramEngine#solveInitialEquilibrium).
+        EquilibriumResult initialEquilibrium = PhaseDiagramEngine.solveInitialEquilibrium(
+                axes[0], fixedT, fixedP, startAxes[0], comp, system.phaseModels());
+
+        // ---- Algorithm B's own fork: "set 1 axis" (STEP) vs. "set 2 axes" (MAP) ----
         if (axes.length == 1) {
-
-            PhaseDiagramEngine.validateConditionCount(numComponents, numComponents + 2);
-            PhaseDiagramEngine.generateStartingPoints(startAxes[0]);
-
             NodeRegistry registry = PhaseDiagramEngine.drainStepLoop(
-                    axes[0], fixedT, fixedP, comp, system.phaseModels());
+                    axes[0], fixedT, fixedP, comp, system.phaseModels(), initialEquilibrium);
 
             this.currentPhaseDiagram = PhaseDiagramEngine.classifyPlot(
                     registry, PhaseDiagramEngine.PlotType.PROPERTY_OR_STEP_DIAGRAM,
@@ -387,36 +407,17 @@ public final class CalculationSession {
                     new double[] { axes[0].min },
                     new double[] { axes[0].max },
                     -1, -1);
-
-        } else if (axes.length == 2) {
-
-            AxisConfig walkAxis = axes[0];
-            AxisConfig releaseAxis = axes[1];
-            if (releaseAxis.type != AxisConfig.Type.COMPOSITION) {
-                throw new IllegalArgumentException(
-                        "axes[1] (the released axis) must be COMPOSITION; got " + releaseAxis.type
-                        + " (" + releaseAxis + ") -- same scope constraint as calculateMap's axis1.");
-            }
-
-            PhaseDiagramEngine.validateConditionCount(numComponents, numComponents + 2);
-            PhaseDiagramEngine.generateStartingPoints(startAxes[0]);
-
+        } else {
             NodeRegistry registry = PhaseDiagramEngine.drainC1Loop(
-                    walkAxis, releaseAxis, fixedT, fixedP, startAxes[0], comp, system.phaseModels());
+                    axes[0], axes[1], fixedT, fixedP, startAxes[0], comp, system.phaseModels(),
+                    initialEquilibrium);
 
             this.currentPhaseDiagram = PhaseDiagramEngine.classifyPlot(
                     registry, PhaseDiagramEngine.PlotType.BINARY_T_X,
-                    new String[] { walkAxis.name, releaseAxis.name },
-                    new double[] { walkAxis.min, releaseAxis.min },
-                    new double[] { walkAxis.max, releaseAxis.max },
-                    1, releaseAxis.componentIndex);
-
-        } else {
-            throw new IllegalArgumentException(
-                    "calculatePhaseDiagram supports 1 axis (STEP) or 2 axes (binary MAP) only; got "
-                    + axes.length + ". Ternary isothermal/isopleth diagrams need the "
-                    + "ConditionSet-driven PhaseDiagramEngine.drainC1Loop overload, not yet reachable "
-                    + "through this AxisConfig-array entry point.");
+                    new String[] { axes[0].name, axes[1].name },
+                    new double[] { axes[0].min, axes[1].min },
+                    new double[] { axes[0].max, axes[1].max },
+                    1, axes[1].componentIndex);
         }
     }
 

@@ -86,6 +86,33 @@ public final class StepDiagramTracer {
             double[] compOverall,
             List<GibbsEnergyModel> candidates) {
 
+        return drain(axis, fixedT, fixedP, compOverall, candidates, null);
+    }
+
+    /**
+     * Same as {@link #drain(AxisConfig, double, double, double[], List)},
+     * but for a caller (Algorithm B's own dispatcher --
+     * {@link PhaseDiagramEngine}/{@code CalculationSession}) that already
+     * holds the ONE shared initial equilibrium Algorithm B solves before
+     * branching STEP vs. MAP (Sundman 2021 Section 3: "the simplest way
+     * to start is to set the appropriate conditions for a single
+     * equilibrium calculation and THEN select one or more conditions as
+     * axis variable"). Passing {@code null} re-solves the starting point
+     * internally, matching the other overload's behavior exactly (kept
+     * for standalone callers, e.g. tests, that have no such shared result
+     * to offer).
+     *
+     * @param startResult the already-solved equilibrium at {@code
+     *                    axis.min}, or {@code null} to solve it here
+     */
+    public NodeRegistry drain(
+            AxisConfig axis,
+            double fixedT,
+            double fixedP,
+            double[] compOverall,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult startResult) {
+
         StepTracer tracer = new StepTracer();
         NodeRegistry registry = new NodeRegistry();
 
@@ -98,7 +125,9 @@ public final class StepDiagramTracer {
             default: throw new IllegalStateException("Unhandled axis type: " + axis.type);
         }
 
-        EquilibriumResult startResult = EquilibriumSolveHelper.solveOrSentinel(t0, p0, comp, candidates);
+        if (startResult == null) {
+            startResult = EquilibriumSolveHelper.solveOrSentinel(t0, p0, comp, candidates);
+        }
         if (!startResult.isConverged()) {
             throw new IllegalStateException(
                     "Starting point did not converge at " + axis.name + "=" + axis.min

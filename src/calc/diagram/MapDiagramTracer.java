@@ -134,6 +134,35 @@ public final class MapDiagramTracer {
             double[] compOverall,
             List<GibbsEnergyModel> candidates) {
 
+        return drain(walkAxis, releaseAxis, fixedT, fixedP, startWalkValue, compOverall, candidates, null);
+    }
+
+    /**
+     * Same as {@link #drain(AxisConfig, AxisConfig, double, double,
+     * double, double[], List)}, but for a caller (Algorithm B's own
+     * dispatcher -- {@link PhaseDiagramEngine}/{@code CalculationSession})
+     * that already holds the ONE shared initial equilibrium Algorithm B
+     * solves before branching STEP vs. MAP (Sundman 2021 Section 3: "the
+     * simplest way to start is to set the appropriate conditions for a
+     * single equilibrium calculation and THEN select one or more
+     * conditions as axis variable"). Passing {@code null} re-solves the
+     * starting point internally, matching the other overload's behavior
+     * exactly (kept for standalone callers, e.g. tests, that have no such
+     * shared result to offer).
+     *
+     * @param startResult the already-solved equilibrium at {@code
+     *                    startWalkValue}, or {@code null} to solve it here
+     */
+    public NodeRegistry drain(
+            AxisConfig walkAxis,
+            AxisConfig releaseAxis,
+            double fixedT,
+            double fixedP,
+            double startWalkValue,
+            double[] compOverall,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult startResult) {
+
         if (releaseAxis.type != AxisConfig.Type.COMPOSITION) {
             throw new IllegalArgumentException(
                     "MapDiagramTracer's release axis must be COMPOSITION; got " + releaseAxis.type);
@@ -147,7 +176,7 @@ public final class MapDiagramTracer {
         // second -- see its own source. Index 0/1 here is not a
         // coincidence to re-derive per call; it is that method's own
         // fixed construction order.
-        return drain(conds, 0, 1, startWalkValue, compOverall, candidates);
+        return drain(conds, 0, 1, startWalkValue, compOverall, candidates, startResult);
     }
 
     /** Returns an {@link AxisConfig} with the same range but a step whose sign matches {@code direction}. */
@@ -209,6 +238,30 @@ public final class MapDiagramTracer {
             double[] compOverall,
             List<GibbsEnergyModel> candidates) {
 
+        return drain(conds, searchAxisIndex, releaseAxisIndex, startSearchValue, compOverall, candidates, null);
+    }
+
+    /**
+     * Same as {@link #drain(ConditionSet, int, int, double, double[],
+     * List)}, but for a caller that already holds the ONE shared initial
+     * equilibrium Algorithm B solves before branching STEP vs. MAP -- see
+     * {@link #drain(AxisConfig, AxisConfig, double, double, double,
+     * double[], List, EquilibriumResult)}'s javadoc for the paper
+     * citation. Passing {@code null} re-solves the starting point
+     * internally, matching the other overload's behavior exactly.
+     *
+     * @param startResult the already-solved equilibrium at {@code
+     *                    startSearchValue}, or {@code null} to solve it here
+     */
+    public NodeRegistry drain(
+            ConditionSet conds,
+            int searchAxisIndex,
+            int releaseAxisIndex,
+            double startSearchValue,
+            double[] compOverall,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult startResult) {
+
         List<Condition> axes = conds.axisConditions();
         Condition searchCondition = axes.get(searchAxisIndex);
         Condition releaseCondition = axes.get(releaseAxisIndex);
@@ -232,8 +285,12 @@ public final class MapDiagramTracer {
             startComp = StepTracer.applyCompositionAxis(walkAxis, startSearchValue, startComp);
         }
 
-        MapTracer.InitialBoundaryResult initial = tracer.findInitialBoundary(
-                conds, searchAxisIndex, startSearchValue, releaseAxisIndex, startComp, candidates);
+        MapTracer.InitialBoundaryResult initial = startResult == null
+                ? tracer.findInitialBoundary(
+                        conds, searchAxisIndex, startSearchValue, releaseAxisIndex, startComp, candidates)
+                : tracer.findInitialBoundary(
+                        conds, searchAxisIndex, startSearchValue, releaseAxisIndex, startComp, candidates,
+                        startResult);
 
         if (!initial.found) {
             throw new IllegalStateException(

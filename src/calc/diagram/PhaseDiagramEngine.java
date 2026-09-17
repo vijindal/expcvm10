@@ -197,6 +197,59 @@ public final class PhaseDiagramEngine {
     // ------------------------------------------------------------------
 
     /**
+     * The single shared {@code A} box Fig. 4 draws BETWEEN {@code set
+     * conditions} and the STEP/MAP fork -- Algorithm B's own definition,
+     * per Sundman 2021 Section 3: "the simplest way to start is to set
+     * the appropriate conditions for a single equilibrium calculation and
+     * THEN select one or more conditions as axis variable." Both the
+     * STEP branch ({@link #drainStepLoop(AxisConfig, double, double,
+     * double[], List, EquilibriumResult)}) and the MAP branch ({@link
+     * #drainC1Loop(AxisConfig, AxisConfig, double, double, double,
+     * double[], List, EquilibriumResult)}) are meant to act on THIS SAME
+     * solved equilibrium, not each independently re-solve their own --
+     * §3.3 confirms the MAP branch's own increment loop is a
+     * continuation FROM this point: "After an initial equilibrium
+     * calculation, two conditions are set as axes... One of the axes...
+     * is then incremented."
+     *
+     * @param axis        the first/walked axis; its {@code min} (or
+     *                    {@code startWalkValue} if different) is where
+     *                    this initial equilibrium is solved
+     * @param fixedT      temperature when {@code axis.type != TEMPERATURE}
+     * @param fixedP      pressure when {@code axis.type != PRESSURE}
+     * @param startWalkValue the axis value to solve at (usually {@code axis.min})
+     * @param compOverall starting overall composition
+     * @param candidates  candidate phase models
+     * @return the converged equilibrium at the starting conditions
+     * @throws IllegalStateException if it does not converge
+     */
+    public static EquilibriumResult solveInitialEquilibrium(
+            AxisConfig axis,
+            double fixedT,
+            double fixedP,
+            double startWalkValue,
+            double[] compOverall,
+            List<GibbsEnergyModel> candidates) {
+
+        double t0 = fixedT, p0 = fixedP;
+        double[] comp = compOverall.clone();
+        switch (axis.type) {
+            case TEMPERATURE: t0 = startWalkValue; break;
+            case PRESSURE: p0 = startWalkValue; break;
+            case COMPOSITION: comp = StepTracer.applyCompositionAxis(axis, startWalkValue, comp); break;
+            default: throw new IllegalStateException("Unhandled axis type: " + axis.type);
+        }
+
+        EquilibriumResult result = EquilibriumSolveHelper.solveOrSentinel(t0, p0, comp, candidates);
+        if (!result.isConverged()) {
+            throw new IllegalStateException(
+                    "Initial equilibrium did not converge at " + axis.name + "=" + startWalkValue
+                    + " -- nothing for Algorithm B to branch from.");
+        }
+        return result;
+    }
+
+    /**
      * The flowchart's "FOR EACH STARTING POINT" box through the {@code
      * C1 : DRAIN LOOP} box, MAPPING branch (2 axes): drains the whole
      * diagram from one starting point. Delegates to {@link
@@ -226,8 +279,32 @@ public final class PhaseDiagramEngine {
             double[] compOverall,
             List<GibbsEnergyModel> candidates) {
 
+        return drainC1Loop(walkAxis, releaseAxis, fixedT, fixedP, startWalkValue, compOverall, candidates, null);
+    }
+
+    /**
+     * Same as {@link #drainC1Loop(AxisConfig, AxisConfig, double, double,
+     * double, double[], List)}, but for a caller that already holds
+     * Algorithm B's own ONE shared initial equilibrium (solved once at the
+     * starting conditions, before branching STEP vs. MAP -- Sundman 2021
+     * Section 3) -- passed through to {@link
+     * MapDiagramTracer#drain(AxisConfig, AxisConfig, double, double,
+     * double, double[], List, EquilibriumResult)} so the MAP branch does
+     * not redundantly re-solve it. {@code null} preserves the other
+     * overload's behavior exactly.
+     */
+    public static NodeRegistry drainC1Loop(
+            AxisConfig walkAxis,
+            AxisConfig releaseAxis,
+            double fixedT,
+            double fixedP,
+            double startWalkValue,
+            double[] compOverall,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult startResult) {
+
         return new MapDiagramTracer().drain(
-                walkAxis, releaseAxis, fixedT, fixedP, startWalkValue, compOverall, candidates);
+                walkAxis, releaseAxis, fixedT, fixedP, startWalkValue, compOverall, candidates, startResult);
     }
 
     /**
@@ -276,7 +353,28 @@ public final class PhaseDiagramEngine {
             double[] compOverall,
             List<GibbsEnergyModel> candidates) {
 
-        return new StepDiagramTracer().drain(axis, fixedT, fixedP, compOverall, candidates);
+        return drainStepLoop(axis, fixedT, fixedP, compOverall, candidates, null);
+    }
+
+    /**
+     * Same as {@link #drainStepLoop(AxisConfig, double, double, double[],
+     * List)}, but for a caller that already holds Algorithm B's own ONE
+     * shared initial equilibrium (solved once at the starting conditions,
+     * before branching STEP vs. MAP -- Sundman 2021 Section 3) -- passed
+     * through to {@link StepDiagramTracer#drain(AxisConfig, double,
+     * double, double[], List, EquilibriumResult)} so STEP does not
+     * redundantly re-solve it. {@code null} preserves the other
+     * overload's behavior exactly.
+     */
+    public static NodeRegistry drainStepLoop(
+            AxisConfig axis,
+            double fixedT,
+            double fixedP,
+            double[] compOverall,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult startResult) {
+
+        return new StepDiagramTracer().drain(axis, fixedT, fixedP, compOverall, candidates, startResult);
     }
 
     // ------------------------------------------------------------------
