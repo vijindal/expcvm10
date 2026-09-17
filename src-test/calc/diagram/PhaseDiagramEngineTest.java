@@ -10,6 +10,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -383,5 +384,77 @@ public class PhaseDiagramEngineTest {
                 () -> PhaseDiagramEngine.classifyPlot(
                         new NodeRegistry(), PhaseDiagramEngine.PlotType.MULTICOMPONENT_ISOPLETH_OR_PSEUDO_ISOTHERMAL,
                         new String[] { "T", "x" }, new double[] { 0.0, 0.0 }, new double[] { 1.0, 1.0 }, 1, 0));
+    }
+
+    @Test
+    void calculatePhaseDiagramStepBranchWalksOneAxisAndReturnsAResult() throws IOException {
+        List<GibbsEnergyModel> candidates =
+                ThermodynamicSystem.build(TDB, ELEMENTS, PHASES).phaseModels();
+
+        AxisConfig axis = new AxisConfig("T / K", AxisConfig.Type.TEMPERATURE, 1100.0, 1250.0, 5.0);
+
+        PhaseDiagramResult result = PhaseDiagramEngine.calculatePhaseDiagram(
+                new AxisConfig[] { axis },
+                new double[] { 1100.0 },
+                1100.0, 101325.0,
+                new double[] { 0.95, 0.05 }, candidates);
+
+        assertNotNull(result);
+        assertEquals(1, result.getAxisNames().length);
+        assertEquals("T / K", result.getAxisNames()[0]);
+    }
+
+    @Test
+    void calculatePhaseDiagramMapBranchWalksTwoAxesAndReturnsAResult() throws IOException {
+        List<GibbsEnergyModel> candidates =
+                ThermodynamicSystem.build(TDB, ELEMENTS, PHASES).phaseModels();
+
+        AxisConfig walkAxis = new AxisConfig("T / K", AxisConfig.Type.TEMPERATURE, 1150.0, 1230.0, 5.0);
+        AxisConfig releaseAxis = new AxisConfig("x(Cu)", 1, 0.01, 0.6, 0.01);
+
+        PhaseDiagramResult result = PhaseDiagramEngine.calculatePhaseDiagram(
+                new AxisConfig[] { walkAxis, releaseAxis },
+                new double[] { 1150.0, 0.05 },
+                1150.0, 101325.0,
+                new double[] { 0.95, 0.05 }, candidates);
+
+        assertNotNull(result);
+        assertEquals(2, result.getAxisNames().length);
+        assertEquals("T / K", result.getAxisNames()[0]);
+        assertEquals("x(Cu)", result.getAxisNames()[1]);
+    }
+
+    @Test
+    void calculatePhaseDiagramRejectsWrongAxisCount() throws IOException {
+        List<GibbsEnergyModel> candidates =
+                ThermodynamicSystem.build(TDB, ELEMENTS, PHASES).phaseModels();
+
+        AxisConfig[] threeAxes = new AxisConfig[] {
+                new AxisConfig("T / K", AxisConfig.Type.TEMPERATURE, 1100.0, 1250.0, 5.0),
+                new AxisConfig("x(Cu)", 1, 0.0, 1.0, 0.01),
+                new AxisConfig("x(Zn)", 2, 0.0, 1.0, 0.01)
+        };
+
+        assertThrows(IllegalArgumentException.class,
+                () -> PhaseDiagramEngine.calculatePhaseDiagram(
+                        threeAxes, new double[] { 1100.0, 0.5, 0.5 },
+                        1100.0, 101325.0,
+                        new double[] { 0.5, 0.25, 0.25 }, candidates));
+    }
+
+    @Test
+    void calculatePhaseDiagramRejectsMapBranchWithNonCompositionReleaseAxis() throws IOException {
+        List<GibbsEnergyModel> candidates =
+                ThermodynamicSystem.build(TDB, ELEMENTS, PHASES).phaseModels();
+
+        AxisConfig axis0 = new AxisConfig("T / K", AxisConfig.Type.TEMPERATURE, 1100.0, 1250.0, 5.0);
+        AxisConfig axis1 = new AxisConfig("P / Pa", AxisConfig.Type.PRESSURE, 1e5, 1e6, 1e4);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> PhaseDiagramEngine.calculatePhaseDiagram(
+                        new AxisConfig[] { axis0, axis1 },
+                        new double[] { 1100.0, 1e5 },
+                        1100.0, 101325.0,
+                        new double[] { 0.95, 0.05 }, candidates));
     }
 }
