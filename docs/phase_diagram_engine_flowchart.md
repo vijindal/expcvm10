@@ -444,7 +444,7 @@ should be checked against `AxisConfig`.
 | Fixed-phase-at-zero set for a line | §3.3 | `map_fixph` | ad hoc inside `MapTracer`/`solveBoundary` calls |
 | C1 (follow line, pick next exit) | Fig. 5 | loop in `smp2A.F90` over `map_node` list | **missing outer loop** — this is the core gap |
 | C2 (stable-set change -> node + exits) | Fig. 6 | `smp2A.F90` ~4543-4900 (node creation + exit-count-by-case) | `MapTracer`'s inline crossing handling; not a reusable node/exit step |
-| Algorithm D (invariant exits) | Fig. 7 | same block, `haha`/`inveq` branch, `2*haha-1` exits | `InvariantExitFinder` |
+| Algorithm D (invariant exits) | Fig. 7 | same block, `haha`/`inveq` branch, `2*haha-1` exits | `InvariantExitPairFinder` |
 | Node registry / dedup | "list searched by algorithms C1 and C2" | `map_node%first/next/previous` | **missing** |
 | `GENERATE STARTING POINTS` | §3, Fe-Mo γ-loop note — explicitly declines to give an algorithm ("such issues will not be considered in the algorithms presented here") | one disabled, never-called prototype (`auto_startpoints`, `smp2A.F90:9342-9498`, gated by status bit `GSNOAUTOSP`; author's own comment there: "I have not really implemented several startpoint") | single start point only — **matches both sources' real behavior, not a gap relative to either** (confirmed by full source search this session; see `PhaseDiagramEngine#generateStartingPoints`'s javadoc for the complete finding) |
 | `CLASSIFY REQUESTED PLOT` | §4.1-4.4 | plotting layer, reads `type_of_node` + saved equilibria | **missing** |
@@ -453,7 +453,7 @@ The concrete build target, restated in these terms: add `EquilibriumState`
 buffer, `Node`, and `Line` (with a pending/walked state, not a separate
 `Exit` class) to `calc/diagram`, give `Node`s a global registry with
 identity-based dedup, and wrap today's single-line `MapTracer` walk plus
-`InvariantExitFinder` inside the C1 drain loop above. `GENERATE STARTING
+`InvariantExitPairFinder` inside the C1 drain loop above. `GENERATE STARTING
 POINTS` (for disconnected diagram components, e.g. Fe-Mo's γ-loop) is
 NOT a comparable gap to track alongside these — neither the paper nor
 OC has working, validated logic here to converge toward; any future

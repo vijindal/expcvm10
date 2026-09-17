@@ -97,8 +97,8 @@ DATABASE
                           │       └── NodeGeometry.attachExits
                           │           (NodeGeometry.java)
                           ├── INVARIANT / Algorithm D → implemented
-                          │       └── InvariantExitFinder.findExits
-                          │           (InvariantExitFinder.java)
+                          │       └── InvariantExitPairFinder.findExitPairs
+                          │           (InvariantExitPairFinder.java)
                           └── ISOPLETH_CROSSING → implemented
                                   └── NodeGeometry.attachIsoplethCrossingExits
                                       (LFIX/PHFIX exit table ported from

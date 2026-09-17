@@ -21,7 +21,7 @@ import java.util.Set;
  * OpenCalphad's own implementation, C:\Users\admin\codes\opencalphad,
  * this session) rather than {@link StepTracer}'s black-box bisection.
  * When three phases coexist at a node, Algorithm D ({@link
- * InvariantExitFinder}) confirms whether it is a genuine invariant.
+ * InvariantExitPairFinder}) confirms whether it is a genuine invariant.
  *
  * <p><b>Scope constraint (v1): {@code releaseAxis} is composition-only.</b>
  * The ordinary two-phase boundary crossings this tracer finds always
@@ -61,7 +61,7 @@ import java.util.Set;
  * #retryWithHalvedSteps} implements exactly this retry; once it narrows
  * the jump to a single resolvable phase change, the ordinary Algorithm
  * C2 path above (composition release) locates the exact crossing, and
- * {@link InvariantExitFinder} (Algorithm D) confirms whether the
+ * {@link InvariantExitPairFinder} (Algorithm D) confirms whether the
  * resulting >=3-phase node is a genuine invariant. Only applies when
  * {@code walkAxis.type == TEMPERATURE} -- releasing P at an invariant,
  * or a fully general any-axis-releasable map, is a distinct, smaller
@@ -973,7 +973,7 @@ public final class MapTracer {
 
             SegmentEnd end = SegmentEnd.CROSSING;
             if (nodeNames.size() >= 3) {
-                List<InvariantExitFinder.ExitCandidate> exits =
+                List<InvariantExitPairFinder.ExitPair> exits =
                         checkInvariant(nodeNames, candidates, effectiveT, effectiveP, effectiveComp,
                                 appearingOrDisappearing);
                 if (!exits.isEmpty()) {
@@ -1187,22 +1187,27 @@ public final class MapTracer {
 
     /**
      * Algorithm D check: with {@code ncomp+1} phases at a candidate
-     * node, ask {@link InvariantExitFinder} whether any valid exit
-     * exists distinct from the arrival exit -- if so, this node is a
-     * genuine invariant (multiple regions meet here), not just an
-     * ordinary crossing that happens to touch a third phase
-     * transiently.
+     * node, ask {@link InvariantExitPairFinder} whether any valid exit
+     * pair exists -- if so, this node is a genuine invariant (multiple
+     * regions meet here), not just an ordinary crossing that happens to
+     * touch a third phase transiently.
+     *
+     * <p>{@code arrivedViaExcludedPhase} alone does not identify the
+     * arrival PAIR Fig. 7 excludes (that needs both phases with zero
+     * amount together on the arriving line, which this call site does
+     * not track) -- so no pair is excluded here; this only checks
+     * EXISTENCE of a valid exit pair, it does not enumerate the exact
+     * set {@link NodeGeometry#attachExits} would attach.
      *
      * @param arrivedViaExcludedPhase the phase that was just fixed at
      *                                zero amount to solve the boundary
      *                                the algorithm arrived at this node
-     *                                by (the TRUE arrival exit, not a
-     *                                guess) -- may be {@code null} if
-     *                                the crossing changed more than one
-     *                                phase at once, in which case no
-     *                                exit is excluded as "already known"
+     *                                by; unused now that exit pairs
+     *                                (not single phases) are excluded,
+     *                                kept for caller-side documentation
+     *                                of which phase triggered this check
      */
-    private List<InvariantExitFinder.ExitCandidate> checkInvariant(
+    private List<InvariantExitPairFinder.ExitPair> checkInvariant(
             Set<String> nodeNames,
             List<GibbsEnergyModel> candidates,
             double t, double p, double[] comp,
@@ -1236,8 +1241,7 @@ public final class MapTracer {
             return new ArrayList<>();
         }
 
-        return InvariantExitFinder.findExits(
-                names, compositions, comp, arrivedViaExcludedPhase);
+        return InvariantExitPairFinder.findExitPairs(names, compositions, comp, null);
     }
 
     private LineSegment buildSegment(

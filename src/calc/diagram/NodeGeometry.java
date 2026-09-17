@@ -203,23 +203,33 @@ final class NodeGeometry {
     }
 
     /**
-     * Algorithm D (Eq. 9): enumerate every valid exit from the invariant
-     * node (excluding the arrival exit) and attach one PENDING {@link
-     * Line} per {@link InvariantExitFinder.ExitCandidate}, each fixing
-     * that candidate's {@code excludedPhase} at zero amount.
+     * Algorithm D (Fig. 7/Eq. 9): enumerate every valid exit PAIR from
+     * the invariant node (excluding the arrival pair) and attach 2
+     * PENDING {@link Line}s per {@link
+     * InvariantExitPairFinder.ExitPair} -- Fig. 7's own {@code "+2
+     * exits"} box: one line fixes {@code beta1} at zero with {@code
+     * beta2} forbidden, the other fixes {@code beta2} at zero with
+     * {@code beta1} forbidden.
      *
-     * <p>If {@link InvariantExitFinder#findExits} returns no candidates
-     * (e.g. this node's stable-phase compositions don't admit a valid
-     * positive-amount exit within {@code walkAxisIndex}'s plane, or the
-     * node's phase count doesn't match {@code ncomp+1} exactly -- e.g. a
-     * higher-order invariant this codebase has not validated
-     * {@link InvariantExitFinder} against, per that class's own
-     * binary-only verification note), the node is left with NO exit
-     * lines, matching {@link MapDiagramTracer}'s prior documented
-     * behavior for this case -- an explicit "no further lines from
-     * here" rather than a thrown error, since a node with no valid
-     * plane-exits is a legitimate outcome (the invariant may simply not
-     * continue any line within this diagram's 2D plane).
+     * <p>The arrival pair is {@code arrivedViaPhase} (the phase that
+     * just went to/from zero amount to create this node) together with
+     * {@code arrivingLineFixedPhase} (the phase already held at zero
+     * along the arriving line) -- together the two phases with zero
+     * amount on the line the algorithm arrived by, per Eq. (9)'s own
+     * "Both of these have zero amount at the exit" description.
+     *
+     * <p>If {@link InvariantExitPairFinder#findExitPairs} returns no
+     * pairs (e.g. this node's stable-phase compositions don't admit a
+     * valid positive-amount exit within {@code walkAxisIndex}'s plane,
+     * or the node's phase count doesn't match {@code ncomp+1} exactly --
+     * e.g. a higher-order invariant this codebase has not validated
+     * {@link InvariantExitPairFinder} against, per that class's own
+     * scope note), the node is left with NO exit lines, matching {@link
+     * MapDiagramTracer}'s prior documented behavior for this case -- an
+     * explicit "no further lines from here" rather than a thrown error,
+     * since a node with no valid plane-exits is a legitimate outcome
+     * (the invariant may simply not continue any line within this
+     * diagram's 2D plane).
      */
     private static void attachInvariantExits(
             Node node, String arrivedViaPhase, String arrivingLineFixedPhase, int walkAxisIndex) {
@@ -251,23 +261,29 @@ final class NodeGeometry {
                     + "expected to always supply it via NodeRegistry#findOrCreate.");
         }
 
-        List<InvariantExitFinder.ExitCandidate> exits = InvariantExitFinder.findExits(
-                phaseNames, compositions, node.overallComposition, arrivedViaPhase);
+        InvariantExitPairFinder.ExitPair arrivalPair = arrivingLineFixedPhase == null
+                ? null
+                : new InvariantExitPairFinder.ExitPair(arrivedViaPhase, arrivingLineFixedPhase);
 
-        // Each ExitCandidate names WHICH phase excludes/which phases stay
-        // stable along that exit line, but not which walkAxisIndex
-        // DIRECTION traces it -- an exit's direction is not determinable
-        // from the candidate alone (it depends on which way the walk axis
-        // must move to stay on that phase assemblage, the same ambiguity
-        // Sundman 2021 Fig. 8(c) resolves by trying a direction and
-        // flipping it if the result is "forbidden"). Attach BOTH
-        // directions per candidate, matching the tie-line-in-plane
-        // pattern; the wrong-direction line is expected to terminate
-        // quickly (non-convergence or an immediate re-crossing) when
-        // walked by the drain loop rather than being pre-filtered here.
-        for (InvariantExitFinder.ExitCandidate exit : exits) {
-            node.addLine(new Line(node, List.of(exit.excludedPhase), walkAxisIndex, +1, arrivingLineFixedPhase));
-            node.addLine(new Line(node, List.of(exit.excludedPhase), walkAxisIndex, -1, arrivingLineFixedPhase));
+        List<InvariantExitPairFinder.ExitPair> exitPairs = InvariantExitPairFinder.findExitPairs(
+                phaseNames, compositions, node.overallComposition, arrivalPair);
+
+        // Fig. 7's "+2 exits" box: each valid pair gets both role
+        // assignments -- beta1 fixed/beta2 forbidden, and vice versa.
+        // Neither exit's walk DIRECTION along walkAxisIndex is
+        // determinable from the pair alone (it depends on which way the
+        // axis must move to stay on that phase assemblage, the same
+        // ambiguity Sundman 2021 Fig. 8(c) resolves by trying a
+        // direction and flipping it if the result is "forbidden"), so
+        // both directions are attached per role; the wrong-direction
+        // line is expected to terminate quickly (non-convergence or an
+        // immediate re-crossing) when walked by the drain loop rather
+        // than being pre-filtered here.
+        for (InvariantExitPairFinder.ExitPair pair : exitPairs) {
+            node.addLine(new Line(node, List.of(pair.beta2), walkAxisIndex, +1, pair.beta1));
+            node.addLine(new Line(node, List.of(pair.beta2), walkAxisIndex, -1, pair.beta1));
+            node.addLine(new Line(node, List.of(pair.beta1), walkAxisIndex, +1, pair.beta2));
+            node.addLine(new Line(node, List.of(pair.beta1), walkAxisIndex, -1, pair.beta2));
         }
     }
 }

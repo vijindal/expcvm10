@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Step 5d of {@code docs/roadmap_phase_diagrams.md}: {@link
  * NodeGeometry#attachExits} for the {@code TIE_LINE_IN_PLANE} case
  * (an ordinary crossing) and the {@code INVARIANT} case (Algorithm D,
- * {@link InvariantExitFinder}).
+ * {@link InvariantExitPairFinder}).
  *
  * <p><b>Scope note on the INVARIANT case.</b> No existing test or
  * reference case in this codebase exercises {@link MapTracer} actually
@@ -35,7 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * correctly reports only the 2 phases actually stable there, since a
  * generic composition is not exactly ON the invariant point -- probed
  * directly this session). This tests the NEW wiring (NodeGeometry
- * correctly calling InvariantExitFinder and attaching the resulting
+ * correctly calling InvariantExitPairFinder and attaching the resulting
  * exit lines) in isolation, WITHOUT claiming the full drain loop can
  * find this specific invariant end-to-end, which remains unresolved
  * (see docs/roadmap_phase_diagrams.md).
@@ -119,24 +119,39 @@ public class NodeGeometryTest {
 
         assertEquals(Set.of("BCC_A2", "V2ZR", "LIQUID"), node.stablePhaseNames);
 
-        // Arrived via BCC_A2+V2ZR (the two-phase field just below the
-        // peritectic) -- LIQUID is the phase that newly appeared.
-        NodeGeometry.attachExits(node, PhaseDiagramEngine.NodeClass.INVARIANT, "LIQUID", 0);
+        // Arrived via the line that was already fixing BCC_A2 at zero
+        // when V2ZR appeared -- the arrival pair is (V2ZR, BCC_A2), per
+        // NodeTerminator's own always-both-phases call convention.
+        NodeGeometry.attachExits(node, PhaseDiagramEngine.NodeClass.INVARIANT, "V2ZR", "BCC_A2", 0);
 
         List<Line> lines = node.getLines();
-        // Per InvariantExitFinder: 3 candidate exits total (one per
-        // excluded phase), minus the 1 arrival exit (LIQUID excluded) =
-        // 2 remaining exits, each attached in BOTH directions (see
-        // NodeGeometry's javadoc on why direction is not determinable
-        // from the candidate alone) = up to 4 lines, but only for
-        // exits InvariantExitFinder actually finds valid (positive
-        // amounts) for this specific composition/geometry.
-        assertTrue(lines.size() % 2 == 0, "exits are attached in +/- pairs, so the count must be even");
+        // Per Fig. 7/InvariantExitPairFinder: for a 3-phase binary
+        // invariant there are exactly 3 candidate pairs -- (BCC_A2,V2ZR),
+        // (BCC_A2,LIQUID), (V2ZR,LIQUID) -- minus the 1 arrival pair
+        // (V2ZR,BCC_A2) = up to 2 remaining pairs, each attached as 4
+        // lines (Fig. 7's "+2 exits" box, times 2 walk directions per
+        // exit since direction is not determinable from the pair alone)
+        // = up to 8 lines, but only for pairs InvariantExitPairFinder
+        // actually finds valid (positive amounts) for this geometry.
+        assertTrue(lines.size() % 4 == 0, "each valid pair attaches exactly 4 lines (2 roles x 2 directions)");
         for (Line l : lines) {
             assertEquals(1, l.fixedPhases.size());
             assertTrue(Set.of("BCC_A2", "V2ZR", "LIQUID").contains(l.fixedPhases.get(0)));
-            assertTrue(!l.fixedPhases.get(0).equals("LIQUID"),
-                    "the arrival exit (LIQUID excluded) must not be re-attached as a new exit");
+            assertTrue(l.forbiddenPhase != null && Set.of("BCC_A2", "V2ZR", "LIQUID").contains(l.forbiddenPhase),
+                    "every invariant exit line must carry its pair partner as forbiddenPhase");
+            assertTrue(!l.forbiddenPhase.equals(l.fixedPhases.get(0)),
+                    "an exit's fixed phase and forbidden phase must be the two DIFFERENT members of its pair");
+        }
+
+        // The arrival pair itself (V2ZR fixed/BCC_A2 forbidden, or the
+        // reverse) must not be re-attached as a new exit.
+        for (Line l : lines) {
+            String fixed = l.fixedPhases.get(0);
+            String forbidden = l.forbiddenPhase;
+            boolean isArrivalPair =
+                    (fixed.equals("V2ZR") && forbidden.equals("BCC_A2"))
+                    || (fixed.equals("BCC_A2") && forbidden.equals("V2ZR"));
+            assertTrue(!isArrivalPair, "the arrival pair (V2ZR, BCC_A2) must not be re-attached: " + l);
         }
     }
 
