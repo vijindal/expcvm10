@@ -3,7 +3,9 @@ package calc.diagram;
 import system.model.GibbsEnergyModel;
 import system.ports.EquilibriumResult;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Algorithm C1 (Sundman 2021 Calphad 75, Fig. 5): repeatedly searches
@@ -54,6 +56,77 @@ final class LineFollower {
             return false;
         }
         return !EquilibriumSolveHelper.stablePhaseNames(result).equals(line.getRunningStableNames());
+    }
+
+    /**
+     * Returns the single phase name present in exactly one of the two sets (the
+     * phase that appeared or disappeared) -- what {@code Algorithm C2}'s "fix
+     * alpha at zero amount" box needs to identify -- or {@code null} if the sets
+     * differ by more than one phase (an ambiguous jump {@link
+     * #retryWithHalvedSteps} must narrow before C2 can be called).
+     */
+    private static String singleChangedPhase(Set<String> before, Set<String> after) {
+        Set<String> symmetricDifference = new LinkedHashSet<>(before);
+        for (String name : after) {
+            if (before.contains(name)) {
+                symmetricDifference.remove(name);
+            } else {
+                symmetricDifference.add(name);
+            }
+        }
+        return symmetricDifference.size() == 1 ? symmetricDifference.iterator().next() : null;
+    }
+
+    /**
+     * OpenCalphad's {@code map_halfstep} (see {@link MapTracer#retryWithHalvedSteps}
+     * for the full citation and rationale, ported here verbatim so {@code
+     * walkLineAlgorithmC1} handles the same "two phases competing to appear/
+     * disappear" case production's {@link MapTracer} already does): when more
+     * than one phase's stable set differs across the last walk increment, back
+     * up to the last converged point and re-walk with a 10%-of-full-step
+     * sub-step, up to 3 attempts, until the jump narrows to exactly one changed
+     * phase.
+     *
+     * @return the finer point's result and the single changed phase name, or
+     *         {@code null} if 3 sub-step attempts could not narrow the jump
+     */
+    private static RetriedCrossing retryWithHalvedSteps(
+            double lastGoodAxisValue,
+            double overshotAxisValue,
+            EquilibriumStepper stepper,
+            Set<String> lastGoodNames,
+            List<GibbsEnergyModel> candidates) {
+
+        double subStep = 0.1 * (overshotAxisValue - lastGoodAxisValue);
+
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            double candidateAxisValue = lastGoodAxisValue + attempt * subStep;
+            EquilibriumResult candidateResult = stepper.solveAt(candidateAxisValue, candidates);
+
+            if (!candidateResult.isConverged()) {
+                continue;
+            }
+
+            Set<String> candidateNames = EquilibriumSolveHelper.stablePhaseNames(candidateResult);
+            String changed = singleChangedPhase(lastGoodNames, candidateNames);
+            if (changed != null) {
+                return new RetriedCrossing(candidateAxisValue, candidateResult, changed);
+            }
+        }
+        return null;
+    }
+
+    /** Result of a successful {@link #retryWithHalvedSteps} attempt. */
+    private static final class RetriedCrossing {
+        final double axisValue;
+        final EquilibriumResult result;
+        final String changedPhase;
+
+        RetriedCrossing(double axisValue, EquilibriumResult result, String changedPhase) {
+            this.axisValue = axisValue;
+            this.result = result;
+            this.changedPhase = changedPhase;
+        }
     }
 
     /**
@@ -111,6 +184,11 @@ final class LineFollower {
         return currentAxisIndex;
     }
 
+    /** Matches {@link StepTracer#DEFAULT_GLOBAL_CHECK_INTERVAL}: the mid-line
+     *  global stability check (Sundman 2021 §2.3.3) runs every 10th walked
+     *  point, not every point. {@code 0} disables it. */
+    static final int DEFAULT_GLOBAL_CHECK_INTERVAL = StepTracer.DEFAULT_GLOBAL_CHECK_INTERVAL;
+
     /**
      * Walks one pending {@link Line} to completion: axis limit, non-convergence
      * after retry, or a phase-set change handed off to {@code onCrossing}.
@@ -128,6 +206,30 @@ final class LineFollower {
             EquilibriumStepper stepper,
             java.util.function.BiConsumer<Line, EquilibriumResult> onCrossing,
             List<GibbsEnergyModel> candidates) {
+        walkLineAlgorithmC1(line, axis, stepper, onCrossing, candidates, 0);
+    }
+
+    /**
+     * As {@link #walkLineAlgorithmC1(Line, AxisConfig, EquilibriumStepper,
+     * java.util.function.BiConsumer, List)}, additionally running the mid-line
+     * {@code GLOBAL STABILITY CHECK} (Sundman 2021 §2.3.3: "During the line
+     * calculations... global checks are made at node points and at regular
+     * intervals along a line. If such a check finds that there is another set
+     * of phases which represent a more stable equilibrium, the automatic
+     * procedure is to abandon this line and suppress it in a subsequent
+     * plot.") every {@code globalCheckInterval} ordinary (non-crossing) saved
+     * points -- {@code 0} disables it. A failed check terminates and excludes
+     * the line (matching {@link StepTracer}/{@link MapTracer}'s {@code
+     * GLOBALLY_UNSTABLE} handling), without calling {@code onCrossing}: no
+     * node is created for an abandoned line.
+     */
+    static void walkLineAlgorithmC1(
+            Line line,
+            AxisConfig axis,
+            EquilibriumStepper stepper,
+            java.util.function.BiConsumer<Line, EquilibriumResult> onCrossing,
+            List<GibbsEnergyModel> candidates,
+            int globalCheckInterval) {
 
         // --- box: "small axis increment" ---
         double axisValue = line.startNode.axisValues[line.initialAxisIndex]
@@ -167,12 +269,43 @@ final class LineFollower {
 
             // --- box: "phase change? -- yes --> C2" ---
             if (phaseChanged(line, result)) {
-                onCrossing.accept(line, result); // Algorithm C2 + node matching + exit attachment
+                Set<String> currentNames = EquilibriumSolveHelper.stablePhaseNames(result);
+                String changedPhase = singleChangedPhase(line.getRunningStableNames(), currentNames);
+
+                double crossingAxisValue = axisValue;
+                EquilibriumResult crossingResult = result;
+
+                if (changedPhase == null) {
+                    // More than one phase differs -- OC's map_halfstep case
+                    // (§3.3's own algorithm never fixes two phases at once);
+                    // narrow with a shrinking sub-step before calling C2.
+                    RetriedCrossing retried = retryWithHalvedSteps(
+                            lastGoodAxisValue, axisValue, stepper, line.getRunningStableNames(), candidates);
+                    if (retried == null) {
+                        // Matches MapTracer's UNRESOLVED_MULTI_PHASE_CHANGE:
+                        // terminate at this point with no exits attached,
+                        // rather than letting C2 fail on an ambiguous phase.
+                        line.terminateAtAxisLimit();
+                        return;
+                    }
+                    crossingAxisValue = retried.axisValue;
+                    crossingResult = retried.result;
+                }
+
+                onCrossing.accept(line, crossingResult); // Algorithm C2 + node matching + exit attachment
                 return;
             }
 
             // --- box: "save results" ---
             line.addPoint(result, new double[] { axisValue });
+
+            // --- §2.3.3's mid-line GLOBAL STABILITY CHECK ---
+            if (globalCheckInterval > 0 && line.size() % globalCheckInterval == 0
+                    && !PhaseDiagramEngine.isGloballyStable(result, candidates)) {
+                line.terminateAtAxisLimit();
+                line.markExcluded();
+                return;
+            }
 
             // --- box: "Select axis with largest variation" (MAP only; no-op for STEP) ---
             int nextAxisIndex = selectAxisWithLargestVariation(line, line.initialAxisIndex, result, result);

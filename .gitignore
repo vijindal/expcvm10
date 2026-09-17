@@ -6,3 +6,4 @@
 /out_build/
 data/expcvm.log
 .claude/
+hs_err_pid*.log

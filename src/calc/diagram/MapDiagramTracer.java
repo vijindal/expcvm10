@@ -3,17 +3,15 @@ package calc.diagram;
 import system.model.GibbsEnergyModel;
 import system.ports.EquilibriumResult;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
- * Drains the C1 mapping loop: given a starting equilibrium, repeatedly
- * walks a pending {@link Line} via {@link MapTracer#walkOneSegment} and
- * on a crossing either reuses an existing {@link Node} or creates one
- * with its exit lines, until no pending lines remain. Supports binary
- * T-x, ternary isothermal, and isopleth diagrams via {@link
- * ConditionSet}; single-walk-axis only.
+ * Drains the C1 mapping loop (Algorithm C1/C2/D via {@link LineFollower}/
+ * {@link NodeTerminator}): given a starting equilibrium, repeatedly walks
+ * a pending {@link Line} and on a crossing either reuses an existing
+ * {@link Node} or creates one with its exit lines, until no pending lines
+ * remain. Supports binary T-x, ternary isothermal, and isopleth diagrams
+ * via {@link ConditionSet}; single-walk-axis only.
  */
 public final class MapDiagramTracer {
 
@@ -22,14 +20,6 @@ public final class MapDiagramTracer {
 
     /** Chemical-potential node-matching tolerance passed to {@link NodeRegistry#findOrCreate}. */
     private final double muMatchTolerance;
-
-    /**
-     * Overall composition tracked per node id -- {@link Node} cannot
-     * always recover this from its {@link EquilibriumResult} alone for a
-     * multi-phase node (see {@link Node#overallComposition}'s javadoc),
-     * so this loop threads it explicitly.
-     */
-    private final Map<Integer, double[]> compositionByNodeId = new HashMap<>();
 
     /** Uses OC's own node-matching tolerances (see {@link Node#matches(Node)}). */
     public MapDiagramTracer() {
@@ -234,7 +224,6 @@ public final class MapDiagramTracer {
                 initial.equilibrium,
                 new double[] { initial.crossingSearchValue, startNodeComp[releaseAxis.componentIndex] },
                 startNodeComp, tpMatchTolerance, muMatchTolerance);
-        compositionByNodeId.putIfAbsent(startNode.id, startNodeComp);
 
         // Sundman 2021 §3.3: "A first node point will be created with the
         // appearing/disappearing phase as fix with zero amount and with
@@ -247,93 +236,51 @@ public final class MapDiagramTracer {
         startNode.addLine(new Line(startNode, startNodeFixedPhase, 0, +1));
         startNode.addLine(new Line(startNode, startNodeFixedPhase, 0, -1));
 
+        // Algorithm C1 (Fig. 5) + C2 (Fig. 6) + D (Fig. 7, via
+        // NodeGeometry.attachExits inside NodeTerminator): the same
+        // LineFollower/NodeTerminator chain StepDiagramTracer now uses,
+        // generalized to any ConditionSet-expressible diagram type (binary
+        // T-x, ternary isothermal, isopleth) via the walkAxisIndex=0
+        // translation -- every Line created by this setUp/NodeGeometry
+        // walks conds.axisConditions().get(0), matching MapTracer's own
+        // ConditionSet overloads' fixed index-0 convention.
+        java.util.function.BiConsumer<Line, EquilibriumResult> onCrossing =
+                NodeTerminator.crossingHandlerFor(conds, 0, compOverall, candidates, registry);
+        LineFollower.EquilibriumStepper stepper = stepperFor(conds, 0);
+
         LineFollower.SegmentWalker walker = (line, walkCandidates) ->
-                walkAndResolve(line, conds, releaseAxis, walkCandidates, tracer, registry);
+                LineFollower.walkLineAlgorithmC1(
+                        line, walkAxis, stepper, onCrossing, walkCandidates,
+                        LineFollower.DEFAULT_GLOBAL_CHECK_INTERVAL);
         return new LineFollower.Setup(registry, walker);
     }
 
-    /** {@link LineFollower.SegmentWalker} body for MAP: walks one segment then resolves the crossing, if any. */
-    private void walkAndResolve(
-            Line line,
-            ConditionSet conds,
-            AxisConfig releaseAxis,
-            List<GibbsEnergyModel> candidates,
-            MapTracer tracer,
-            NodeRegistry registry) {
+    /**
+     * Builds a {@link LineFollower.EquilibriumStepper} that solves at a given
+     * value of {@code conds}'s axis condition {@code walkAxisIndex}, holding
+     * every other condition at {@code conds}'s own fixed/initial value --
+     * generalizes {@link StepDiagramTracer}'s single-{@link AxisConfig}
+     * stepper to a full {@link ConditionSet} (ternary isothermal/isopleth:
+     * the non-walked axis condition may itself be COMPOSITION, not just T/P).
+     */
+    private static LineFollower.EquilibriumStepper stepperFor(ConditionSet conds, int walkAxisIndex) {
+        List<Condition> axes = conds.axisConditions();
+        Condition walkCondition = axes.get(walkAxisIndex);
+        AxisConfig walkAxis = walkCondition.toAxisConfig();
+        double fixedT = conds.fixedTemperature();
+        double fixedP = conds.fixedPressure();
+        double[] baseComp = conds.initialComposition();
 
-        Node fromNode = line.startNode;
-        String arrivingLineFixedPhase = line.fixedPhases.isEmpty() ? null : line.fixedPhases.get(0);
-
-        double[] compAtStart = compositionByNodeId.get(fromNode.id);
-
-        MapTracer.SegmentResult seg = tracer.walkOneSegment(
-                line, conds, 0, 1,
-                fromNode.axisValues[0], fromNode.stablePhaseNames,
-                compAtStart, candidates, fromNode.equilibrium,
-                StepTracer.DEFAULT_GLOBAL_CHECK_INTERVAL);
-
-        for (int i = 0; i < seg.points.size(); i++) {
-            line.addPoint(seg.points.get(i), seg.coords.get(i));
-        }
-
-        switch (seg.end) {
-            case AXIS_LIMIT:
-            case NON_CONVERGENT:
-                line.terminateAtAxisLimit();
-                break;
-
-            case GLOBALLY_UNSTABLE:
-                line.terminateAtAxisLimit();
-                line.markExcluded();
-                break;
-
-            case CROSSING: {
-                Node endNode = registry.findOrCreate(
-                        seg.lastResult,
-                        new double[] { seg.endWalkValue, seg.endComposition[releaseAxis.componentIndex] },
-                        seg.endComposition, tpMatchTolerance, muMatchTolerance);
-                compositionByNodeId.putIfAbsent(endNode.id, seg.endComposition);
-                line.terminateAtNode(endNode);
-                if (endNode.getLines().isEmpty()) {
-                    if (!PhaseDiagramEngine.isGloballyStable(seg.lastResult, candidates)) {
-                        line.markExcluded();
-                        break;
-                    }
-                    PhaseDiagramEngine.NodeClass nodeClass = PhaseDiagramEngine.classifyNode(
-                            conds, endNode.stablePhaseNames.size());
-                    NodeGeometry.attachExits(endNode, nodeClass,
-                            seg.changedPhase, arrivingLineFixedPhase, 0);
-                }
-                break;
+        return (axisValue, candidates) -> {
+            double t = fixedT, p = fixedP;
+            double[] comp = baseComp.clone();
+            switch (walkAxis.type) {
+                case TEMPERATURE: t = axisValue; break;
+                case PRESSURE: p = axisValue; break;
+                case COMPOSITION: comp = StepTracer.applyCompositionAxis(walkAxis, axisValue, comp); break;
+                default: throw new IllegalStateException("Unhandled axis type: " + walkAxis.type);
             }
-
-            case INVARIANT: {
-                Node endNode = registry.findOrCreate(
-                        seg.lastResult,
-                        new double[] { seg.endWalkValue, seg.endComposition[releaseAxis.componentIndex] },
-                        seg.endComposition, tpMatchTolerance, muMatchTolerance);
-                compositionByNodeId.putIfAbsent(endNode.id, seg.endComposition);
-                line.terminateAtNode(endNode);
-                if (endNode.getLines().isEmpty()) {
-                    if (!PhaseDiagramEngine.isGloballyStable(seg.lastResult, candidates)) {
-                        line.markExcluded();
-                        break;
-                    }
-                    NodeGeometry.attachExits(endNode, PhaseDiagramEngine.NodeClass.INVARIANT,
-                            seg.changedPhase, arrivingLineFixedPhase, 0);
-                }
-                break;
-            }
-
-            case UNRESOLVED_MULTI_PHASE_CHANGE: {
-                Node endNode = registry.findOrCreate(
-                        seg.lastResult,
-                        new double[] { seg.endWalkValue, seg.endComposition[releaseAxis.componentIndex] },
-                        seg.endComposition, tpMatchTolerance, muMatchTolerance);
-                compositionByNodeId.putIfAbsent(endNode.id, seg.endComposition);
-                line.terminateAtNode(endNode);
-                break;
-            }
-        }
+            return EquilibriumSolveHelper.solveOrSentinel(t, p, comp, candidates);
+        };
     }
 }

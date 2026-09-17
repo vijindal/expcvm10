@@ -44,6 +44,40 @@ final class NodeTerminator {
     }
 
     /**
+     * As {@link #crossingHandlerFor(AxisConfig, double, double, double[],
+     * ConditionSet, List, NodeRegistry)}, but for a caller (e.g. {@link
+     * MapDiagramTracer}) walking one indexed axis out of a full {@link
+     * ConditionSet} rather than a single standalone {@link AxisConfig} --
+     * the same translation {@link MapTracer#walkOneSegment(Line,
+     * ConditionSet, int, int, double, java.util.Set, double[], List,
+     * EquilibriumResult, int)} already performs, reused here so {@code
+     * NodeTerminator} needs no diagram-type-specific knowledge beyond an
+     * {@link AxisConfig} and the shared {@link ConditionSet}.
+     *
+     * <p>{@code compOverall} is only used to seed {@code A}'s solve when
+     * {@code axis} is not itself COMPOSITION (T/P release); every node
+     * this produces carries its OWN {@link Node#overallComposition},
+     * computed from the boundary equilibrium's stable phases by {@link
+     * #overallComposition}, so callers do not need to track composition
+     * per node externally the way {@link MapTracer}'s inline walk does.
+     */
+    static java.util.function.BiConsumer<Line, EquilibriumResult> crossingHandlerFor(
+            ConditionSet conds,
+            int walkAxisIndex,
+            double[] compOverall,
+            List<GibbsEnergyModel> candidates,
+            NodeRegistry registry) {
+
+        List<Condition> axes = conds.axisConditions();
+        AxisConfig axis = axes.get(walkAxisIndex).toAxisConfig();
+        double fixedT = conds.fixedTemperature();
+        double fixedP = conds.fixedPressure();
+
+        return (line, crossingHint) -> runAlgorithmC2(
+                line, crossingHint, axis, fixedT, fixedP, compOverall, conds, candidates, registry);
+    }
+
+    /**
      * Runs Algorithm C2 (Fig. 6) for one detected crossing.
      *
      * @param line         the line that crossed a phase-set change
@@ -87,13 +121,13 @@ final class NodeTerminator {
 
         // box: global? -- no --> delete line
         if (!globallyStable) {
-            deleteLine(line, boundary, axis, registry);
+            deleteLine(line, boundary, axis, conds, registry);
             toC1(line);
             return;
         }
 
         // box: search -- already calculated --> exit marked done
-        Node endNode = search(boundary, axis, registry);
+        Node endNode = search(boundary, axis, conds, registry);
         if (alreadyCalculated(endNode)) {
             exitMarkedDone(line, endNode);
             toC1(line);
@@ -195,24 +229,65 @@ final class NodeTerminator {
 
     /** box: delete line -- abandons a line whose boundary equilibrium failed the global test. */
     private static void deleteLine(
-            Line line, EquilibriumSolverV2.BoundarySolveResult boundary, AxisConfig axis, NodeRegistry registry) {
-        Node node = matchOrCreateNode(registry, axis, boundary);
+            Line line, EquilibriumSolverV2.BoundarySolveResult boundary, AxisConfig axis,
+            ConditionSet conds, NodeRegistry registry) {
+        Node node = matchOrCreateNode(registry, axis, conds, boundary);
         line.terminateAtNode(node);
         line.markExcluded();
     }
 
     /** box: search -- finds or registers the node for the boundary equilibrium. */
-    private static Node search(EquilibriumSolverV2.BoundarySolveResult boundary, AxisConfig axis, NodeRegistry registry) {
-        return matchOrCreateNode(registry, axis, boundary);
+    private static Node search(
+            EquilibriumSolverV2.BoundarySolveResult boundary, AxisConfig axis,
+            ConditionSet conds, NodeRegistry registry) {
+        return matchOrCreateNode(registry, axis, conds, boundary);
     }
 
+    /**
+     * Builds the {@link Node}'s axis-coordinate array and registers/matches
+     * it. For a single standalone {@code axis} (STEP, {@code conds == null}),
+     * this is the one released value, matching {@link Line#initialAxisIndex}
+     * always being 0. For a {@link ConditionSet}-driven diagram (MAP: binary
+     * T-x, ternary isothermal/isopleth), the node needs ONE coordinate per
+     * diagram axis, not just the released one -- built by reading each axis
+     * condition's own value off the boundary-converged equilibrium/overall
+     * composition, the same per-axis extraction {@link MapTracer}'s inline
+     * walk performs via {@code effectiveWalkValue}/{@code crossingReleaseValue}.
+     */
     private static Node matchOrCreateNode(
-            NodeRegistry registry, AxisConfig axis, EquilibriumSolverV2.BoundarySolveResult boundary) {
-        double releasedAxisValue = axis.type == AxisConfig.Type.COMPOSITION
-                ? boundary.releasedComponentValue
-                : (axis.type == AxisConfig.Type.TEMPERATURE ? boundary.equilibrium.getT() : boundary.equilibrium.getP());
-        return registry.findOrCreate(
-                boundary.equilibrium, new double[] { releasedAxisValue }, overallComposition(boundary.equilibrium));
+            NodeRegistry registry, AxisConfig axis, ConditionSet conds,
+            EquilibriumSolverV2.BoundarySolveResult boundary) {
+
+        double[] overallComp = overallComposition(boundary.equilibrium);
+
+        double[] axisValues;
+        if (conds == null) {
+            double releasedAxisValue = axis.type == AxisConfig.Type.COMPOSITION
+                    ? boundary.releasedComponentValue
+                    : (axis.type == AxisConfig.Type.TEMPERATURE
+                            ? boundary.equilibrium.getT() : boundary.equilibrium.getP());
+            axisValues = new double[] { releasedAxisValue };
+        } else {
+            List<Condition> axes = conds.axisConditions();
+            axisValues = new double[axes.size()];
+            for (int i = 0; i < axes.size(); i++) {
+                axisValues[i] = axisValueOf(axes.get(i), boundary, overallComp);
+            }
+        }
+
+        return registry.findOrCreate(boundary.equilibrium, axisValues, overallComp);
+    }
+
+    /** One {@link ConditionSet} axis condition's own value at the resolved boundary. */
+    private static double axisValueOf(
+            Condition axisCondition, EquilibriumSolverV2.BoundarySolveResult boundary, double[] overallComp) {
+        switch (axisCondition.variable) {
+            case TEMPERATURE: return boundary.equilibrium.getT();
+            case PRESSURE: return boundary.equilibrium.getP();
+            case COMPOSITION: return overallComp[axisCondition.componentIndex];
+            default:
+                throw new IllegalStateException("Unhandled axis variable: " + axisCondition.variable);
+        }
     }
 
     /** box: search's "already calculated" branch -- true if {@code endNode} already has attached lines. */
