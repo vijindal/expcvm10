@@ -299,27 +299,52 @@ public class PhaseDiagramEngineTest {
     }
 
     @Test
-    void classifyPlotBinaryTxConvertsNodeRegistryToPhaseDiagramResult() {
+    void classifyPlotBinaryTxSplitsATwoPhaseLineIntoOneSegmentPerStablePhase() {
+        // Sundman 2021 §4.1: a proper T-x diagram plots the mole fraction
+        // in EACH stable phase, not the overall composition -- one walked
+        // two-phase run (LIQUID+FCC_A1 at every point) must become TWO
+        // LineSegments here, one per phase, each carrying that phase's
+        // OWN composition at component index 1 (twoPhaseEquilibrium's
+        // fixture: LIQUID x=[0.5,0.5] -> 0.5, FCC_A1 x=[0.7,0.3] -> 0.3),
+        // not the Node's tracked overall composition (0.5 then 0.6) that
+        // used to leak through before this fix.
         NodeRegistry registry = new NodeRegistry();
         Node startNode = registry.findOrCreate(
-                dummyEquilibrium(1000.0), new double[] { 1000.0, 0.5 }, new double[] { 0.5, 0.5 });
+                twoPhaseEquilibrium(1000.0), new double[] { 1000.0, 0.5 }, new double[] { 0.5, 0.5 });
         Node endNode = registry.findOrCreate(
                 twoPhaseEquilibrium(1050.0), new double[] { 1050.0, 0.6 }, new double[] { 0.6, 0.4 });
 
         Line line = new Line(startNode, List.of(), 0, +1);
         line.startWalking();
-        line.addPoint(dummyEquilibrium(1000.0), new double[] { 1000.0, 0.5 });
+        line.addPoint(twoPhaseEquilibrium(1000.0), new double[] { 1000.0, 0.5 });
         line.addPoint(twoPhaseEquilibrium(1050.0), new double[] { 1050.0, 0.6 });
         line.terminateAtNode(endNode);
         startNode.addLine(line);
 
         PhaseDiagramResult result = PhaseDiagramEngine.classifyPlot(
                 registry, PhaseDiagramEngine.PlotType.BINARY_T_X,
-                new String[] { "T", "x(Cu)" }, new double[] { 900.0, 0.0 }, new double[] { 1100.0, 1.0 });
+                new String[] { "T", "x(Cu)" }, new double[] { 900.0, 0.0 }, new double[] { 1100.0, 1.0 },
+                1, 1);
 
-        assertEquals(1, result.getLines().size());
+        assertEquals(2, result.getLines().size(), "one LineSegment per stable phase (LIQUID, FCC_A1)");
         assertEquals(2, result.getNodes().size());
-        assertEquals(2, result.getLines().get(0).size());
+
+        PhaseDiagramResult.LineSegment liquidSeg = null, fccSeg = null;
+        for (PhaseDiagramResult.LineSegment seg : result.getLines()) {
+            if (seg.stablePhases.equals(List.of("LIQUID"))) liquidSeg = seg;
+            if (seg.stablePhases.equals(List.of("FCC_A1"))) fccSeg = seg;
+        }
+        assertTrue(liquidSeg != null && fccSeg != null, "expected exactly one LIQUID segment and one FCC_A1 segment");
+
+        // Each segment's composition coordinate is that phase's OWN x --
+        // constant across both points in this fixture (twoPhaseEquilibrium
+        // doesn't vary composition with T), NOT the node's tracked overall
+        // composition (0.5 then 0.6).
+        for (double[] c : liquidSeg.coords) assertEquals(0.5, c[1], 1e-12);
+        for (double[] c : fccSeg.coords) assertEquals(0.3, c[1], 1e-12);
+        assertEquals(1000.0, liquidSeg.coords.get(0)[0], 1e-12);
+        assertEquals(1050.0, liquidSeg.coords.get(1)[0], 1e-12);
+
         for (PhaseDiagramResult.NodePoint node : result.getNodes()) {
             assertEquals(PhaseDiagramResult.NodePoint.Type.CROSSING, node.type,
                     "2 or fewer stable phases on a 2-axis diagram is an ordinary crossing, not an invariant");
@@ -331,7 +356,7 @@ public class PhaseDiagramEngineTest {
         assertThrows(IllegalArgumentException.class,
                 () -> PhaseDiagramEngine.classifyPlot(
                         new NodeRegistry(), PhaseDiagramEngine.PlotType.BINARY_T_X,
-                        new String[] { "T" }, new double[] { 900.0 }, new double[] { 1100.0 }),
+                        new String[] { "T" }, new double[] { 900.0 }, new double[] { 1100.0 }, 1, 0),
                 "BINARY_T_X needs 2 axes -- VALIDATE PLOT should reject 1");
     }
 
@@ -339,7 +364,7 @@ public class PhaseDiagramEngineTest {
     void classifyPlotPropertyOrStepDiagramAcceptsOneAxis() {
         PhaseDiagramResult result = PhaseDiagramEngine.classifyPlot(
                 new NodeRegistry(), PhaseDiagramEngine.PlotType.PROPERTY_OR_STEP_DIAGRAM,
-                new String[] { "T" }, new double[] { 900.0 }, new double[] { 1100.0 });
+                new String[] { "T" }, new double[] { 900.0 }, new double[] { 1100.0 }, -1, -1);
         assertTrue(result.getLines().isEmpty());
         assertTrue(result.getNodes().isEmpty());
     }
@@ -349,14 +374,14 @@ public class PhaseDiagramEngineTest {
         assertThrows(UnsupportedOperationException.class,
                 () -> PhaseDiagramEngine.classifyPlot(
                         new NodeRegistry(), PhaseDiagramEngine.PlotType.ACTIVITY_OR_CHEMICAL_POTENTIAL,
-                        new String[] { "T", "AC(CU)" }, new double[] { 900.0, 0.0 }, new double[] { 1100.0, 1.0 }));
+                        new String[] { "T", "AC(CU)" }, new double[] { 900.0, 0.0 }, new double[] { 1100.0, 1.0 }, 1, 0));
         assertThrows(UnsupportedOperationException.class,
                 () -> PhaseDiagramEngine.classifyPlot(
                         new NodeRegistry(), PhaseDiagramEngine.PlotType.H_X_S_X_G_X,
-                        new String[] { "x(Cu)", "H" }, new double[] { 0.0, 0.0 }, new double[] { 1.0, 1.0 }));
+                        new String[] { "x(Cu)", "H" }, new double[] { 0.0, 0.0 }, new double[] { 1.0, 1.0 }, 0, 0));
         assertThrows(UnsupportedOperationException.class,
                 () -> PhaseDiagramEngine.classifyPlot(
                         new NodeRegistry(), PhaseDiagramEngine.PlotType.MULTICOMPONENT_ISOPLETH_OR_PSEUDO_ISOTHERMAL,
-                        new String[] { "T", "x" }, new double[] { 0.0, 0.0 }, new double[] { 1.0, 1.0 }));
+                        new String[] { "T", "x" }, new double[] { 0.0, 0.0 }, new double[] { 1.0, 1.0 }, 1, 0));
     }
 }

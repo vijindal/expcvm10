@@ -38,11 +38,15 @@ import java.util.List;
  * engine's {@link ConditionSet} can express, the same generalization
  * {@link MapDiagramTracer} itself went through (Step 6d).
  *
- * <p><b>Not yet wired into any UI.</b> {@code
- * CalculationSession#calculatePhaseDiagram} still throws its own
- * "not yet implemented" -- this class is the engine {@code
- * calculatePhaseDiagram} will eventually call once enough of the
- * pipeline below is real, not a replacement for it yet.
+ * <p><b>Wired into the CLI/GUI</b> via {@code
+ * CalculationSession#calculatePhaseDiagram} (the {@code diagram} CLI
+ * command, {@code MainController#runPhaseDiagram}) -- covers the 1-axis
+ * STEP branch and the 2-axis binary MAP branch ({@link
+ * #drainC1Loop(AxisConfig, AxisConfig, double, double, double, double[],
+ * List)}'s overload); ternary isothermal/isopleth diagrams still need
+ * the {@link ConditionSet}-driven {@code drainC1Loop} overload, not yet
+ * reachable through {@code CalculationSession}'s {@link AxisConfig}-array
+ * entry point.
  */
 public final class PhaseDiagramEngine {
 
@@ -601,23 +605,37 @@ public final class PhaseDiagramEngine {
      *
      * <p><b>Implemented plot types</b> -- {@link PlotType#BINARY_T_X},
      * {@link PlotType#PROPERTY_OR_STEP_DIAGRAM}, {@link
-     * PlotType#TERNARY_ISOTHERMAL}, {@link PlotType#TERNARY_ISOPLETH}:
-     * all four are a straight relabeling of already-computed {@link
-     * Node}/{@link Line} data -- each {@link Line}'s own stored walk-axis/
-     * release-axis coordinates ({@link Line#getAxisCoords()}) become
-     * {@link LineSegment#coords} directly (matching exactly what {@link
-     * MapTracer#trace}/{@link StepTracer#trace} already compute inline,
-     * just sourced from the {@link NodeRegistry} graph instead of a
-     * separate walk); no new physics or geometry. Every {@link Node} in a
-     * {@link NodeRegistry} is a real phase-set-change point -- {@link
-     * Line#terminateAtAxisLimit} never creates a {@link Node}, only a
-     * dangling {@link Line} with no end node -- so {@link
-     * NodePoint.Type#BOUNDARY} never arises here; {@link
-     * NodePoint.Type#CROSSING} vs. {@link NodePoint.Type#INVARIANT} is
-     * derived per-node from Gibbs phase rule (a node with more stable
-     * phases than the diagram's own ordinary crossing count, {@code
-     * numAxes+1}, is an invariant -- {@code f=0} in {@link
-     * #classifyNode}'s own Eq. 8 terms).
+     * PlotType#TERNARY_ISOTHERMAL}, {@link PlotType#TERNARY_ISOPLETH}: no
+     * new physics -- every value plotted was already computed by {@link
+     * #drainC1Loop}/{@link #drainStepLoop} and stored on {@link
+     * Line#getPoints()}. But this is NOT a bare copy of {@link
+     * Line#getAxisCoords()}: per &sect;4.1's own worked example ("the
+     * composition of the phase with zero amount can be extracted and
+     * plotted... if the user selects the mole fraction of Cu in ALL
+     * STABLE PHASES as axis variable -- which is the default when there
+     * are tie-lines in the plane", contrasted explicitly with Fig. 10(b)'s
+     * OVERALL composition as a plotting mistake), a composition-release
+     * {@link Line} whose stable set has {@code k} phases is split into
+     * {@code k} {@link LineSegment}s here -- one per stable phase, each
+     * using that phase's own {@link
+     * system.ports.EquilibriumResult.PhaseResult#x} at every sampled
+     * point, not the line's stored overall-composition coordinate (which
+     * remains correct and unchanged for the WALK axis, e.g. T). This is
+     * what Fig. 2(a)/10(a)'s actual liquidus+solidus pair is: two curves
+     * from one walked two-phase run. {@code compositionAxisIndex}/{@code
+     * compositionComponentIndex} identify which diagram axis is the
+     * released composition and which component it tracks; pass {@code -1}
+     * for {@link PlotType#PROPERTY_OR_STEP_DIAGRAM} (STEP never releases
+     * a composition, so no split applies -- {@link Line#getAxisCoords()}
+     * is used as-is there). Every {@link Node} in a {@link NodeRegistry}
+     * is a real phase-set-change point -- {@link Line#terminateAtAxisLimit}
+     * never creates a {@link Node}, only a dangling {@link Line} with no
+     * end node -- so {@link NodePoint.Type#BOUNDARY} never arises here;
+     * {@link NodePoint.Type#CROSSING} vs. {@link
+     * NodePoint.Type#INVARIANT} is derived per-node from Gibbs phase rule
+     * (a node with more stable phases than the diagram's own ordinary
+     * crossing count, {@code numAxes+1}, is an invariant -- {@code f=0}
+     * in {@link #classifyNode}'s own Eq. 8 terms).
      *
      * <p><b>Not yet implemented</b> -- {@link
      * PlotType#ACTIVITY_OR_CHEMICAL_POTENTIAL} (needs a reference-state
@@ -642,13 +660,21 @@ public final class PhaseDiagramEngine {
      *                  requestedType}'s expected axis count
      * @param axisMin   diagram axis minimums, same length
      * @param axisMax   diagram axis maximums, same length
+     * @param compositionAxisIndex     index into {@code axisNames} of the
+     *                                 released composition axis, or
+     *                                 {@code -1} if none (STEP)
+     * @param compositionComponentIndex the component that axis tracks
+     *                                 (ignored when {@code
+     *                                 compositionAxisIndex < 0})
      */
     public static PhaseDiagramResult classifyPlot(
             NodeRegistry registry,
             PlotType requestedType,
             String[] axisNames,
             double[] axisMin,
-            double[] axisMax) {
+            double[] axisMax,
+            int compositionAxisIndex,
+            int compositionComponentIndex) {
 
         int expectedAxes = expectedAxisCount(requestedType);
         if (axisNames.length != expectedAxes || axisMin.length != expectedAxes || axisMax.length != expectedAxes) {
@@ -663,7 +689,8 @@ public final class PhaseDiagramEngine {
             case PROPERTY_OR_STEP_DIAGRAM:
             case TERNARY_ISOTHERMAL:
             case TERNARY_ISOPLETH:
-                return buildResult(registry, axisNames, axisMin, axisMax);
+                return buildResult(registry, axisNames, axisMin, axisMax,
+                        compositionAxisIndex, compositionComponentIndex);
 
             case ACTIVITY_OR_CHEMICAL_POTENTIAL:
             case H_X_S_X_G_X:
@@ -685,10 +712,12 @@ public final class PhaseDiagramEngine {
      * The actual {@link Node}/{@link Line} -&gt; {@link PhaseDiagramResult}
      * conversion shared by every implemented {@link PlotType} in {@link
      * #classifyPlot} -- see that method's javadoc for what this does and
-     * does not compute.
+     * does not compute (in particular the &sect;4.1-driven per-phase
+     * composition split this method performs).
      */
     private static PhaseDiagramResult buildResult(
-            NodeRegistry registry, String[] axisNames, double[] axisMin, double[] axisMax) {
+            NodeRegistry registry, String[] axisNames, double[] axisMin, double[] axisMax,
+            int compositionAxisIndex, int compositionComponentIndex) {
 
         PhaseDiagramResult result = new PhaseDiagramResult(axisNames, axisMin, axisMax);
         int numAxes = axisNames.length;
@@ -699,8 +728,39 @@ public final class PhaseDiagramEngine {
                 continue;
             }
             String fixedPhase = line.fixedPhases.isEmpty() ? null : line.fixedPhases.get(0);
-            result.addLine(new LineSegment(
-                    line.getAxisCoords(), fixedPhase, new java.util.ArrayList<>(lineStablePhaseNames(line))));
+
+            if (compositionAxisIndex < 0) {
+                // No released composition (e.g. STEP) -- the stored walk
+                // coordinates are already correct as-is.
+                result.addLine(new LineSegment(line.getAxisCoords(), fixedPhase,
+                        new java.util.ArrayList<>(lineStablePhaseNames(line))));
+                continue;
+            }
+
+            // Sundman 2021 §4.1: a proper T-x diagram plots "the mole
+            // fraction of Cu in ALL STABLE PHASES" -- one curve per
+            // stable phase, not the overall composition Line.getAxisCoords()
+            // stores at compositionAxisIndex. Split this one walked run
+            // into one LineSegment per phase name, each phase's own
+            // PhaseResult.x substituted in at compositionAxisIndex.
+            List<double[]> walkCoords = line.getAxisCoords();
+            for (String phaseName : lineStablePhaseNames(line)) {
+                List<double[]> perPhaseCoords = new java.util.ArrayList<>(points.size());
+                boolean phasePresentThroughout = true;
+                for (int i = 0; i < points.size(); i++) {
+                    double[] x = phaseCompositionOrNull(points.get(i), phaseName);
+                    if (x == null) {
+                        phasePresentThroughout = false;
+                        break;
+                    }
+                    double[] coord = walkCoords.get(i).clone();
+                    coord[compositionAxisIndex] = x[compositionComponentIndex];
+                    perPhaseCoords.add(coord);
+                }
+                if (phasePresentThroughout && !perPhaseCoords.isEmpty()) {
+                    result.addLine(new LineSegment(perPhaseCoords, fixedPhase, List.of(phaseName)));
+                }
+            }
         }
 
         for (Node node : registry.getNodes()) {
@@ -717,5 +777,15 @@ public final class PhaseDiagramEngine {
         }
 
         return result;
+    }
+
+    /** {@code eq}'s stable-phase mole-fraction composition for {@code phaseName}, or {@code null} if not stable there. */
+    private static double[] phaseCompositionOrNull(EquilibriumResult eq, String phaseName) {
+        for (EquilibriumResult.PhaseResult pr : eq.getStablePhases()) {
+            if (pr.phaseName.equals(phaseName)) {
+                return pr.x;
+            }
+        }
+        return null;
     }
 }

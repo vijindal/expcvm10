@@ -269,11 +269,17 @@ public class CliApp {
         switch (command) {
             case "diagram":
                 System.out.println("Usage: diagram [options]");
-                System.out.println("  --tdb FILE                  TDB database path");
-                System.out.println("  --elements Ti,Zr            Comma-separated elements");
-                System.out.println("  --phases HCP_A3,BCC_A2,LIQ  Comma-separated phases");
-                System.out.println("  --axis0 COMPOSITION,0,1,0.05");
-                System.out.println("  --axis1 TEMPERATURE,500,2000,50");
+                System.out.println("  Automated binary phase-diagram tracing (Algorithms B/C1/C2/D --");
+                System.out.println("  stitches the WHOLE connected diagram from one starting point,");
+                System.out.println("  unlike map's single ZPF line).");
+                System.out.println("  --tdb FILE                     TDB database path");
+                System.out.println("  --elements AG,CU                Comma-separated elements");
+                System.out.println("  --phases LIQUID,FCC_A1          Comma-separated phases (candidates)");
+                System.out.println("  --axis TYPE,min,max,step        repeat twice: 1st = walked axis, e.g. TEMPERATURE,1000,1200,5;");
+                System.out.println("                                 2nd = released axis (must be COMPOSITION), e.g. COMPOSITION:1,0.0,1.0,0.01");
+                System.out.println("  --T value                       Fixed T (K), used when 1st axis type != TEMPERATURE");
+                System.out.println("  --P value                       Fixed P (Pa), used when 1st axis type != PRESSURE");
+                System.out.println("  --composition x1,x2,...         Overall mole fractions");
                 break;
             case "inspect":
                 System.out.println("Usage: inspect [options]");
@@ -318,9 +324,9 @@ public class CliApp {
                 System.out.println("  --tdb FILE                     TDB database path");
                 System.out.println("  --elements V,ZR                Comma-separated elements");
                 System.out.println("  --phases V2ZR,BCC_A2           Comma-separated phases (candidates)");
-                System.out.println("  --axisX TYPE,min,max,step      e.g. COMPOSITION:1,0.02,0.20,0.01");
-                System.out.println("  --axisY TYPE,min,max,step      e.g. TEMPERATURE,1200,1600,50");
-                System.out.println("  --T value                      Fixed T (K), used when axisY type != TEMPERATURE");
+                System.out.println("  --axis TYPE,min,max,step       repeat twice: e.g. COMPOSITION:1,0.02,0.20,0.01");
+                System.out.println("                                 then TEMPERATURE,1200,1600,50");
+                System.out.println("  --T value                      Fixed T (K), used when neither axis is TEMPERATURE");
                 System.out.println("  --P value                      Fixed P (Pa), used when neither axis is PRESSURE");
                 System.out.println("  --composition x1,x2,...        Overall mole fractions (renormalized for swept axes)");
                 break;
@@ -330,8 +336,8 @@ public class CliApp {
                 System.out.println("  --tdb FILE                     TDB database path");
                 System.out.println("  --elements CR,FE,MO            Comma-separated elements");
                 System.out.println("  --phases LIQUID,A2             Comma-separated phases (candidates)");
-                System.out.println("  --axisI COMPOSITION:i,min,max,step  e.g. COMPOSITION:1,0.0,0.6,0.1");
-                System.out.println("  --axisJ COMPOSITION:j,min,max,step  e.g. COMPOSITION:2,0.0,0.6,0.1");
+                System.out.println("  --axis COMPOSITION:i,min,max,step  repeat twice: e.g. COMPOSITION:1,0.0,0.6,0.1");
+                System.out.println("                                 then COMPOSITION:2,0.0,0.6,0.1");
                 System.out.println("  --T value                      Fixed T (K)");
                 System.out.println("  --P value                      Fixed P (Pa)");
                 System.out.println("  --composition x1,x2,...        Overall mole fractions (renormalized for swept axes)");
@@ -342,10 +348,10 @@ public class CliApp {
                 System.out.println("  --tdb FILE                     TDB database path");
                 System.out.println("  --elements AG,CU                Comma-separated elements");
                 System.out.println("  --phases LIQUID,FCC_A1          Comma-separated phases (candidates)");
-                System.out.println("  --axis0 TYPE,min,max,step       walked axis, e.g. TEMPERATURE,1000,1200,5");
-                System.out.println("  --axis1 COMPOSITION:i,min,max,step  released axis; must be COMPOSITION");
-                System.out.println("  --T value                       Fixed T (K), used when axis0 type != TEMPERATURE");
-                System.out.println("  --P value                       Fixed P (Pa), used when axis0 type != PRESSURE");
+                System.out.println("  --axis TYPE,min,max,step        repeat twice: 1st = walked axis, e.g. TEMPERATURE,1000,1200,5;");
+                System.out.println("                                 2nd = released axis (must be COMPOSITION), e.g. COMPOSITION:1,0.0,1.0,0.01");
+                System.out.println("  --T value                       Fixed T (K), used when 1st axis type != TEMPERATURE");
+                System.out.println("  --P value                       Fixed P (Pa), used when 1st axis type != PRESSURE");
                 System.out.println("  --composition x1,x2,...         Overall mole fractions");
                 break;
             case "opt":
@@ -366,74 +372,48 @@ public class CliApp {
     // ──────────────────────────────────────────────────────────────────
 
     /**
-     * Calculate a phase diagram from CLI flags, routed through
-     * {@link CalculationSession} ({@code setModel(...)} then
-     * {@code calculatePhaseDiagram(...)}, result read via
-     * {@code currentPhaseDiagram()}).
-     *
-     * Usage:
-     *   diagram [--tdb FILE] [--elements A,B] [--phases P1,P2,P3]
-     *           [--axis0 TYPE,min,max,step]  e.g. COMPOSITION,0,1,0.05
-     *           [--axis1 TYPE,min,max,step]  e.g. TEMPERATURE,500,2000,50
+    /**
+     * Automated binary phase-diagram tracing via {@link
+     * calc.diagram.PhaseDiagramEngine} -- unlike {@code map} (a single
+     * ZPF line, {@link calc.diagram.MapTracer}), this walks {@link
+     * calc.diagram.PhaseDiagramEngine#drainC1Loop} to stitch the WHOLE
+     * connected diagram from one starting point (Sundman Algorithms
+     * B/C1/C2/D). Axis convention matches {@code map}'s own: axis0 is
+     * walked in fixed increments (typically TEMPERATURE), axis1 is
+     * released and solved exactly at each boundary (must be
+     * COMPOSITION) -- see {@link CalculationSession#calculatePhaseDiagram}.
      */
     private void runPhaseDiagram(String[] args, String cwd) throws IOException {
-        String  tdbPath  = cwd + "/data/tizr_kum.tdb";
-        String  elements = "Ti,Zr";
-        String  phases   = "HCP_A3,BCC_A2,LIQUID";
-        String  axis0Str = "COMPOSITION,0,1,0.05";
-        String  axis1Str = "TEMPERATURE,500,2000,50";
+        boolean interactive = isInteractive(args);
 
-        // Parse flags
-        for (int i = 1; i < args.length - 1; i++) {
-            switch (args[i]) {
-                case "--tdb":      tdbPath  = resolvePath(args[++i], cwd); break;
-                case "--elements": elements = args[++i]; break;
-                case "--phases":   phases   = args[++i]; break;
-                case "--axis0":    axis0Str = args[++i]; break;
-                case "--axis1":    axis1Str = args[++i]; break;
-                default: i++; break;  // skip unknown flag + its value
-            }
-        }
-
-        List<String> elementList = splitCsv(elements);
-        List<String> phaseList   = splitCsv(phases);
+        CoarseGridParams p = interactive
+                ? CoarseGridParams.fromPrompts(prompter(cwd), "data/agcu.TDB",
+                        "AG,CU", "LIQUID,FCC_A1", "Axis0", "TEMPERATURE,1000,1200,5",
+                        "Axis1", "COMPOSITION:1,0.0,1.0,0.01", 1000.0, "0.5,0.5")
+                : CoarseGridParams.fromArgs(args, cwd, this::resolvePath, "data/agcu.TDB",
+                        "AG,CU", "LIQUID,FCC_A1", "TEMPERATURE,1000,1200,5",
+                        "COMPOSITION:1,0.0,1.0,0.01", 1000.0, "0.5,0.5");
 
         System.out.println("--- Phase Diagram Calculation (via CalculationSession) ---");
-        System.out.println("TDB:      " + tdbPath);
-        System.out.println("Elements: " + elementList);
-        System.out.println("Phases:   " + phaseList);
-        System.out.println("Axis 0:   " + axis0Str);
-        System.out.println("Axis 1:   " + axis1Str);
+        p.printSummary("Axis 0 (walked)", "Axis 1 (released, must be COMPOSITION)");
         System.out.println("-------------------------------------------------------");
 
-        AxisConfig a0 = parseAxisConfig(axis0Str, "Axis0");
-        AxisConfig a1 = parseAxisConfig(axis1Str, "Axis1");
-        List<AxisConfig> axes = new ArrayList<>();
-        if (a0 != null) axes.add(a0);
-        if (a1 != null) axes.add(a1);
-        if (axes.isEmpty()) {
-            System.out.println("Error: no valid axes parsed");
-            return;
-        }
-
-        double[] startAxes = new double[axes.size()];
-        for (int i = 0; i < axes.size(); i++) startAxes[i] = axes.get(i).min;
-        int nc = elementList.size();
-        double[] comp = new double[nc];
-        Arrays.fill(comp, 1.0 / nc);
-
-        ModelSelection model = new ModelSelection(tdbPath, elementList, phaseList);
+        ModelSelection model = new ModelSelection(p.tdbPath, p.elements, p.phases);
         CalculationInterface.PhaseDiagramParams params = new CalculationInterface.PhaseDiagramParams(
-                axes.toArray(new AxisConfig[0]), startAxes,
-                /* fixedT */ 1000.0, /* fixedP */ 101325.0, comp);
+                new AxisConfig[] { p.axis1, p.axis2 },
+                new double[] { p.axis1.min, p.axis2.min },
+                p.T, p.P, p.composition);
 
+        calc.diagram.PhaseDiagramResult result;
         try {
-            CalculationInterface.<CalculationInterface.PhaseDiagramParams, Object>runCalculating(
+            result = CalculationInterface.runCalculating(
                     session, CalculationKind.PHASE_DIAGRAM, model, params);
         } catch (IllegalStateException | UnsupportedOperationException | IllegalArgumentException e) {
             System.out.println("Error: " + e.getMessage());
             return;
         }
+
+        printPhaseDiagramResult(result);
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -763,17 +743,26 @@ public class CliApp {
             System.out.println("Composition: " + Arrays.toString(composition));
         }
 
+        /**
+         * Parses a 2-axis command's flags. Both axes share ONE flag name,
+         * {@code --axis} -- repeated twice, in order (first {@code --axis}
+         * is axis1/walked/X/I, second is axis2/released/Y/J depending on
+         * the command) -- rather than a different per-command suffix
+         * ({@code --axis0}/{@code --axis1}, {@code --axisX}/{@code
+         * --axisY}, {@code --axisI}/{@code --axisJ}): the same conceptual
+         * input (an {@link AxisConfig} spec string) deserves the same flag
+         * name everywhere, matching {@code --T}/{@code --P}/{@code
+         * --composition}'s already-consistent naming across every command.
+         */
         static CoarseGridParams fromArgs(String[] args, String cwd,
                                           java.util.function.BiFunction<String, String, String> resolvePath,
                                           String defaultTdbRelPath, String defaultElements, String defaultPhases,
-                                          String axis1Flag, String defaultAxis1Spec,
-                                          String axis2Flag, String defaultAxis2Spec,
+                                          String defaultAxis1Spec, String defaultAxis2Spec,
                                           double defaultT, String defaultComposition) {
             String tdbPath        = cwd + "/" + defaultTdbRelPath;
             String elementsStr    = defaultElements;
             String phasesStr      = defaultPhases;
-            String axis1Spec      = defaultAxis1Spec;
-            String axis2Spec      = defaultAxis2Spec;
+            List<String> axisSpecs = new ArrayList<>();
             double T              = defaultT;
             double P              = 101325.0;
             String compositionStr = defaultComposition;
@@ -783,18 +772,19 @@ public class CliApp {
                 if ("--tdb".equals(flag))              tdbPath        = resolvePath.apply(args[++i], cwd);
                 else if ("--elements".equals(flag))    elementsStr    = args[++i];
                 else if ("--phases".equals(flag))      phasesStr      = args[++i];
-                else if (flag.equals(axis1Flag))       axis1Spec      = args[++i];
-                else if (flag.equals(axis2Flag))       axis2Spec      = args[++i];
+                else if ("--axis".equals(flag))        axisSpecs.add(args[++i]);
                 else if ("--T".equals(flag))           T              = Double.parseDouble(args[++i]);
                 else if ("--P".equals(flag))           P              = Double.parseDouble(args[++i]);
                 else if ("--composition".equals(flag)) compositionStr = args[++i];
                 else i++;
             }
-            AxisConfig axis1 = parseAxisConfig(axis1Spec, axis1Flag);
-            AxisConfig axis2 = parseAxisConfig(axis2Spec, axis2Flag);
+            String axis1Spec = axisSpecs.size() > 0 ? axisSpecs.get(0) : defaultAxis1Spec;
+            String axis2Spec = axisSpecs.size() > 1 ? axisSpecs.get(1) : defaultAxis2Spec;
+
+            AxisConfig axis1 = parseAxisConfig(axis1Spec, "Axis1");
+            AxisConfig axis2 = parseAxisConfig(axis2Spec, "Axis2");
             if (axis1 == null || axis2 == null) {
-                throw new IllegalArgumentException(
-                        "could not parse " + axis1Flag + "/" + axis2Flag);
+                throw new IllegalArgumentException("could not parse --axis (need exactly 2)");
             }
             return new CoarseGridParams(tdbPath, splitCsv(elementsStr), splitCsv(phasesStr),
                     axis1, axis2, T, P, parseDoubleCsv(compositionStr));
@@ -863,8 +853,8 @@ public class CliApp {
                                 "V,ZR", "V2ZR,BCC_A2", "AxisX", "COMPOSITION:1,0.02,0.20,0.01",
                                 "AxisY", "TEMPERATURE,1200,1600,50", 1500.0, "1.0,0.0")
                         : CoarseGridParams.fromArgs(args, cwd, this::resolvePath, "data/VZR-re2.TDB",
-                                "V,ZR", "V2ZR,BCC_A2", "--axisX", "COMPOSITION:1,0.02,0.20,0.01",
-                                "--axisY", "TEMPERATURE,1200,1600,50", 1500.0, "1.0,0.0");
+                                "V,ZR", "V2ZR,BCC_A2", "COMPOSITION:1,0.02,0.20,0.01",
+                                "TEMPERATURE,1200,1600,50", 1500.0, "1.0,0.0");
 
         System.out.println("--- Coarse Binary Diagram (via CalculationSession) ---");
         p.printSummary("Axis X", "Axis Y");
@@ -907,8 +897,8 @@ public class CliApp {
                                 "CR,FE,MO", "LIQUID,A2", "AxisI", "COMPOSITION:1,0.0,0.6,0.1",
                                 "AxisJ", "COMPOSITION:2,0.0,0.6,0.1", 1800.0, "1.0,0.0,0.0")
                         : CoarseGridParams.fromArgs(args, cwd, this::resolvePath, "data/Cr-Fe-Mo.TDB",
-                                "CR,FE,MO", "LIQUID,A2", "--axisI", "COMPOSITION:1,0.0,0.6,0.1",
-                                "--axisJ", "COMPOSITION:2,0.0,0.6,0.1", 1800.0, "1.0,0.0,0.0");
+                                "CR,FE,MO", "LIQUID,A2", "COMPOSITION:1,0.0,0.6,0.1",
+                                "COMPOSITION:2,0.0,0.6,0.1", 1800.0, "1.0,0.0,0.0");
 
         System.out.println("--- Coarse Ternary Diagram (via CalculationSession) ---");
         p.printSummary("Axis I", "Axis J");
@@ -976,8 +966,8 @@ public class CliApp {
                                 "AG,CU", "LIQUID,FCC_A1", "Axis0", "TEMPERATURE,1000,1200,5",
                                 "Axis1", "COMPOSITION:1,0.0,1.0,0.01", 1000.0, "0.5,0.5")
                         : CoarseGridParams.fromArgs(args, cwd, this::resolvePath, "data/agcu.TDB",
-                                "AG,CU", "LIQUID,FCC_A1", "--axis0", "TEMPERATURE,1000,1200,5",
-                                "--axis1", "COMPOSITION:1,0.0,1.0,0.01", 1000.0, "0.5,0.5");
+                                "AG,CU", "LIQUID,FCC_A1", "TEMPERATURE,1000,1200,5",
+                                "COMPOSITION:1,0.0,1.0,0.01", 1000.0, "0.5,0.5");
 
         System.out.println("--- Map Calculation (via CalculationSession) ---");
         p.printSummary("Axis 0", "Axis 1");
@@ -1020,6 +1010,42 @@ public class CliApp {
                         + " at " + Arrays.toString(node.axisValues));
             }
         }
+
+        String[] axisNames = result.getAxisNames();
+
+        System.out.println();
+        System.out.println("=== Full line detail (" + result.getLines().size() + " lines) ===");
+        int lineIndex = 0;
+        for (calc.diagram.PhaseDiagramResult.LineSegment line : result.getLines()) {
+            lineIndex++;
+            System.out.println("Line " + lineIndex + ": " + line.label()
+                    + " (" + line.size() + " points, fixedPhase=" + line.fixedPhase + ")");
+            int pointIndex = 0;
+            for (double[] coord : line.coords) {
+                pointIndex++;
+                System.out.println("    [" + pointIndex + "] " + formatCoords(axisNames, coord));
+            }
+        }
+
+        System.out.println();
+        System.out.println("=== Full node detail (" + result.getNodes().size() + " nodes) ===");
+        int nodeIndex = 0;
+        for (calc.diagram.PhaseDiagramResult.NodePoint node : result.getNodes()) {
+            nodeIndex++;
+            System.out.println("Node " + nodeIndex + ": " + node.type + " "
+                    + String.join("+", node.stablePhases) + " at " + formatCoords(axisNames, node.axisValues));
+        }
+    }
+
+    /** Renders axis coordinates as {@code "name=value, name=value, ..."} using each axis's own display name. */
+    private static String formatCoords(String[] axisNames, double[] coord) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < coord.length; i++) {
+            if (i > 0) sb.append(", ");
+            String name = i < axisNames.length ? axisNames[i] : ("axis" + i);
+            sb.append(name).append('=').append(coord[i]);
+        }
+        return sb.toString();
     }
 
     private static double[] parseDoubleCsv(String in) {
@@ -1458,8 +1484,8 @@ public class CliApp {
         System.out.println("  coarse-binary [opts]   2D grid of independent equilibrium samples");
         System.out.println("  coarse-ternary [opts]  2D grid over two composition axes");
         System.out.println("  map [options]          Two-axis ZPF phase-diagram map (Algorithms C1/C2/D)");
-        System.out.println("  diagram [options]      Phase-diagram tracing (not yet implemented --");
-        System.out.println("                         see CalculationSession#calculatePhaseDiagram)");
+        System.out.println("  diagram [options]      Automated binary phase-diagram tracing");
+        System.out.println("                         (Algorithms B/C1/C2/D, whole connected diagram)");
         System.out.println("  inspect [options]      Browse a TDB database (elements / phases)");
         System.out.println("  opt                    Run parameter optimization (legacy pathway)");
         System.out.println("  cal                    Run CalModel calculation (legacy pathway)");

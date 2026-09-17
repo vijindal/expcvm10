@@ -193,7 +193,8 @@ public class PhaseDiagramEngineEndToEndTest {
                 registry, PhaseDiagramEngine.PlotType.BINARY_T_X,
                 new String[] { walkAxis.name, releaseAxis.name },
                 new double[] { walkAxis.min, releaseAxis.min },
-                new double[] { walkAxis.max, releaseAxis.max });
+                new double[] { walkAxis.max, releaseAxis.max },
+                1, releaseAxis.componentIndex);
 
         assertTrue(result.getLines().size() >= 1, "should have at least one plotted ZPF line");
 
@@ -208,14 +209,24 @@ public class PhaseDiagramEngineEndToEndTest {
                 "classifyPlot's own PhaseDiagramResult should still carry OC's own confirmed "
                 + "liquidus crossing near T=1176.13K");
 
-        boolean foundLineThroughLiquidusPhases = false;
+        // §4.1: a two-phase run is plotted as ONE LineSegment PER stable
+        // phase (each phase's own composition), not one segment labeled
+        // with both phase names -- so look for the two single-phase
+        // segments (LIQUID's own liquidus curve, FCC_A1's own solidus
+        // curve) rather than a combined FCC_A1+LIQUID label.
+        boolean foundLiquidusSegment = false;
+        boolean foundSolidusSegment = false;
         for (PhaseDiagramResult.LineSegment line : result.getLines()) {
-            if (Set.copyOf(line.stablePhases).equals(Set.of("FCC_A1", "LIQUID"))) {
-                foundLineThroughLiquidusPhases = true;
+            if (line.stablePhases.equals(List.of("LIQUID"))) {
+                foundLiquidusSegment = true;
+                assertTrue(line.size() >= 2, "a plotted ZPF line should carry more than one sampled point");
+            }
+            if (line.stablePhases.equals(List.of("FCC_A1"))) {
+                foundSolidusSegment = true;
                 assertTrue(line.size() >= 2, "a plotted ZPF line should carry more than one sampled point");
             }
         }
-        assertTrue(foundLineThroughLiquidusPhases,
-                "should have a plotted LineSegment labeled with the same FCC_A1+LIQUID stable set");
+        assertTrue(foundLiquidusSegment, "should have a plotted LineSegment for LIQUID's own composition");
+        assertTrue(foundSolidusSegment, "should have a plotted LineSegment for FCC_A1's own composition");
     }
 }

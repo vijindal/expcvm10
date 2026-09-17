@@ -89,6 +89,26 @@ import java.util.Set;
  * {@link #walkOneSegment} in a loop -- a pure refactor, verified by
  * {@code CalculationSessionMapTracerTest} (a standalone diagnostic,
  * not JUnit) continuing to pass unmodified.
+ *
+ * <p><b>Known gap: {@link #trace} still plots OVERALL composition, not
+ * each stable phase's own composition.</b> Sundman 2021 &sect;4.1 states
+ * a proper binary T-x diagram plots "the mole fraction of Cu in ALL
+ * STABLE PHASES" -- one curve per stable phase on a two-phase run, NOT
+ * the overall system composition (explicitly named as the Fig. 10(b)
+ * mistake case). {@link PhaseDiagramEngine#classifyPlot} (the {@code
+ * diagram} CLI command's pipeline, via {@link
+ * PhaseDiagramEngine#drainC1Loop}/{@link NodeRegistry}/{@link Line})
+ * fixes this by splitting each two-phase {@link Line} into one {@link
+ * PhaseDiagramResult.LineSegment} per stable phase, reading each
+ * phase's own {@link system.ports.EquilibriumResult.PhaseResult#x} off
+ * the already-stored {@link Line#getPoints()}. {@link #trace} (the
+ * {@code map} CLI command's pipeline, via {@link
+ * CalculationSession#calculateMap}) has NOT been fixed the same way --
+ * it builds {@code runCoords}/{@link LineSegment} incrementally per
+ * walked point rather than retaining a {@link Line}-like point list to
+ * split after the fact, so the same fix needs a genuine rework of this
+ * method's loop, not a drop-in reuse of {@code
+ * PhaseDiagramEngine#buildResult}'s logic. Left as a known follow-up.
  */
 public final class MapTracer {
 

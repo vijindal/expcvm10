@@ -142,9 +142,7 @@ public final class CalculationInterface {
                 PhaseDiagramParams p = (PhaseDiagramParams) params;
                 session.calculatePhaseDiagram(p.axes(), p.startAxes(), p.fixedT(), p.fixedP(),
                         p.composition());
-                // calculatePhaseDiagram always throws today (not yet implemented --
-                // see docs/roadmap_phase_diagrams.md); no result type to return yet.
-                throw new IllegalStateException("unreachable");
+                return (R) session.currentPhaseDiagram();
             }
             default:
                 throw new IllegalArgumentException("Unhandled CALCULATE-group kind: " + kind);

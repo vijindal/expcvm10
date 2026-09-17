@@ -129,15 +129,20 @@ Unknown commands exit 2.
 | `equilibrium` | `calculateEquilibrium` | `equilibrium --tdb data/agcu.TDB --elements AG,CU --phases LIQUID,FCC_A1 --T 1000 --P 1e5 --composition 0.8,0.2` |
 | `initial-state` | `calculateInitialState` (grid-minimizer only, no Newton step) | `initial-state --tdb data/VZR-re2.TDB --elements V,ZR --phases V2ZR --T 1000 --P 10000 --composition 0.6667,0.3333` |
 | `step` | `calculateStep` (single-axis scan) | `step --tdb data/agcu.TDB --elements AG,CU --phases LIQUID,FCC_A1 --axis TEMPERATURE,1000,1200,5 --P 101325 --composition 0.5,0.5` |
-| `coarse-binary` | `calculateCoarseBinaryDiagram` | `coarse-binary --tdb data/VZR-re2.TDB --elements V,ZR --phases V2ZR,BCC_A2 --axisX COMPOSITION:1,0.02,0.20,0.01 --axisY TEMPERATURE,1200,1600,50 --composition 1.0,0.0` |
-| `coarse-ternary` | `calculateCoarseTernaryDiagram` | `coarse-ternary --tdb data/Cr-Fe-Mo.TDB --elements CR,FE,MO --phases LIQUID,A2 --axisI COMPOSITION:1,0.0,0.6,0.1 --axisJ COMPOSITION:2,0.0,0.6,0.1 --T 1800 --composition 1.0,0.0,0.0` |
-| `map` | `calculateMap` (two-axis ZPF map; release axis must be COMPOSITION) | `map --tdb data/agcu.TDB --elements AG,CU --phases LIQUID,FCC_A1 --axis0 TEMPERATURE,1000,1200,5 --axis1 COMPOSITION:1,0.0,1.0,0.01 --composition 0.5,0.5` |
-| `diagram` | `calculatePhaseDiagram` — **not yet implemented upstream**, always errors | — |
+| `coarse-binary` | `calculateCoarseBinaryDiagram` | `coarse-binary --tdb data/VZR-re2.TDB --elements V,ZR --phases V2ZR,BCC_A2 --axis COMPOSITION:1,0.02,0.20,0.01 --axis TEMPERATURE,1200,1600,50 --composition 1.0,0.0` |
+| `coarse-ternary` | `calculateCoarseTernaryDiagram` | `coarse-ternary --tdb data/Cr-Fe-Mo.TDB --elements CR,FE,MO --phases LIQUID,A2 --axis COMPOSITION:1,0.0,0.6,0.1 --axis COMPOSITION:2,0.0,0.6,0.1 --T 1800 --composition 1.0,0.0,0.0` |
+| `map` | `calculateMap` (two-axis ZPF map; release axis must be COMPOSITION) | `map --tdb data/agcu.TDB --elements AG,CU --phases LIQUID,FCC_A1 --axis TEMPERATURE,1000,1200,5 --axis COMPOSITION:1,0.0,1.0,0.01 --composition 0.5,0.5` |
+| `diagram` | `calculatePhaseDiagram` (automated binary phase-diagram tracing, Algorithms B/C1/C2/D; whole connected diagram from one starting point, not a single ZPF line like `map`; release axis must be COMPOSITION) | `diagram --tdb data/agcu.TDB --elements AG,CU --phases LIQUID,FCC_A1 --axis TEMPERATURE,1000,1200,5 --axis COMPOSITION:1,0.0,1.0,0.01 --composition 0.5,0.5` |
 | `inspect` | `availableElements` / `availablePhasesFor` | `inspect --tdb data/agcu.TDB --elements AG,CU` |
 
 Axis spec format: `TYPE,min,max,step` for `TEMPERATURE`/`PRESSURE`, or
 `COMPOSITION:i,min,max,step` where `i` is the component index (0-based,
-matching `--elements` order).
+matching `--elements` order). Every axis, whether a command has one or
+two, is passed via the same `--axis` flag — repeat it for a second axis
+(order matters: for `map`/`diagram` the 1st `--axis` is walked and the
+2nd is released, must be `COMPOSITION`; for `coarse-binary`/
+`coarse-ternary` the two `--axis` flags are the grid's X/Y axes, in
+order).
 
 Every calculation command and `inspect` also accept `-i` / `--interactive`
 (or no flags at all), prompting for each value on stdin — TDB, elements,

@@ -3,6 +3,8 @@ package session;
 import calc.diagram.AxisConfig;
 import calc.diagram.CoarseDiagramTracer;
 import calc.diagram.MapTracer;
+import calc.diagram.NodeRegistry;
+import calc.diagram.PhaseDiagramEngine;
 import calc.diagram.StepTracer;
 import calc.equil.EquilibriumSolverV2;
 import calc.equil.GridMinimizer;
@@ -83,6 +85,7 @@ public final class CalculationSession {
     private PhaseDiagramResult currentStepResult;
     private CoarseDiagramResult currentCoarseDiagramResult;
     private PhaseDiagramResult currentMapResult;
+    private PhaseDiagramResult currentPhaseDiagram;
 
     /**
      * Owned separately from {@link #currentSystem}: browsing a database's
@@ -183,6 +186,7 @@ public final class CalculationSession {
         this.currentStepResult = null;
         this.currentCoarseDiagramResult = null;
         this.currentMapResult = null;
+        this.currentPhaseDiagram = null;
     }
 
     /** True once {@link #setModel} has succeeded at least once. */
@@ -324,30 +328,96 @@ public final class CalculationSession {
      * Runs a full, automated phase-diagram calculation against the
      * currently held system -- multi-line/node ZPF stitching (Sundman
      * Algorithms B/C1/C2/D), not a single line like {@link #calculateMap}.
+     * Delegates to {@link calc.diagram.PhaseDiagramEngine}'s own
+     * top-to-bottom sequence ({@code defineSystem} is skipped here since
+     * {@link #currentSystem} is already built; {@code
+     * validateConditionCount} -&gt; {@code generateStartingPoints} -&gt;
+     * {@code drainC1Loop}/{@code drainStepLoop} -&gt; {@code classifyPlot}).
+     * Stores the result; read it back via {@link #currentPhaseDiagram()}.
      *
-     * <p>Not yet implemented: this is the top-priority build target
-     * described in {@code docs/roadmap_phase_diagrams.md} and
-     * {@code docs/phase_diagram_engine_flowchart.md} (Node/Line/
-     * EquilibriumState data structures, a node registry with dedup, and
-     * the C1 drain loop wrapping today's single-line {@link MapTracer}
-     * plus {@code InvariantExitFinder}). An earlier tracing engine
-     * ({@code DiagramTracer}/{@code LineStepper}/{@code
-     * PhaseChangeHandler}/{@code DiagramNode}/{@code DiagramExit}/
-     * {@code DiagramLine}/{@code calc.diagram.PhaseDiagram}) was built on
-     * the retired mole-fraction (x-facing) {@code GibbsEnergyModel}
-     * surface and removed as dead scaffolding when the codebase
-     * standardized on Sundman's site-fraction (y-facing) formulation
-     * ({@code EquilibriumSolverV2}) -- it never reached this method, which
-     * has always thrown.
+     * <p>{@code axes.length} selects the branch, matching how {@link
+     * #calculateStep}/{@link #calculateMap} already split 1-axis vs.
+     * 2-axis calculations:
+     * <ul>
+     *   <li>1 axis: STEP branch ({@code drainStepLoop}, {@code
+     *       PlotType.PROPERTY_OR_STEP_DIAGRAM}) -- no phase is ever fixed
+     *       at zero amount.</li>
+     *   <li>2 axes: MAPPING branch ({@code drainC1Loop}'s {@link
+     *       AxisConfig} overload, {@code PlotType.BINARY_T_X}) -- {@code
+     *       axes[0]} is walked, {@code axes[1]} is released and must be
+     *       {@link AxisConfig.Type#COMPOSITION} (the SAME convention
+     *       {@link #calculateMap}'s {@code axis0}/{@code axis1} already
+     *       use). Ternary isothermal/isopleth diagrams need the {@link
+     *       calc.diagram.ConditionSet}-driven {@code drainC1Loop}
+     *       overload instead -- not reachable through this {@link
+     *       AxisConfig}-array signature yet.</li>
+     * </ul>
      *
+     * @param axes       1 or 2 axes (see above); {@code startAxes} supplies
+     *                   each axis's own starting value, same length/order
+     * @param startAxes  starting value per axis, same length as {@code axes}
      * @throws IllegalStateException if {@link #setModel} hasn't been called yet
-     * @throws UnsupportedOperationException always, until the engine above is built
+     * @throws IllegalArgumentException if {@code axes.length} is not 1 or 2,
+     *         {@code startAxes.length != axes.length}, or (2-axis case)
+     *         {@code axes[1].type != COMPOSITION}
      */
     public void calculatePhaseDiagram(AxisConfig[] axes, double[] startAxes,
                                        double fixedT, double fixedP, double[] comp) {
-        currentSystem();   // still enforce the usual precondition
-        throw new UnsupportedOperationException(
-                "Phase-diagram tracing not yet implemented (pending a y-facing tracer)");
+        ThermodynamicSystem system = currentSystem();
+
+        if (startAxes.length != axes.length) {
+            throw new IllegalArgumentException(
+                    "startAxes.length (" + startAxes.length + ") must match axes.length ("
+                    + axes.length + ")");
+        }
+
+        int numComponents = currentKey.elements().size();
+
+        if (axes.length == 1) {
+
+            PhaseDiagramEngine.validateConditionCount(numComponents, numComponents + 2);
+            PhaseDiagramEngine.generateStartingPoints(startAxes[0]);
+
+            NodeRegistry registry = PhaseDiagramEngine.drainStepLoop(
+                    axes[0], fixedT, fixedP, comp, system.phaseModels());
+
+            this.currentPhaseDiagram = PhaseDiagramEngine.classifyPlot(
+                    registry, PhaseDiagramEngine.PlotType.PROPERTY_OR_STEP_DIAGRAM,
+                    new String[] { axes[0].name },
+                    new double[] { axes[0].min },
+                    new double[] { axes[0].max },
+                    -1, -1);
+
+        } else if (axes.length == 2) {
+
+            AxisConfig walkAxis = axes[0];
+            AxisConfig releaseAxis = axes[1];
+            if (releaseAxis.type != AxisConfig.Type.COMPOSITION) {
+                throw new IllegalArgumentException(
+                        "axes[1] (the released axis) must be COMPOSITION; got " + releaseAxis.type
+                        + " (" + releaseAxis + ") -- same scope constraint as calculateMap's axis1.");
+            }
+
+            PhaseDiagramEngine.validateConditionCount(numComponents, numComponents + 2);
+            PhaseDiagramEngine.generateStartingPoints(startAxes[0]);
+
+            NodeRegistry registry = PhaseDiagramEngine.drainC1Loop(
+                    walkAxis, releaseAxis, fixedT, fixedP, startAxes[0], comp, system.phaseModels());
+
+            this.currentPhaseDiagram = PhaseDiagramEngine.classifyPlot(
+                    registry, PhaseDiagramEngine.PlotType.BINARY_T_X,
+                    new String[] { walkAxis.name, releaseAxis.name },
+                    new double[] { walkAxis.min, releaseAxis.min },
+                    new double[] { walkAxis.max, releaseAxis.max },
+                    1, releaseAxis.componentIndex);
+
+        } else {
+            throw new IllegalArgumentException(
+                    "calculatePhaseDiagram supports 1 axis (STEP) or 2 axes (binary MAP) only; got "
+                    + axes.length + ". Ternary isothermal/isopleth diagrams need the "
+                    + "ConditionSet-driven PhaseDiagramEngine.drainC1Loop overload, not yet reachable "
+                    + "through this AxisConfig-array entry point.");
+        }
     }
 
     /**
@@ -505,5 +575,13 @@ public final class CalculationSession {
      */
     public PhaseDiagramResult currentMapResult() {
         return currentMapResult;
+    }
+
+    /**
+     * The most recent {@link #calculatePhaseDiagram} result, or {@code
+     * null} (same rules as {@link #currentEquilibriumResult()}).
+     */
+    public PhaseDiagramResult currentPhaseDiagram() {
+        return currentPhaseDiagram;
     }
 }

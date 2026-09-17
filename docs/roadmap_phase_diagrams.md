@@ -180,6 +180,18 @@ moving phase boundary is only re-solved AT a detected crossing, not
 continuously; REST API's
 `step`/`map` endpoints return 501.
 
+`MapTracer.trace()` (the `map` CLI command's pipeline, via
+`CalculationSession.calculateMap`) still plots OVERALL composition on a
+two-phase line, not each stable phase's own composition -- Sundman 2021
+§4.1's own explicit rule for a correct binary T-x diagram (contrasted with
+Fig. 10(b), the "may obtain without intention" mistake case). Fixed in
+`PhaseDiagramEngine.classifyPlot`/`buildResult` (the `diagram` CLI
+command's pipeline) by splitting a two-phase `Line` into one `LineSegment`
+per stable phase; `trace()` was NOT fixed the same way since it builds
+segments incrementally rather than from a retained per-point
+`EquilibriumResult` list -- see `MapTracer`'s own class javadoc for the
+full finding. Known follow-up, not yet scheduled.
+
 ## Non-goals
 
 General multicomponent (4+) full-diagram auto-discovery; RK/CVM model

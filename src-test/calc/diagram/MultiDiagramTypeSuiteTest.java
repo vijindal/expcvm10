@@ -383,6 +383,6 @@ public class MultiDiagramTypeSuiteTest {
         org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class,
                 () -> PhaseDiagramEngine.classifyPlot(
                         new NodeRegistry(), PhaseDiagramEngine.PlotType.ACTIVITY_OR_CHEMICAL_POTENTIAL,
-                        new String[] { "T", "AC" }, new double[] { 0.0, 0.0 }, new double[] { 1.0, 1.0 }));
+                        new String[] { "T", "AC" }, new double[] { 0.0, 0.0 }, new double[] { 1.0, 1.0 }, 1, 0));
     }
 }

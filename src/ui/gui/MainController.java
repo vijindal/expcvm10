@@ -107,29 +107,41 @@ public class MainController {
     }
 
     /**
-     * Run a phase diagram calculation with the given request.
+     * Run an automated phase-diagram calculation with the given request
+     * -- {@link CalculationSession#calculatePhaseDiagram} (Sundman
+     * Algorithms B/C1/C2/D, whole connected diagram from one starting
+     * point), not the old {@code PhaseDiagramUseCase} path (which did
+     * {@code ThermodynamicSystem.build(...)} on its own, bypassing the
+     * session so the browsing/single-point system was never reused).
      *
-     * <p>TODO: not yet wired through {@link CalculationSession}. The old
-     * path called {@code PhaseDiagramUseCase.execute(...)}, which does
-     * {@code ThermodynamicSystem.build(...)} on its own -- bypassing the
-     * session, so the system built for browsing / single-point is not
-     * reused and the result does not land on the session. The compliant
-     * shape is {@code calculationSession.setModel(...)} then
-     * {@code calculationSession.calculatePhaseDiagram(axes, startAxes,
-     * fixedT, fixedP, comp)}, read back via
-     * {@code calculationSession.currentPhaseDiagram()} -- pending a
-     * {@code PhaseDiagramRequest -> AxisConfig[]} adapter in this class.
+     * <p>{@link PhaseDiagramRequest#axisArray()}/{@link
+     * PhaseDiagramRequest#startAxisValues()} already have exactly the
+     * shape {@link CalculationSession#calculatePhaseDiagram} needs --
+     * this method is a thin adapter, the same shape as {@link
+     * #runCoarseDiagram}. {@link PhaseDiagramRequest.DiagramType#COARSE}
+     * is not handled here -- callers wanting a coarse grid should call
+     * {@link #runCoarseDiagram} directly.
      */
     public PhaseDiagramResult runPhaseDiagram(PhaseDiagramRequest request) {
-        LOG.warning("runPhaseDiagram: not yet wired through CalculationSession");
-        PhaseDiagramResult stub = new PhaseDiagramResult(
-                request.getAxes().isEmpty() ? new String[]{"Axis"}
-                        : new String[]{request.getAxes().get(0).name},
-                new double[]{0}, new double[]{1});
-        stub.setComplete(false);
-        stub.setMessage("Phase diagram is not yet wired through CalculationSession "
-                + "(see MainController.runPhaseDiagram TODO)");
-        return stub;
+        Trace.enter(LOG, AppLevel.FLOW, "MainController", "runPhaseDiagram");
+        try {
+            ModelSelection model = new ModelSelection(request.getTdbFilePath(),
+                    request.getElements(), request.getPhases());
+
+            CalculationInterface.PhaseDiagramParams params = new CalculationInterface.PhaseDiagramParams(
+                    request.axisArray(), request.startAxisValues(),
+                    request.getFixedT(), request.getFixedP(), request.getStartComposition());
+
+            PhaseDiagramResult r = CalculationInterface.runCalculating(
+                    calculationSession, CalculationKind.PHASE_DIAGRAM, model, params);
+
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "runPhaseDiagram");
+            return r;
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "Phase diagram calculation failed", e);
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "runPhaseDiagram");
+            throw new RuntimeException("Phase diagram calculation failed: " + e.getMessage(), e);
+        }
     }
 
     /**
