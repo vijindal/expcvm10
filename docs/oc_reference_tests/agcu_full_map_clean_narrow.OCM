@@ -1,0 +1,13 @@
+new Y
+set echo Y
+r t ./agcu
+
+set cond t=1150 p=1e5 n=1 x(cu)=.05
+c e
+set ax 1 x(cu) 0 1 0.025
+set ax 2 t 1100 1230 5
+map
+
+l r 2
+exit
+Y

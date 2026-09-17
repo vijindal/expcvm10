@@ -1,0 +1,9 @@
+new Y
+set echo Y
+r t ./agcu
+
+set cond t=1207.6 p=1e5 n=1 x(cu)=.05
+c e
+l r 2
+exit
+Y

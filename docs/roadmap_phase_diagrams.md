@@ -180,6 +180,28 @@ moving phase boundary is only re-solved AT a detected crossing, not
 continuously; REST API's
 `step`/`map` endpoints return 501.
 
+**`MapTracer.walkOneSegmentInternal`'s TEMPERATURE/PRESSURE-walk branch
+holds overall composition FIXED for a whole 2+-phase line** -- confirmed
+this is wrong against both the Sundman 2021 paper and a fresh OC
+reference (`docs/oc_reference_tests/agcu_full_map_clean_narrow_output.txt`):
+once 2+ phases are enforced stable, composition should not be an imposed
+condition at all (phase rule already consumes that DOF), so it must be
+recovered as Algorithm A's own output, warm-started from the previous
+point -- not held at the line's starting value. Holding it fixed makes
+the walk a fixed-composition-column scan that self-terminates the moment
+that one column exits the multi-phase field, producing spurious nodes
+OC's own map never reports. A lever-rule "predict from the previous
+point's own phases" reconstruction was tried and confirmed to be a
+mathematical no-op. The real fix needs a new `EquilibriumSolverV2`/
+`GlobalEquilibriumMatrixAssembler` solve mode (T known/stepped by full
+re-evaluation, one composition mass-balance row released so composition
+falls out as an output) -- design work stalled on an unresolved
+degrees-of-freedom mismatch (naively dropping one mass-balance row while
+keeping every lambda/DeltaOmega unknown is under-determined by 1). Full
+paper citations, the OC cross-check, and where the design work stopped
+are in `docs/sundman2021_zpf_line_notes.md` -- read that before
+re-investigating so the same ground doesn't get re-covered.
+
 `MapTracer.trace()` (the `map` CLI command's pipeline, via
 `CalculationSession.calculateMap`) still plots OVERALL composition on a
 two-phase line, not each stable phase's own composition -- Sundman 2021
