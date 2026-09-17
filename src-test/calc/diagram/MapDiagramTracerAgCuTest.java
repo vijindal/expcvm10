@@ -118,16 +118,15 @@ public class MapDiagramTracerAgCuTest {
     void highTExitLineReachesTheFccPlusLiquidToLiquidCrossing() throws IOException {
         // Once at the correctly-located start node (T~1175-1180K), the
         // high-T exit line should walk toward the FCC_A1+LIQUID -> LIQUID
-        // crossing (confirmed by direct scan to exist within
-        // [1150,1230]K, near T~1210K) and a single-phase LIQUID node
-        // should appear as a result.
-        //
-        // (The low-T exit line's behavior is intentionally NOT asserted
-        // here: investigating it surfaced two real, pre-existing drain-
-        // loop issues -- an out-of-range composition value on one walked
-        // line and an undeduplicated pair of nodes at the same physical
-        // point -- outside Step 3b's scope of fixing the start-node
-        // search. Tracked as follow-up work, not asserted against here.)
+        // crossing (OC reference: T=1207.60K, docs/oc_reference_tests/
+        // agcu_step_xcu05_full_walk.txt). A ZPF node's own equilibrium
+        // (Sundman 2021 Algorithm C2) is the exact boundary solve --
+        // BOTH phases present, FCC_A1 at its fixed ~0 amount -- not a
+        // single-phase LIQUID-only point (that was this test's original,
+        // now-corrected expectation, from before MapTracer was fixed to
+        // pass the boundary solve's own equilibrium through as the
+        // node's equilibrium instead of the coarser grid/retry point
+        // used only to locate the crossing).
         AxisConfig walkAxis = new AxisConfig("T / K", AxisConfig.Type.TEMPERATURE, 1150.0, 1230.0, 5.0);
         AxisConfig releaseAxis = new AxisConfig("x(Cu)", 1, 0.01, 0.6, 0.01);
 
@@ -135,13 +134,17 @@ public class MapDiagramTracerAgCuTest {
                 walkAxis, releaseAxis, 1150.0, FIXED_P, 1150.0,
                 new double[] { 0.95, 0.05 }, candidates());
 
-        boolean sawLiquidOnlyNode = false;
+        boolean sawFccDisappearanceNode = false;
         for (Node node : registry.getNodes()) {
-            if (node.stablePhaseNames.size() == 1 && node.stablePhaseNames.contains("LIQUID")) {
-                sawLiquidOnlyNode = true;
+            if (node.stablePhaseNames.size() == 2
+                    && node.stablePhaseNames.contains("LIQUID")
+                    && node.stablePhaseNames.contains("FCC_A1")
+                    && Math.abs(node.axisValues[0] - 1207.60) < 0.5) {
+                sawFccDisappearanceNode = true;
             }
         }
-        assertTrue(sawLiquidOnlyNode,
-                "the high-T exit line should reach the FCC_A1+LIQUID -> LIQUID crossing within [1150,1230]K");
+        assertTrue(sawFccDisappearanceNode,
+                "the high-T exit line should reach the FCC_A1+LIQUID -> LIQUID crossing at T=1207.60K "
+                        + "(OC reference); got nodes: " + registry.getNodes());
     }
 }

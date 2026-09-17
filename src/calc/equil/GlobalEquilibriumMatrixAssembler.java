@@ -307,14 +307,16 @@ public final class GlobalEquilibriumMatrixAssembler {
      * ordinary two-phase boundary.
      *
      * <p>Unlike the composition-release case (a single {@code -1} entry
-     * in ONE mass-balance row), releasing T touches potentially every
-     * row, since temperature is a GLOBAL condition every stable phase
-     * responds to, not a per-component target:
+     * in ONE mass-balance row), releasing T touches EVERY phase-
+     * equilibrium row, since temperature is a GLOBAL condition every
+     * stable phase responds to, not just the phase being fixed:
      * <ul>
-     *   <li>Phase-equilibrium row {@code k}: {@code M_A^k*lambda_A -
-     *       dG_dT^k*DeltaT = G^k} -- only phase {@code k}'s own row
-     *       gets a nonzero entry, {@code -phaseData[k].dG_dT}, in the
-     *       freed column.</li>
+     *   <li>Phase-equilibrium row {@code k} (every stable phase, not
+     *       only {@code fixedSlotIndex}): {@code M_A^k*lambda_A -
+     *       dG_dT^k*DeltaT = G^k} -- each row gets its OWN nonzero
+     *       entry, {@code -phaseData[k].dG_dT}, in the freed column
+     *       (a non-fixed phase's amount is still a Newton unknown, but
+     *       its equilibrium condition still shifts with T).</li>
      *   <li>Mass-balance row {@code A}: the T-dependent part of
      *       {@code q_A = sum_k omega_k*deln_k[A]} is {@code
      *       sum_k omega_k*phaseData[k].dM_dT[A]*DeltaT} (every stable
@@ -326,6 +328,18 @@ public final class GlobalEquilibriumMatrixAssembler {
      * DeltaT} directly (an increment, exactly like {@code DeltaOmega} --
      * NOT an absolute value like {@code lambda}); the caller applies it
      * as {@code T += solution[nc + fixedSlotIndex]}.
+     *
+     * <p>Bug history: originally only {@code fixedSlotIndex}'s own row
+     * got the {@code -dG_dT} entry, leaving every other stable phase's
+     * equilibrium row assuming {@code dG/dT=0} for that phase -- a
+     * systematically wrong (too-small) Jacobian column. That produced
+     * linear, not quadratic, convergence (confirmed directly: Ag-Cu
+     * x(Cu)=0.05, fixing LIQUID at 0 and releasing T from a seed at
+     * T=1180K, the per-iteration DeltaT ratio was a constant ~0.9024 for
+     * 100 straight iterations -- the signature of a fixed contraction
+     * factor, not Newton -- so it never reached {@code tolerance=1e-10}
+     * within {@link EquilibriumSolverV2}'s 100-iteration cap even though
+     * it was visibly homing in on OC's own T=1176.13K crossing).
      *
      * <p>The RHS is unchanged from {@link #buildRhs} for the same reason
      * as the composition-release case: {@code deln}/{@code G} are still
@@ -365,7 +379,9 @@ public final class GlobalEquilibriumMatrixAssembler {
             A[row][fixedColumn] = 0.0;
         }
 
-        A[fixedSlotIndex][fixedColumn] = -phaseData[fixedSlotIndex].dG_dT;
+        for (int k = 0; k < np; k++) {
+            A[k][fixedColumn] = -phaseData[k].dG_dT;
+        }
 
         for (int Aidx = 0; Aidx < nc; Aidx++) {
             double coeff = 0.0;
@@ -413,7 +429,9 @@ public final class GlobalEquilibriumMatrixAssembler {
             A[row][fixedColumn] = 0.0;
         }
 
-        A[fixedSlotIndex][fixedColumn] = -phaseData[fixedSlotIndex].dG_dP;
+        for (int k = 0; k < np; k++) {
+            A[k][fixedColumn] = -phaseData[k].dG_dP;
+        }
 
         for (int Aidx = 0; Aidx < nc; Aidx++) {
             double coeff = 0.0;

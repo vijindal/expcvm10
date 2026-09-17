@@ -89,8 +89,11 @@ public class PhaseDiagramEngineEndToEndTest {
         // OC reference (this session's NODE CLASSIFICATION + EXIT
         // GEOMETRY work): Al-Mg-Zn isopleth at x(Mg)=0.05, crossing at
         // T=699.58K where MGZN2 disappears
-        // (docs/oc_reference_tests/almgzn_isopleth_step_walk.txt),
-        // grid-snapped to T=700K by this codebase's own 2K-step search.
+        // (docs/oc_reference_tests/almgzn_isopleth_step_walk.txt). The
+        // node's own equilibrium is now the EXACT boundary solve
+        // (Algorithm C2) rather than a grid-snapped point -- both
+        // phases present, MGZN2 at its fixed ~0 amount, T converged to
+        // ~699.58K directly (see MapDiagramTracerIsoplethOcFormatterComparisonTest).
         var system = PhaseDiagramEngine.defineSystem(
                 "data/cost507R.TDB", List.of("AL", "MG", "ZN"), List.of("FCC_A1", "MGZN2"));
 
@@ -118,7 +121,8 @@ public class PhaseDiagramEngineEndToEndTest {
         Node crossingNode = null;
         for (Node node : registry.getNodes()) {
             double t = node.axisValues[0];
-            if (t >= 698.0 && t <= 700.0 && node.stablePhaseNames.equals(Set.of("FCC_A1"))) {
+            if (t >= 699.0 && t <= 700.0
+                    && node.stablePhaseNames.equals(Set.of("FCC_A1", "MGZN2"))) {
                 crossingNode = node;
             }
         }

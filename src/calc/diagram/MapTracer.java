@@ -807,9 +807,29 @@ public final class MapTracer {
 
             coords.add(new double[] { effectiveWalkValue, crossingReleaseValue });
 
+            /*
+             * Use the EXACT boundary-solve equilibrium (both phases
+             * present, the appearing/disappearing one at its fixed ~0
+             * amount) as the node's equilibrium whenever the boundary
+             * solve converged, rather than the coarse grid/retry point
+             * (current) it was only ever used to compute a scalar
+             * (T/P/composition) from. Passing the grid point here made
+             * every crossing's Node carry the WRONG T/mu (off by up to a
+             * full walk step, or the retry sub-step), so two independent
+             * approaches to the same physical crossing from opposite
+             * walk directions produced numerically distinct Nodes that
+             * NodeRegistry's own dedup (Node#matches) correctly refused
+             * to merge -- confirmed directly: Ag-Cu x(Cu)=0.05 walking
+             * both directions across the LIQUID-appearance crossing
+             * produced 4 non-matching Nodes clustered within ~0.5K of
+             * each other instead of Sundman 2021 Algorithm C2's single
+             * exact boundary point.
+             */
+            EquilibriumResult nodeResult = (boundary != null) ? boundary.equilibrium : current;
+
             return new SegmentResult(coords, points, end,
                     effectiveWalkValue, effectiveComp.clone(), effectiveCurrentNames,
-                    appearingOrDisappearing, current);
+                    appearingOrDisappearing, nodeResult);
         }
 
         return new SegmentResult(coords, points, SegmentEnd.AXIS_LIMIT,

@@ -45,14 +45,25 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * has no pre-existing fixed phase of its own, and this specific node
  * degrades to the ordinary 2-exit case even though the DIAGRAM itself
  * is isopleth-shaped and the node classifies {@code ISOPLETH_CROSSING}.
- * This codebase's own 2K-step search grid-snaps the reported node to
- * T=700K (one step past OC's own exact T=699.58K crossing, the same
- * grid-snapping this session's earlier binary/ternary C2 formatter
- * tests already established) -- {@code
+ *
+ * <p><b>Node equilibrium, post boundary-solve-equilibrium fix.</b> The
+ * node's own equilibrium is now {@link
+ * calc.equil.EquilibriumSolverV2#solveBoundaryReleasingT}'s EXACT
+ * boundary solve (Sundman 2021 Algorithm C2: both phases present,
+ * MGZN2 at its fixed ~0 amount, T solved exactly) -- confirmed
+ * directly against OC's own T=699.58K: this codebase converges to
+ * T=699.5814K, mu within ~0.1% relative of OC's {@code l r} dump
+ * (below). {@code MapTracer} previously reported the coarser grid
+ * point one step past the crossing (T=700K) instead of the boundary
+ * solve's own result, and this test's reference values were pinned to
+ * THAT wrong point ({@code
  * docs/oc_reference_tests/almgzn_isopleth_lr_t700.txt}'s {@code l r}
- * dump AT that exact grid point (T=700K, x(Mg)=0.05, x(Zn)=0.05)
- * confirms single-phase FCC_A1: RT=5.8202E3 J/mol, mu/RT: AL=-4.3609,
- * MG=-6.9783, ZN=-7.1891, G/N=-2.6966E4 J/mol.
+ * dump at T=700K, x(Mg)=0.05, x(Zn)=0.05: single-phase FCC_A1,
+ * RT=5.8202E3 J/mol, mu/RT: AL=-4.3609, MG=-6.9783, ZN=-7.1891,
+ * G/N=-2.6966E4 J/mol) -- kept here only as the source of the mu/G
+ * numbers this test's tolerance is checked against (T itself differs
+ * by ~0.4K between the two points, hence the wider-than-formatter-
+ * precision tolerance below).
  */
 public class MapDiagramTracerIsoplethOcFormatterComparisonTest {
 
@@ -89,29 +100,28 @@ public class MapDiagramTracerIsoplethOcFormatterComparisonTest {
         MapDiagramTracer tracer = new MapDiagramTracer();
         NodeRegistry registry = tracer.drain(conds, 0, 1, 630.0, compOverall, candidates);
 
-        assertTrue(registry.size() >= 2, "should have at least a START node and one crossing node");
+        assertTrue(registry.size() >= 1, "should have at least the crossing node");
 
-        // The initial search walks T in 2K steps starting at 630K (already
-        // inside the two-phase field, per MapTracerTernaryIsoplethTest's
-        // own confirmed bracket) -- the crossing is detected once the
-        // stable set changes between consecutive grid points, so the
-        // reported node lands on the grid point AFTER OC's own exact
-        // crossing (T=699.58K), i.e. T=700K here, not the exact value
-        // itself (the same grid-snapping behavior this session's earlier
-        // binary/ternary C2 formatter tests already established).
+        // The node's equilibrium is now the EXACT boundary solve
+        // (Algorithm C2), not a grid-snapped point -- both phases
+        // present, MGZN2 at its fixed ~0 amount, T converged to
+        // ~699.58K (OC's own reported crossing).
         Node crossingNode = null;
         for (Node node : registry.getNodes()) {
             double t = node.axisValues[0];
-            if (t >= 698.0 && t <= 700.0 && node.stablePhaseNames.equals(Set.of("FCC_A1"))) {
+            if (t >= 699.0 && t <= 700.0
+                    && node.stablePhaseNames.equals(Set.of("FCC_A1", "MGZN2"))) {
                 crossingNode = node;
             }
         }
 
         assertTrue(crossingNode != null,
                 "should find a node near OC's own confirmed crossing at T=699.58K");
-        assertEquals(Set.of("FCC_A1"), crossingNode.stablePhaseNames,
-                "OC's own step trace: \"Creating a node at 699.58 where MGZN2 disappear\" "
-                + "-- the node's own (new) stable set is FCC_A1 alone");
+        assertEquals(699.58, crossingNode.axisValues[0], 0.01,
+                "OC's own step trace: \"Creating a node at 699.58 where MGZN2 disappear\"");
+        assertEquals(Set.of("FCC_A1", "MGZN2"), crossingNode.stablePhaseNames,
+                "a ZPF node's own equilibrium (Algorithm C2) holds BOTH phases -- the "
+                + "disappearing one (MGZN2) at its fixed ~0 amount, not absent");
 
         // This is the FIRST crossing from the diagram's own start point,
         // so the arriving line has no pre-existing fixed phase -- per
@@ -122,8 +132,10 @@ public class MapDiagramTracerIsoplethOcFormatterComparisonTest {
                 "the first isopleth crossing (no pre-existing fixed phase on the arriving "
                 + "line) should degrade to the ordinary 2-exit case");
 
-        // FORMATTER level: cross-check against OC's own l r dump at this
-        // exact grid point (almgzn_isopleth_lr_t700.txt).
+        // FORMATTER level: cross-check against OC's own l r dump near
+        // this crossing (almgzn_isopleth_lr_t700.txt, T=700K -- ~0.4K
+        // from the node's own exact T=699.58K, hence the wider
+        // tolerance below rather than formatter-precision agreement).
         String report = EquilibriumReport.format(crossingNode.equilibrium, ELEMENTS);
         assertTrue(report.contains("FCC_A1"), "formatted report should mention FCC_A1");
         assertTrue(report.contains("amount="));
