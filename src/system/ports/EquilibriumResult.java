@@ -20,11 +20,35 @@ public final class EquilibriumResult {
     private final List<PhaseResult> metastablePhases;
     private final boolean converged;
     private final int iterations;
+    private final StableSetChange stableSetChange;
 
     public EquilibriumResult(double T, double P, double[] mu,
                              List<PhaseResult> stablePhases,
                              List<PhaseResult> metastablePhases,
                              boolean converged, int iterations) {
+        this(T, P, mu, stablePhases, metastablePhases, converged, iterations, null);
+    }
+
+    /**
+     * As the five-arg constructor, additionally carrying a {@link
+     * StableSetChange} when this result represents Sundman 2021 Fig. 1's
+     * {@code step or map?} early exit (see {@code
+     * calc.equil.EquilibriumSolverV2#solve(double, double, double[],
+     * java.util.List, boolean)}) -- a stable-set change detected
+     * mid-Newton-iteration, returned BEFORE reconverging with the
+     * corrected stable set. {@code converged} must be {@code false} for
+     * such a result: it is neither a converged equilibrium nor an
+     * ordinary failed (iteration-exhausted) one.
+     */
+    public EquilibriumResult(double T, double P, double[] mu,
+                             List<PhaseResult> stablePhases,
+                             List<PhaseResult> metastablePhases,
+                             boolean converged, int iterations,
+                             StableSetChange stableSetChange) {
+        if (stableSetChange != null && converged) {
+            throw new IllegalArgumentException(
+                    "A result carrying a StableSetChange cannot be converged=true.");
+        }
         this.T = T;
         this.P = P;
         this.mu = mu.clone();
@@ -34,6 +58,7 @@ public final class EquilibriumResult {
                 new ArrayList<>(metastablePhases));
         this.converged = converged;
         this.iterations = iterations;
+        this.stableSetChange = stableSetChange;
     }
 
     public double getT()  { return T; }
@@ -43,6 +68,36 @@ public final class EquilibriumResult {
     public List<PhaseResult> getMetastablePhases()  { return metastablePhases; }
     public boolean isConverged() { return converged; }
     public int getIterations()   { return iterations; }
+
+    /**
+     * Non-null only for Fig. 1's {@code step or map?} early-exit outcome
+     * (see the constructor javadoc above) -- {@code null} for an ordinary
+     * converged or failed result.
+     */
+    public StableSetChange getStableSetChange() { return stableSetChange; }
+
+    /**
+     * Sundman 2021 Fig. 1: which phase tripped the {@code gamma^phi>0 or
+     * N^alpha<0} test and in which direction, at the moment Algorithm A
+     * bailed out to Algorithm C1 without reconverging.
+     */
+    public enum ChangeDirection {
+        /** {@code gamma^phi > 0}: a metastable phase's driving force went positive. */
+        APPEARING,
+        /** {@code N^alpha < 0}: a stable phase's amount went negative. */
+        DISAPPEARING
+    }
+
+    /** See {@link #getStableSetChange()}. */
+    public static final class StableSetChange {
+        public final String phaseName;
+        public final ChangeDirection direction;
+
+        public StableSetChange(String phaseName, ChangeDirection direction) {
+            this.phaseName = phaseName;
+            this.direction = direction;
+        }
+    }
 
     /** Total system Gibbs energy: G_sys = Σ ℵ^α · G^α. */
     public double totalG() {

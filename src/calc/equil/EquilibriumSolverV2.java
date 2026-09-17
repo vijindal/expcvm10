@@ -395,6 +395,43 @@ public class EquilibriumSolverV2 {
                       double P,
                       double[] compOverAll,
                       List<GibbsEnergyModel> candidates) {
+        return solve(T, P, compOverAll, candidates, false);
+    }
+
+    /**
+     * As {@link #solve(double, double, double[], List)}, additionally
+     * implementing Sundman 2021 Fig. 1's {@code step or map?} early exit:
+     * when {@code stopOnStableSetChange} is {@code true} and a Newton
+     * iteration's own stable-set update ({@code updateStablePhaseSet()},
+     * Fig. 1's {@code gamma^phi>0 or N^alpha<0} test) actually changes the
+     * stable set, this method returns IMMEDIATELY with a non-converged
+     * {@link EquilibriumResult} carrying a non-null {@link
+     * EquilibriumResult#getStableSetChange()} -- the state as it stood at
+     * that test, NOT reconverged with the corrected stable set -- instead
+     * of looping back to keep iterating (this class's existing behavior,
+     * matching Fig. 1's OTHER branch, taken when {@code
+     * stopOnStableSetChange} is {@code false}: {@code
+     * change_set_of_stable_phases}, loop back, keep iterating to this
+     * call's own converged/failed outcome).
+     *
+     * <p>{@code stopOnStableSetChange=false} (the default via the 4-arg
+     * overload) is unchanged from this class's original behavior -- every
+     * existing caller is unaffected. This overload exists so a future
+     * step/map diagram tracer can opt into the paper's finer-grained,
+     * mid-Newton crossing detection (see {@code
+     * docs/sundman2021_zpf_line_notes.md} Section 9) without disturbing
+     * any current caller; no tracer in this codebase uses {@code true}
+     * yet.
+     *
+     * @param stopOnStableSetChange see above; {@code false} reproduces
+     *                              {@link #solve(double, double, double[], List)}
+     *                              exactly
+     */
+    public EquilibriumResult solve(double T,
+                      double P,
+                      double[] compOverAll,
+                      List<GibbsEnergyModel> candidates,
+                      boolean stopOnStableSetChange) {
 
         // ------------------------------------------------------------
         // 0. Store problem conditions
@@ -668,7 +705,17 @@ public class EquilibriumSolverV2 {
              * A phase-set change causes the global system to be
              * rebuilt on the next iteration.
              */
-            updateStablePhaseSet();
+            EquilibriumResult.StableSetChange stableSetChange = updateStablePhaseSet();
+
+            if (stopOnStableSetChange && stableSetChange != null) {
+                // Sundman 2021 Fig. 1's "step or map?" early exit: the
+                // stable set just changed -- bail out NOW, before even
+                // checking convergence, with the state as it stands
+                // (NOT reconverged with the corrected stable set). See
+                // this method's own javadoc and docs/sundman2021_zpf_line_notes.md
+                // Section 9.
+                return buildEquilibriumResult(false, iteration, stableSetChange);
+            }
 
             // ========================================================
             // STEP 9
@@ -1411,6 +1458,20 @@ public class EquilibriumSolverV2 {
     private EquilibriumResult buildEquilibriumResult(
             boolean converged,
             int iterations) {
+        return buildEquilibriumResult(converged, iterations, null);
+    }
+
+    /**
+     * As {@link #buildEquilibriumResult(boolean, int)}, additionally
+     * attaching a {@link EquilibriumResult.StableSetChange} -- used only
+     * by {@link #solve(double, double, double[], List, boolean)}'s Fig. 1
+     * early-exit path; every other call site passes {@code null} via the
+     * two-arg overload above.
+     */
+    private EquilibriumResult buildEquilibriumResult(
+            boolean converged,
+            int iterations,
+            EquilibriumResult.StableSetChange stableSetChange) {
 
         int nc =
                 targetAmounts.length;
@@ -1609,7 +1670,8 @@ public class EquilibriumSolverV2 {
                 stableResults,
                 metastableResults,
                 converged,
-                iterations);
+                iterations,
+                stableSetChange);
     }
 
     // ================================================================
@@ -4668,13 +4730,23 @@ public class EquilibriumSolverV2 {
      * against phases already present, which is what
      * ADD_COMP_DIFFERENCE_TOL implements below.
      */
-    private void updateStablePhaseSet() {
+    /**
+     * Sundman 2021 Fig. 1's {@code gamma^phi>0 or N^alpha<0} test result:
+     * which phase (if any) the removal/addition pass below actually
+     * changed, and in which direction -- {@code null} if this call left
+     * the stable set unchanged. Populated only by the removal pass
+     * (Section 1, {@code N^alpha<0}) and the addition pass (Section 2,
+     * {@code gamma^phi>0}); the same-composition MERGE pass (Section 1.5)
+     * is internal bookkeeping cleanup, not a Fig. 1 stable-set change, and
+     * never populates this.
+     */
+    private EquilibriumResult.StableSetChange updateStablePhaseSet() {
 
         if (stablePhases == null
                 || stablePhases.length == 0
                 || phaseAmounts == null
                 || stableSlots == null) {
-            return;
+            return null;
         }
 
         // ------------------------------------------------------------
@@ -4690,6 +4762,15 @@ public class EquilibriumSolverV2 {
             if (phaseAmounts[k] <= MIN_PHASE_AMOUNT) {
                 toRemove.add(k);
             }
+        }
+
+        String removedPhaseName = null;
+        if (!toRemove.isEmpty()) {
+            // Report the FIRST removed slot's name (matches Fig. 1's
+            // single gamma^phi/N^alpha test firing on one phase at a
+            // time in the common case); a multi-phase-at-once removal is
+            // the caller's own retry/halving territory, not this method's.
+            removedPhaseName = stableSlots.get(toRemove.get(0)).model.phaseName();
         }
 
         for (int idx = toRemove.size() - 1; idx >= 0; idx--) {
@@ -4811,8 +4892,24 @@ public class EquilibriumSolverV2 {
         }
 
         if (bestCandidate >= 0) {
+            String addedPhaseName = phaseModels.get(bestCandidate).phaseName();
             addStableSlot(bestCandidate, bestY);
+            // An addition takes precedence when both an addition and a
+            // removal happen in the same call (rare, but Fig. 1's own
+            // "gamma^phi>0 or N^alpha<0" test does not order the two) --
+            // report whichever this method actually still has fresh state
+            // for; the addition is the more specific signal since it just
+            // happened, vs. removedPhaseName pointing at an already-gone slot.
+            return new EquilibriumResult.StableSetChange(
+                    addedPhaseName, EquilibriumResult.ChangeDirection.APPEARING);
         }
+
+        if (removedPhaseName != null) {
+            return new EquilibriumResult.StableSetChange(
+                    removedPhaseName, EquilibriumResult.ChangeDirection.DISAPPEARING);
+        }
+
+        return null;
     }
 
     /**
