@@ -50,42 +50,20 @@ final class NodeGeometry {
             PhaseDiagramEngine.NodeClass nodeClass,
             String arrivedViaPhase,
             int walkAxisIndex) {
-
-        switch (nodeClass) {
-            case TIE_LINE_IN_PLANE:
-                attachTieLineInPlaneExits(node, arrivedViaPhase, walkAxisIndex);
-                break;
-            case INVARIANT:
-                attachInvariantExits(node, arrivedViaPhase, walkAxisIndex);
-                break;
-            case STEP_CONTINUATION:
-                throw new IllegalArgumentException(
-                        "STEP_CONTINUATION needs the arriving line's walk direction -- call "
-                        + "attachExits(Node, NodeClass, String, int, int) instead, which "
-                        + "StepDiagramTracer uses directly (it always knows its own direction).");
-            case ISOPLETH_CROSSING:
-                throw new IllegalArgumentException(
-                        "ISOPLETH_CROSSING needs the arriving line's own already-fixed phase -- "
-                        + "call attachExits(Node, NodeClass, String, String, int) instead.");
-            default:
-                throw new IllegalStateException("Unhandled NodeClass: " + nodeClass);
-        }
+        attachExits(node, nodeClass, arrivedViaPhase, null, walkAxisIndex);
     }
 
     /**
-     * {@link #attachExits(Node, PhaseDiagramEngine.NodeClass, String, int)}
-     * overload for {@link PhaseDiagramEngine.NodeClass#ISOPLETH_CROSSING}
-     * -- see {@link #attachIsoplethCrossingExits} for the full mechanism.
+     * As {@link #attachExits(Node, PhaseDiagramEngine.NodeClass, String,
+     * int)}, additionally taking the arriving line's own fixed phase (OC's
+     * {@code LFIX}/{@code jphr}) -- required for {@code ISOPLETH_CROSSING},
+     * and also used to set each exit's {@link Line#forbiddenPhase} for
+     * {@code TIE_LINE_IN_PLANE} and {@code INVARIANT}. {@code null} if the
+     * arriving line had no fixed phase (e.g. a diagram's own START node).
      *
-     * @param arrivingLineFixedPhase the phase already fixed at zero along
-     *                      the ARRIVING line (OC's {@code LFIX}/{@code
-     *                      jphr}) -- empty ({@code null}) if the arriving
-     *                      line had no fixed phase at all (e.g. it came
-     *                      from a {@code TIE_LINE_IN_PLANE} node or the
-     *                      diagram's own START node), in which case this
-     *                      crossing cannot be a genuine 2-line isopleth
-     *                      crossing and degrades to the ordinary 2-exit
-     *                      case
+     * @throws IllegalArgumentException if {@code nodeClass} is {@code
+     *         STEP_CONTINUATION} -- use {@link #attachExits(Node,
+     *         PhaseDiagramEngine.NodeClass, String, int, int)} instead
      */
     static void attachExits(
             Node node,
@@ -94,12 +72,24 @@ final class NodeGeometry {
             String arrivingLineFixedPhase,
             int walkAxisIndex) {
 
-        if (nodeClass != PhaseDiagramEngine.NodeClass.ISOPLETH_CROSSING) {
-            throw new IllegalArgumentException(
-                    "The arrivingLineFixedPhase-taking overload is for ISOPLETH_CROSSING only; got "
-                    + nodeClass + " -- use attachExits(Node, NodeClass, String, int) instead.");
+        switch (nodeClass) {
+            case TIE_LINE_IN_PLANE:
+                attachTieLineInPlaneExits(node, arrivedViaPhase, arrivingLineFixedPhase, walkAxisIndex);
+                break;
+            case INVARIANT:
+                attachInvariantExits(node, arrivedViaPhase, arrivingLineFixedPhase, walkAxisIndex);
+                break;
+            case ISOPLETH_CROSSING:
+                attachIsoplethCrossingExits(node, arrivedViaPhase, arrivingLineFixedPhase, walkAxisIndex);
+                break;
+            case STEP_CONTINUATION:
+                throw new IllegalArgumentException(
+                        "STEP_CONTINUATION needs the arriving line's walk direction -- call "
+                        + "attachExits(Node, NodeClass, String, int, int) instead, which "
+                        + "StepDiagramTracer uses directly (it always knows its own direction).");
+            default:
+                throw new IllegalStateException("Unhandled NodeClass: " + nodeClass);
         }
-        attachIsoplethCrossingExits(node, arrivedViaPhase, arrivingLineFixedPhase, walkAxisIndex);
     }
 
     /**
@@ -131,14 +121,19 @@ final class NodeGeometry {
     }
 
     /**
-     * The ordinary tie-line-in-plane case (this codebase's only {@code
-     * f>0} geometry so far): 2 exits, one continuing in each direction
-     * of {@code walkAxisIndex} -- exactly {@link MapDiagramTracer}'s
-     * pre-Step-5d inline construction, now centralized here.
+     * The ordinary tie-line-in-plane case: 2 exits, one continuing in each
+     * direction of {@code walkAxisIndex}, both fixing {@code
+     * arrivedViaPhase} and both forbidding {@code arrivingLineFixedPhase}
+     * from reappearing at the first step (the phase the arriving line came
+     * from -- if it does, the direction is wrong; OC's {@code nodfixph}).
+     *
+     * @param arrivingLineFixedPhase may be {@code null} (e.g. a diagram's
+     *                      own START node has no arriving line)
      */
-    private static void attachTieLineInPlaneExits(Node node, String arrivedViaPhase, int walkAxisIndex) {
-        node.addLine(new Line(node, List.of(arrivedViaPhase), walkAxisIndex, +1));
-        node.addLine(new Line(node, List.of(arrivedViaPhase), walkAxisIndex, -1));
+    private static void attachTieLineInPlaneExits(
+            Node node, String arrivedViaPhase, String arrivingLineFixedPhase, int walkAxisIndex) {
+        node.addLine(new Line(node, List.of(arrivedViaPhase), walkAxisIndex, +1, arrivingLineFixedPhase));
+        node.addLine(new Line(node, List.of(arrivedViaPhase), walkAxisIndex, -1, arrivingLineFixedPhase));
     }
 
     /**
@@ -193,17 +188,18 @@ final class NodeGeometry {
             Node node, String arrivedViaPhase, String arrivingLineFixedPhase, int walkAxisIndex) {
 
         if (arrivingLineFixedPhase == null) {
-            attachTieLineInPlaneExits(node, arrivedViaPhase, walkAxisIndex);
+            attachTieLineInPlaneExits(node, arrivedViaPhase, null, walkAxisIndex);
             return;
         }
 
         // Exit 1: LFIX's own line continues (single direction -- the
-        // other direction is where the arriving line came from).
-        node.addLine(new Line(node, List.of(arrivingLineFixedPhase), walkAxisIndex, +1));
+        // other direction is where the arriving line came from);
+        // forbids PHFIX from reappearing.
+        node.addLine(new Line(node, List.of(arrivingLineFixedPhase), walkAxisIndex, +1, arrivedViaPhase));
 
-        // Exits 2 and 3: PHFIX's own line, both directions.
-        node.addLine(new Line(node, List.of(arrivedViaPhase), walkAxisIndex, +1));
-        node.addLine(new Line(node, List.of(arrivedViaPhase), walkAxisIndex, -1));
+        // Exits 2 and 3: PHFIX's own line, both directions; forbid LFIX.
+        node.addLine(new Line(node, List.of(arrivedViaPhase), walkAxisIndex, +1, arrivingLineFixedPhase));
+        node.addLine(new Line(node, List.of(arrivedViaPhase), walkAxisIndex, -1, arrivingLineFixedPhase));
     }
 
     /**
@@ -225,7 +221,8 @@ final class NodeGeometry {
      * plane-exits is a legitimate outcome (the invariant may simply not
      * continue any line within this diagram's 2D plane).
      */
-    private static void attachInvariantExits(Node node, String arrivedViaPhase, int walkAxisIndex) {
+    private static void attachInvariantExits(
+            Node node, String arrivedViaPhase, String arrivingLineFixedPhase, int walkAxisIndex) {
         List<String> phaseNames = new ArrayList<>(node.stablePhaseNames);
         double[][] compositions = new double[phaseNames.size()][];
 
@@ -269,8 +266,8 @@ final class NodeGeometry {
         // quickly (non-convergence or an immediate re-crossing) when
         // walked by the drain loop rather than being pre-filtered here.
         for (InvariantExitFinder.ExitCandidate exit : exits) {
-            node.addLine(new Line(node, List.of(exit.excludedPhase), walkAxisIndex, +1));
-            node.addLine(new Line(node, List.of(exit.excludedPhase), walkAxisIndex, -1));
+            node.addLine(new Line(node, List.of(exit.excludedPhase), walkAxisIndex, +1, arrivingLineFixedPhase));
+            node.addLine(new Line(node, List.of(exit.excludedPhase), walkAxisIndex, -1, arrivingLineFixedPhase));
         }
     }
 }

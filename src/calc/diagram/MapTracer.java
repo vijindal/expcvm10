@@ -643,7 +643,7 @@ public final class MapTracer {
         }
 
         return walkOneSegmentInternal(startWalkValue, startStableNames, walkAxis, releaseAxis,
-                fixedT, fixedP, compAtStart, candidates, startResult, globalCheckInterval);
+                fixedT, fixedP, compAtStart, candidates, startResult, globalCheckInterval, null, 0);
     }
 
     /**
@@ -700,7 +700,52 @@ public final class MapTracer {
         double fixedP = conds.fixedPressure();
 
         return walkOneSegmentInternal(startWalkValue, startStableNames, walkAxis, releaseAxis,
-                fixedT, fixedP, compAtStart, candidates, startResult, 0);
+                fixedT, fixedP, compAtStart, candidates, startResult, 0, null, 0);
+    }
+
+    /**
+     * Algorithm C1 (Fig. 5) for one pending {@link Line}: as {@link
+     * #walkOneSegment(ConditionSet, int, int, double, Set, double[], List,
+     * EquilibriumResult)}, additionally implementing Fig. 5's own
+     * "forbidden? -- sign of increment changed" box (using {@code
+     * line.forbiddenPhase}) and its "error? -- increment (3x max)" box
+     * (Algorithm A non-convergence retried with a shrinking sub-step,
+     * distinct from {@link #retryWithHalvedSteps}, which resolves an
+     * AMBIGUOUS multi-phase crossing, not a bare solver failure).
+     *
+     * @param line the pending line being walked; supplies {@code
+     *             forbiddenPhase} and the global-check interval's point count
+     */
+    SegmentResult walkOneSegment(
+            Line line,
+            ConditionSet conds,
+            int walkAxisIndex,
+            int releaseAxisIndex,
+            double startWalkValue,
+            Set<String> startStableNames,
+            double[] compAtStart,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult startResult,
+            int globalCheckInterval) {
+
+        List<Condition> axes = conds.axisConditions();
+        Condition walkCondition = axes.get(walkAxisIndex);
+        Condition releaseCondition = axes.get(releaseAxisIndex);
+
+        if (releaseCondition.variable != Condition.Variable.COMPOSITION) {
+            throw new IllegalArgumentException(
+                    "The release axis must be a COMPOSITION condition; got "
+                    + releaseCondition.variable + " (" + releaseCondition + ")");
+        }
+
+        AxisConfig walkAxis = walkCondition.toAxisConfig();
+        AxisConfig releaseAxis = releaseCondition.toAxisConfig();
+        double fixedT = conds.fixedTemperature();
+        double fixedP = conds.fixedPressure();
+
+        return walkOneSegmentInternal(startWalkValue, startStableNames, walkAxis, releaseAxis,
+                fixedT, fixedP, compAtStart, candidates, startResult, globalCheckInterval,
+                line.forbiddenPhase, line.direction);
     }
 
     /**
@@ -722,7 +767,9 @@ public final class MapTracer {
             double[] compAtStart,
             List<GibbsEnergyModel> candidates,
             EquilibriumResult startResult,
-            int globalCheckInterval) {
+            int globalCheckInterval,
+            String forbiddenPhase,
+            int direction) {
 
         double[] comp = compAtStart.clone();
         Set<String> runNames = startStableNames;
@@ -733,28 +780,82 @@ public final class MapTracer {
         double previousWalkValue = startWalkValue;
         EquilibriumResult previousResult = startResult;
 
-        for (double v = startWalkValue + walkAxis.step;
-             walkAxis.step > 0 ? v <= walkAxis.max : v >= walkAxis.min;
-             v += walkAxis.step) {
+        double step = direction == 0 ? walkAxis.step : Math.abs(walkAxis.step) * Math.signum(direction);
+        boolean firstPoint = true;
+
+        for (double v = startWalkValue + step;
+             step > 0 ? v <= walkAxis.max : v >= walkAxis.min;
+             v += step) {
 
             double t = fixedT;
             double p = fixedP;
+            double[] pointComp = comp;
 
             switch (walkAxis.type) {
                 case TEMPERATURE: t = v; break;
                 case PRESSURE: p = v; break;
-                case COMPOSITION: comp = StepTracer.applyCompositionAxis(walkAxis, v, comp); break;
+                case COMPOSITION: pointComp = StepTracer.applyCompositionAxis(walkAxis, v, comp); break;
                 default: throw new IllegalStateException("Unhandled axis type: " + walkAxis.type);
             }
 
-            EquilibriumResult current = EquilibriumSolveHelper.solveOrSentinel(t, p, comp, candidates);
+            EquilibriumResult current = EquilibriumSolveHelper.solveOrSentinel(t, p, pointComp, candidates);
 
+            // Fig. 5 "error?": Algorithm A non-convergence, retry with a
+            // shrinking sub-step (up to 3 attempts) before terminating.
             if (!current.isConverged()) {
-                coords.add(new double[] { v, comp[releaseAxis.componentIndex] });
-                points.add(current);
-                return new SegmentResult(coords, points, SegmentEnd.NON_CONVERGENT,
-                        v, comp.clone(), null, null, previousResult);
+                NonConvergenceRetryResult retried = retryOnNonConvergence(
+                        previousWalkValue, v, walkAxis, fixedT, fixedP, comp, candidates);
+                if (retried == null) {
+                    coords.add(new double[] { v, pointComp[releaseAxis.componentIndex] });
+                    points.add(current);
+                    return new SegmentResult(coords, points, SegmentEnd.NON_CONVERGENT,
+                            v, pointComp.clone(), null, null, previousResult);
+                }
+                v = retried.walkValue;
+                t = retried.t;
+                p = retried.p;
+                pointComp = retried.comp;
+                current = retried.result;
             }
+
+            comp = pointComp;
+
+            // Fig. 5 "forbidden? -- yes: sign of increment changed", tested
+            // only at this line's first step (Sundman 2021 §3.1; OC's
+            // mapline%nodfixph / map_step, smp2A.F90 ~854-863).
+            if (firstPoint && forbiddenPhase != null
+                    && stablePhaseNames(current).contains(forbiddenPhase)) {
+
+                double flippedStep = -step;
+                double flippedV = startWalkValue + flippedStep;
+                double flippedT = fixedT, flippedP = fixedP;
+                double[] flippedComp = compAtStart.clone();
+                switch (walkAxis.type) {
+                    case TEMPERATURE: flippedT = flippedV; break;
+                    case PRESSURE: flippedP = flippedV; break;
+                    case COMPOSITION:
+                        flippedComp = StepTracer.applyCompositionAxis(walkAxis, flippedV, flippedComp);
+                        break;
+                    default: throw new IllegalStateException("Unhandled axis type: " + walkAxis.type);
+                }
+                EquilibriumResult flippedResult =
+                        EquilibriumSolveHelper.solveOrSentinel(flippedT, flippedP, flippedComp, candidates);
+
+                step = flippedStep;
+                v = flippedV;
+                t = flippedT;
+                p = flippedP;
+                comp = flippedComp;
+                current = flippedResult;
+
+                if (!current.isConverged()) {
+                    coords.add(new double[] { v, comp[releaseAxis.componentIndex] });
+                    points.add(current);
+                    return new SegmentResult(coords, points, SegmentEnd.NON_CONVERGENT,
+                            v, comp.clone(), null, null, previousResult);
+                }
+            }
+            firstPoint = false;
 
             Set<String> currentNames = stablePhaseNames(current);
 
@@ -909,6 +1010,64 @@ public final class MapTracer {
 
         return new SegmentResult(coords, points, SegmentEnd.AXIS_LIMIT,
                 previousWalkValue, comp.clone(), runNames, null, previousResult);
+    }
+
+    /** Result of a successful {@link #retryOnNonConvergence} attempt. */
+    private static final class NonConvergenceRetryResult {
+        final double walkValue;
+        final double t;
+        final double p;
+        final double[] comp;
+        final EquilibriumResult result;
+
+        NonConvergenceRetryResult(double walkValue, double t, double p, double[] comp, EquilibriumResult result) {
+            this.walkValue = walkValue;
+            this.t = t;
+            this.p = p;
+            this.comp = comp;
+            this.result = result;
+        }
+    }
+
+    /**
+     * Fig. 5's "error? -- [condition] increment (3x max)" box: Algorithm A
+     * failed to converge at {@code failedWalkValue}; shrink the axis
+     * increment from {@code lastGoodWalkValue} and retry, up to 3 times
+     * (Sundman 2021 §3.2: "the axis increment is decreased and the
+     * condition modified up to three times").
+     *
+     * @return the first converged retry, or {@code null} if all 3 attempts failed
+     */
+    private NonConvergenceRetryResult retryOnNonConvergence(
+            double lastGoodWalkValue,
+            double failedWalkValue,
+            AxisConfig walkAxis,
+            double fixedT,
+            double fixedP,
+            double[] compAtLastGood,
+            List<GibbsEnergyModel> candidates) {
+
+        double fullStep = failedWalkValue - lastGoodWalkValue;
+
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            double shrunkStep = fullStep / Math.pow(2, attempt);
+            double candidateWalkValue = lastGoodWalkValue + shrunkStep;
+
+            double t = fixedT, p = fixedP;
+            double[] comp = compAtLastGood.clone();
+            switch (walkAxis.type) {
+                case TEMPERATURE: t = candidateWalkValue; break;
+                case PRESSURE: p = candidateWalkValue; break;
+                case COMPOSITION: comp = StepTracer.applyCompositionAxis(walkAxis, candidateWalkValue, comp); break;
+                default: throw new IllegalStateException("Unhandled axis type: " + walkAxis.type);
+            }
+
+            EquilibriumResult candidateResult = EquilibriumSolveHelper.solveOrSentinel(t, p, comp, candidates);
+            if (candidateResult.isConverged()) {
+                return new NonConvergenceRetryResult(candidateWalkValue, t, p, comp, candidateResult);
+            }
+        }
+        return null;
     }
 
     /** Result of a successful {@link #retryWithHalvedSteps} attempt. */

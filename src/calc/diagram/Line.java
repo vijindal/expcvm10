@@ -4,6 +4,7 @@ import system.ports.EquilibriumResult;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * A ZPF line as this codebase's engine tracks it -- Sundman 2021 Calphad
@@ -49,7 +50,21 @@ public final class Line {
     public final int initialAxisIndex;
 
     /** Direction to step along {@link #initialAxisIndex}: +1 or -1. */
-    public final int direction;
+    public int direction;
+
+    /**
+     * Phase forbidden from becoming stable at this line's first step; if it
+     * does, the line's direction is wrong and must be flipped. {@code null}
+     * if this line has no forbidden phase (e.g. a step diagram's start-node exits).
+     */
+    public final String forbiddenPhase;
+
+    /**
+     * Stable phase set this line was walking when the last point was
+     * recorded; set from {@link #startNode}'s own set when walking begins.
+     * A stable-set change relative to this is what ends the line.
+     */
+    private Set<String> runningStableNames;
 
     private State state = State.PENDING;
 
@@ -75,22 +90,38 @@ public final class Line {
 
     public Line(Node startNode, List<String> fixedPhases,
                 int initialAxisIndex, int direction) {
+        this(startNode, fixedPhases, initialAxisIndex, direction, null);
+    }
+
+    public Line(Node startNode, List<String> fixedPhases,
+                int initialAxisIndex, int direction, String forbiddenPhase) {
         this.startNode = startNode;
         this.fixedPhases = List.copyOf(fixedPhases);
         this.initialAxisIndex = initialAxisIndex;
         this.direction = direction;
+        this.forbiddenPhase = forbiddenPhase;
     }
 
     public State getState() {
         return state;
     }
 
-    /** Mark this line as actively being walked. Only valid from {@link State#PENDING}. */
+    /**
+     * Marks this line as actively being walked, and snapshots {@link
+     * #startNode}'s stable phase set as the running set a phase change is
+     * detected against. Only valid from {@link State#PENDING}.
+     */
     public void startWalking() {
         if (state != State.PENDING) {
             throw new IllegalStateException("Line already " + state);
         }
         state = State.WALKING;
+        runningStableNames = startNode.stablePhaseNames;
+    }
+
+    /** Stable phase set this line is walking, snapshotted by {@link #startWalking()}. */
+    public Set<String> getRunningStableNames() {
+        return runningStableNames;
     }
 
     /** Append one sampled equilibrium point with its axis coordinates. */

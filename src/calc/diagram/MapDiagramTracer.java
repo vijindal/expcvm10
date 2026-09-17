@@ -126,15 +126,6 @@ public final class MapDiagramTracer {
         return setUp(conds, 0, 1, startWalkValue, compOverall, candidates, startResult);
     }
 
-    /** Returns an {@link AxisConfig} with the same range but a step whose sign matches {@code direction}. */
-    private static AxisConfig directed(AxisConfig axis, int direction) {
-        double step = Math.abs(axis.step) * Math.signum(direction);
-        if (axis.type == AxisConfig.Type.COMPOSITION) {
-            return new AxisConfig(axis.name, axis.componentIndex, axis.min, axis.max, step);
-        }
-        return new AxisConfig(axis.name, axis.type, axis.min, axis.max, step);
-    }
-
     /**
      * Drains a MAP calculation for any diagram type expressible as a
      * {@link ConditionSet}: binary T-x, ternary isothermal, or isopleth.
@@ -215,8 +206,6 @@ public final class MapDiagramTracer {
 
         AxisConfig walkAxis = searchCondition.toAxisConfig();
         AxisConfig releaseAxis = releaseCondition.toAxisConfig();
-        double fixedT = conds.fixedTemperature();
-        double fixedP = conds.fixedPressure();
 
         MapTracer tracer = new MapTracer();
         NodeRegistry registry = new NodeRegistry();
@@ -259,8 +248,7 @@ public final class MapDiagramTracer {
         startNode.addLine(new Line(startNode, startNodeFixedPhase, 0, -1));
 
         LineFollower.SegmentWalker walker = (line, walkCandidates) ->
-                walkAndResolve(line, conds, walkAxis, releaseAxis, fixedT, fixedP,
-                        walkCandidates, tracer, registry);
+                walkAndResolve(line, conds, releaseAxis, walkCandidates, tracer, registry);
         return new LineFollower.Setup(registry, walker);
     }
 
@@ -268,10 +256,7 @@ public final class MapDiagramTracer {
     private void walkAndResolve(
             Line line,
             ConditionSet conds,
-            AxisConfig walkAxis,
             AxisConfig releaseAxis,
-            double fixedT,
-            double fixedP,
             List<GibbsEnergyModel> candidates,
             MapTracer tracer,
             NodeRegistry registry) {
@@ -279,12 +264,11 @@ public final class MapDiagramTracer {
         Node fromNode = line.startNode;
         String arrivingLineFixedPhase = line.fixedPhases.isEmpty() ? null : line.fixedPhases.get(0);
 
-        AxisConfig directedWalkAxis = directed(walkAxis, line.direction);
         double[] compAtStart = compositionByNodeId.get(fromNode.id);
 
         MapTracer.SegmentResult seg = tracer.walkOneSegment(
+                line, conds, 0, 1,
                 fromNode.axisValues[0], fromNode.stablePhaseNames,
-                directedWalkAxis, releaseAxis, fixedT, fixedP,
                 compAtStart, candidates, fromNode.equilibrium,
                 StepTracer.DEFAULT_GLOBAL_CHECK_INTERVAL);
 
@@ -317,12 +301,8 @@ public final class MapDiagramTracer {
                     }
                     PhaseDiagramEngine.NodeClass nodeClass = PhaseDiagramEngine.classifyNode(
                             conds, endNode.stablePhaseNames.size());
-                    if (nodeClass == PhaseDiagramEngine.NodeClass.ISOPLETH_CROSSING) {
-                        NodeGeometry.attachExits(endNode, nodeClass,
-                                seg.changedPhase, arrivingLineFixedPhase, 0);
-                    } else {
-                        NodeGeometry.attachExits(endNode, nodeClass, seg.changedPhase, 0);
-                    }
+                    NodeGeometry.attachExits(endNode, nodeClass,
+                            seg.changedPhase, arrivingLineFixedPhase, 0);
                 }
                 break;
             }
@@ -340,7 +320,7 @@ public final class MapDiagramTracer {
                         break;
                     }
                     NodeGeometry.attachExits(endNode, PhaseDiagramEngine.NodeClass.INVARIANT,
-                            seg.changedPhase, 0);
+                            seg.changedPhase, arrivingLineFixedPhase, 0);
                 }
                 break;
             }
