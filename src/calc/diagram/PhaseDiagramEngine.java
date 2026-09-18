@@ -306,7 +306,7 @@ public final class PhaseDiagramEngine {
             node0.exits.add(new DiagramExit(node0, equilibrium0, false, null, 0, +1, null));
             node0.exits.add(new DiagramExit(node0, equilibrium0, false, null, 0, -1, null));
             diagram.nodes.add(node0);
-            callAlgorithmC1(node0.exits, diagram, conds, candidates);
+            callAlgorithmC1(diagram, conds, candidates);
 
         } else {
             int axis = walkedAxisIndex(axes);
@@ -330,7 +330,7 @@ public final class PhaseDiagramEngine {
             node0.exits.add(new DiagramExit(node0, current, false, alpha, otherAxis, +1, null));
             node0.exits.add(new DiagramExit(node0, current, false, alpha, otherAxis, -1, null));
             diagram.nodes.add(node0);
-            callAlgorithmC1(node0.exits, diagram, conds, candidates);
+            callAlgorithmC1(diagram, conds, candidates);
         }
 
         return diagram;
@@ -376,22 +376,26 @@ public final class PhaseDiagramEngine {
     private static final int GLOBAL_CHECK_INTERVAL = 10;
 
     /**
-     * Algorithm C1: searches {@code pendingExits} for an unresolved exit
-     * and walks it, one small axis increment at a time, until the walked
-     * axis runs out of bounds, convergence repeatedly fails, or the
-     * stable phase set changes. A plain (STEP) exit walks via {@link
-     * #callAlgorithmA}; a ZPF exit ({@code exit.fixedPhase != null},
-     * Sundman 2021 S3.3) walks via {@link EquilibriumSolverV2#solveZpf},
-     * releasing the diagram's other axis to hold the fixed phase at zero
-     * amount along the line.
+     * Algorithm C1 (Sundman 2021 Fig. 5): "will begin searching the list
+     * of nodes to find exits to generate lines. If there are none the
+     * mapping is finished" (S3.3). Searches {@code diagram.nodes} --
+     * not just the node that started the diagram -- so exits later
+     * pushed onto that list by C2/D are found too, then walks the found
+     * exit one small axis increment at a time until the walked axis runs
+     * out of bounds, convergence repeatedly fails, or the stable phase
+     * set changes. A plain (STEP) exit walks via {@link #callAlgorithmA};
+     * a ZPF exit ({@code exit.fixedPhase != null}, Sundman 2021 S3.3)
+     * walks via {@link EquilibriumSolverV2#solveZpf}, releasing the
+     * diagram's other axis to hold the fixed phase at zero amount along
+     * the line.
      *
-     * @param pendingExits exits to search, typically one node's {@code exits}
-     * @param diagram      diagram being built; lines are appended here
-     * @param conds        full condition set for the diagram
-     * @param candidates   candidate phase models
+     * @param diagram    diagram being built; its {@code nodes} list is
+     *                   searched for exits and its {@code lines} are
+     *                   appended to here
+     * @param conds      full condition set for the diagram
+     * @param candidates candidate phase models
      */
     static void callAlgorithmC1(
-            List<DiagramExit> pendingExits,
             DiagramResult diagram,
             ConditionSet conds,
             List<GibbsEnergyModel> candidates) {
@@ -399,7 +403,7 @@ public final class PhaseDiagramEngine {
         List<Condition> axes = conds.axisConditions();
 
         while (true) {
-            DiagramExit exit = searchPendingExit(pendingExits);
+            DiagramExit exit = searchPendingExit(diagram.nodes);
             if (exit == null) {
                 return;
             }
@@ -468,16 +472,68 @@ public final class PhaseDiagramEngine {
                     break;
                 }
 
+                // A ZPF step (exit.fixedPhase != null) only sets the walked
+                // axis directly; the diagram's other axis is released and
+                // solved for (Sundman 2021 S3.3), so `result`'s actual
+                // converged state -- not the `currentAxisValues` fed into
+                // callAlgorithmAOrZpf -- is the true position of both axes.
+                double[] solvedAxisValues = extractAxisValues(result, conds);
+
+                int newAxis = selectAxisWithLargestVariation(axes, anchorAxisValues, solvedAxisValues);
+                if (newAxis != axis) {
+                    // exit.direction is a sign defined relative to the axis it
+                    // was walking; reusing it unchanged after switching axes
+                    // is meaningless (it could just as well continue OR
+                    // reverse the new axis). Re-derive it from the new axis's
+                    // own observed trend over the step just accepted, per OC's
+                    // map_step2 (smp2A.F90 ~3780-3797: "mapline%axandir=-nyax"
+                    // / "=nyax" chosen from the sign of dax1(nyax)/dax2(nyax),
+                    // never carried over from the old axis).
+                    double newAxisDelta = solvedAxisValues[newAxis] - anchorAxisValues[newAxis];
+                    exit.direction = newAxisDelta < 0 ? -1 : 1;
+                }
+                axis = newAxis;
+                axisCondition = axes.get(axis);
+
                 attempts = 0;
                 stepSize = axisCondition.step;
                 seed = result;
-                anchorAxisValues = currentAxisValues.clone();
+                anchorAxisValues = solvedAxisValues;
                 currentAxisValues = anchorAxisValues.clone();
                 currentAxisValues[axis] += stepSize * exit.direction;
                 result = callAlgorithmAOrZpf(
                         conds, currentAxisValues, axis, exit.fixedPhase, seed, candidates);
             }
         }
+    }
+
+    /**
+     * Algorithm C1's "Select axis with largest variation" box (Sundman
+     * 2021 Fig. 5, S3.3): "algorithm C1 will check which axis varies
+     * most rapidly and possibly change the axis to use for incrementing
+     * the next iteration." Compares, for each axis, how far the last
+     * accepted step moved it relative to that axis's own increment
+     * ({@code |Δaxis_i| / step_i}) and returns the index of the largest;
+     * a no-op for a 1-axis (STEP) diagram, where this is the only axis.
+     *
+     * <p>This is the paper's literal box only: unlike OpenCalphad's
+     * {@code map_step2} (smp2A.F90 ~3660-3720), it has no hysteresis
+     * margin, no cooldown period after a switch, and no interaction with
+     * fix-phase selection -- those are OC engineering refinements beyond
+     * what Fig. 5 specifies, deliberately left out here.
+     */
+    private static int selectAxisWithLargestVariation(
+            List<Condition> axes, double[] previousAxisValues, double[] newAxisValues) {
+        int best = 0;
+        double bestVariation = -1.0;
+        for (int i = 0; i < axes.size(); i++) {
+            double variation = Math.abs(newAxisValues[i] - previousAxisValues[i]) / axes.get(i).step;
+            if (variation > bestVariation) {
+                bestVariation = variation;
+                best = i;
+            }
+        }
+        return best;
     }
 
     /**
@@ -611,11 +667,19 @@ public final class PhaseDiagramEngine {
                 stable, java.util.Collections.emptyList(), eq.converged, 0);
     }
 
-    /** Scans {@code pendingExits} for the first not-yet-{@code done} exit, or {@code null} if none remain. */
-    private static DiagramExit searchPendingExit(List<DiagramExit> pendingExits) {
-        for (DiagramExit exit : pendingExits) {
-            if (!exit.done) {
-                return exit;
+    /**
+     * Scans every node's exits, in {@code nodes} order, for the first
+     * not-yet-{@code done} exit, or {@code null} if none remain across
+     * the whole list (Sundman 2021 S3.3: "Algorithm C1 will begin
+     * searching the list of nodes to find exits ... If there are none
+     * the mapping is finished").
+     */
+    private static DiagramExit searchPendingExit(List<DiagramNode> nodes) {
+        for (DiagramNode node : nodes) {
+            for (DiagramExit exit : node.exits) {
+                if (!exit.done) {
+                    return exit;
+                }
             }
         }
         return null;

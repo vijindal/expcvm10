@@ -249,11 +249,19 @@ public class PhaseDiagramEngineAlgorithmC1Test {
     // Sundman 2021 3.3: a ZPF line exit ("one phase will be fix with zero
     // amount along the line") has exit.fixedPhase != null; C1 walks it via
     // EquilibriumSolverV2#solveZpf, releasing the diagram's OTHER axis (T)
-    // to hold LIQUID at exactly zero amount while x(Cu) is walked directly.
+    // to hold LIQUID at exactly zero amount. Per Fig. 5's "select axis with
+    // largest variation" box, C1 may (and here does) switch the walked
+    // axis away from x(Cu) to T mid-line once T starts varying faster
+    // relative to its own step -- so T is NOT expected to stay close to
+    // node0's 1176.13 for the whole line; it is expected to move a lot.
     // OC (agcu_full_map_clean_xcu05_output.txt): node0 at T=1176.13,
     // x(Cu)=0.05, LIQUID+FCC_A1#1 -- "New line: 1 T=1176.13 ... Creating a
-    // node at 1056.12 where FCC_A1_AUTO#2 appears" confirms the line
-    // survives cleanly at least that far walking x(Cu) upward from 0.05.
+    // node at 1056.12 where FCC_A1_AUTO#2 appears" i.e. OC's own line runs
+    // all the way from T=1176.13 down to T=1056.12 (xaxis: 1.3006E-01)
+    // before crossing to a composition-set split this codebase does not
+    // yet detect (miscibility gap, a documented separate gap) -- so this
+    // test only checks the line stays within OC's real envelope and moves
+    // monotonically, not that it reproduces the exact crossing.
     // ------------------------------------------------------------------
     @Test
     void zpfLineExitWalksXCuReleasingTWithLiquidFixedAtExactlyZero() throws IOException {
@@ -286,11 +294,30 @@ public class PhaseDiagramEngineAlgorithmC1Test {
         assertNotNull(plusLine, "the +1 exit (increasing x(Cu)) should have saved at least one point");
         assertTrue(plusExit.done);
 
+        // Monotonicity is checked from the line's OWN first saved point, not
+        // node0: Fig. 5's first step off an exit is a small forbidden-phase
+        // CHECK increment (Sundman 2021 S3.3, "first followed with a small
+        // increment in order to check that the direction is correct") and
+        // can legitimately overshoot on the released axis before axis-
+        // switching settles into a monotonic walk -- OC's own solver has
+        // the same kind of first-step slack (S3.3: "up to three times").
+        double previousT = plusLine.equilibria.get(0).T;
+        double previousXCu = overallXCu(plusLine.equilibria.get(0));
         for (PhaseDiagramEngine.DiagramEquilibrium eq : plusLine.equilibria) {
             assertEquals(Set.of("LIQUID", "FCC_A1"), eq.stablePhases);
             assertEquals(0.0, eq.phaseAmounts.get("LIQUID"), 0.0,
                     "LIQUID must be held at exactly zero amount along a ZPF line");
-            assertTrue(eq.T < 1176.13, "T should be released downward as x(Cu) increases from OC's node0");
+
+            double xCu = overallXCu(eq);
+            assertTrue(eq.T <= previousT, "T must decrease monotonically along OC's real line 1");
+            assertTrue(xCu >= previousXCu, "x(Cu) must increase monotonically along OC's real line 1");
+            // OC's own line 1 runs from T=1176.13 down to T=1056.12 (xaxis
+            // 0.13) before a crossing this codebase can't yet detect; allow
+            // some slack past 1056.12/0.13 since our walk keeps going.
+            assertTrue(eq.T > 1000.0, "T should stay well above OC's crossing floor of 1056.12");
+            assertTrue(xCu < 0.20, "x(Cu) should stay near OC's crossing composition of 0.130");
+            previousT = eq.T;
+            previousXCu = xCu;
         }
     }
 
