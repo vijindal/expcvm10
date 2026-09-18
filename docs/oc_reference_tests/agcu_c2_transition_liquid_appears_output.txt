@@ -1,0 +1,99 @@
+
+3A unfished preparations for XTDB
+
+
+Open Calphad (OC) software version   6.109 , linked 2026-09-13
+with command line monitor version  73
+
+This program is available with a GNU General Public License.
+either version 2 of the License, or any later version.
+It includes the General Thermodynamic Package, version GTP-3.31,
+Hillert's equilibrium calculation algorithm version HMS-3.0 ,
+step/map/plot software version SMP-2.30 using GNUPLOT 5.2 graphics.
+Numerical routines are extracted from LAPACK and BLAS and
+the assessment procedure uses LMDIF from ANL.
+
+Linked with OpenMp for parallel execution
+ Warning, no environment variable OCHOME and no help file
+ Working directory is: /mnt/c/Users/admin/codes/opencalphad/examples/macros
+--->OC6: No step or map results to delete
+ All data removed, reinitiating
+
+3A unfished preparations for XTDB
+
+ Warning, no environment variable OCHOME and no help file
+ Working directory is: /mnt/c/Users/admin/codes/opencalphad/examples/macros
+--->OC6:--->OC6:... echo: r t ./agcu
+ 3E Database file extention is: ".tdb"
+Database has  2 elements: AG CU
+Give the elements to select, finish with empty line
+Select elements /all/: All elements selected
+3E reading database file: agcu.TDB
+
+Out of    15 model parameters    15 have been entered
+
+
+There are     3 bibliographic references
+REF283          'Alan Dinsdale, SGTE Data for Pure Elements, Calphad Vol 
+                 15(1991) p 317-425, also in NPL Report DMA(A)195 Rev. August 
+                 1990'
+REF137          'F.H. Hayes, H.L. Lukas, G. Effenberg, G. Petzow, Z. fur 
+                 Metallkde, Vol 77 (1986), No 11, p 749-754; AG-CU-PB'
+REF135          'Unassessed parameter, inserted to make this phase less 
+                 stable.'
+
+--->OC6:... echo: set cond t=1150 p=1e5 n=1 x(cu)=.05
+--->OC6:... echo: c e
+ 3Y Composition set(s) created:            1
+Gridmin:     128 points   1.92E-03 s and       4 clockcycles, T= 1150.00
+ 3Y leaving global_gridmin
+Phase change iteration:     5  +LIQUID
+Phase change iteration:     6  +LIQUID
+Phase change iteration:     7  +LIQUID
+Phase change iteration:     8  -FCC_A1#1
+Equilibrium result:  12 its,  6.1800E-03 s,     15 cc, GS= -6.7882826E+04 J/mol
+--->OC6:... echo: c transition
+To calculate when a phase will appear/disappear by releasing a condition.
+Phase name:... echo: liquid
+  1:T=1150, 2:P=100000, 3:N=1, 4:X(CU)=.05
+ Degrees of freedom are   0
+You must release one condition, give its number
+Condition number /1/: ... echo: 1
+Warning: global minimizer cannot be used for the current set of conditions
+Equilibrium result:  11 its,  4.1800E-04 s,      0 cc, GS= -7.0004683E+04 J/mol
+3Y Testing if any gridpoint is below the calculated equilibrium
+The transition occurs at   1.17612665E+03, set as condition
+--->OC6:... echo: l r 2
+
+Output for equilibrium:   1, DEFAULT_EQUILIBRIUM          2026.09.18
+Conditions .................................................:
+  1:T=1176.12665, 2:P=100000, 3:N=1, 4:X(CU)=.05
+ Degrees of freedom are   0
+
+Some global data, reference state SER ......................:
+T=   1176.13 K (   902.98 C), P=  1.0000E+05 Pa, V=  0.0000E+00 m3
+N=   1.0000E+00 moles, B=   1.0565E+02 g, RT=   9.7789E+03 J/mol
+G= -7.00047E+04 J, G/N=-7.0005E+04 J/mol, H= 2.5924E+04 J, S= 8.156E+01 J/K
+
+Some data for components ...................................:
+Component name    Moles      Mole-fr  Chem.pot/RT  Activities  Ref.state
+AG                9.5000E-01  0.95000 -7.1667E+00  7.7190E-04  SER (default)   
+CU                5.0000E-02  0.05000 -7.0083E+00  9.0431E-04  SER (default)   
+
+Some data for phases .......................................:
+Name                Status Moles      Volume    Form.Units Cmp/FU dGm/RT  Comp:
+LIQUID.................. E  0.000E+00  0.00E+00  0.00E+00    1.00  0.00E+00  X:
+ AG     8.89037E-01  CU     1.10963E-01
+Constitution: There are     2 constituents:
+ AG     8.89037E-01  CU     1.10963E-01
+
+FCC_A1#1................ E  1.000E+00  0.00E+00  1.00E+00    1.00  0.00E+00  X:
+ AG     9.50000E-01  CU     5.00000E-02
+Constitution: Sublattice  1 with     2 constituents and     1.000000 sites
+STOP Ha en bra dag
+ AG     9.50000E-01  CU     5.00000E-02
+              Sublattice  2 with     1 constituents and     1.000000 sites
+ VA     1.00000E+00
+
+--->OC6:... echo: exit
+Are you sure? /N/: ... echo: y

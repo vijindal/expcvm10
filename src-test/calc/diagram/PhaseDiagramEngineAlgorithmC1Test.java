@@ -101,18 +101,22 @@ public class PhaseDiagramEngineAlgorithmC1Test {
                 conds, new double[] { 1150.0 }, agCu());
         printDiagram("directionPlusOneStopsAtPhaseChangeDirectionMinusOneStopsAtAxisLimit", diagram);
 
-        assertEquals(1, diagram.nodes.size());
+        // node0 (its own +1/-1 exits) plus one C2-created node at the
+        // LIQUID-appears crossing, T=1176.13 -- whose own STEP-continuation
+        // exit then walks off and is excluded by the global-stability check
+        // (a documented, separate gap), so no further nodes are created.
+        assertEquals(2, diagram.nodes.size());
         PhaseDiagramEngine.DiagramNode node0 = diagram.nodes.get(0);
         assertEquals(2, node0.exits.size());
-        assertEquals(2, diagram.lines.size());
+        assertEquals(3, diagram.lines.size());
 
         PhaseDiagramEngine.DiagramExit plusExit = node0.exits.get(0).direction == 1
                 ? node0.exits.get(0) : node0.exits.get(1);
         PhaseDiagramEngine.DiagramExit minusExit = plusExit == node0.exits.get(0)
                 ? node0.exits.get(1) : node0.exits.get(0);
 
-        // Both exits are resolved by C1 -- one via the (deferred) C2 handoff
-        // at a phase change, the other by running off the axis limit.
+        // Both exits are resolved by C1 -- one via C2's node handoff at a
+        // phase change, the other by running off the axis limit.
         assertTrue(plusExit.done);
         assertTrue(minusExit.done);
 
@@ -350,7 +354,12 @@ public class PhaseDiagramEngineAlgorithmC1Test {
                 conds, new double[] { 1100.0 }, agCu());
         printDiagram("curichStepCrossesToTwoPhaseOnCoolingStaysLiquidOnHeating", diagram);
 
-        assertEquals(1, diagram.nodes.size());
+        // node0 plus a chain of C2-created nodes: each new node's own
+        // STEP-continuation exit (no phase held fixed, per S3.2) keeps
+        // walking and crossing again, so the chain grows past just one
+        // crossing -- this only checks node0 and its own two lines, not
+        // the exact length of that downstream chain.
+        assertTrue(diagram.nodes.size() >= 2);
         PhaseDiagramEngine.DiagramNode node0 = diagram.nodes.get(0);
         assertEquals(Set.of("LIQUID"), node0.equilibrium.stablePhases);
 
@@ -444,7 +453,11 @@ public class PhaseDiagramEngineAlgorithmC1Test {
                 conds, new double[] { 0.04 }, alMgZn());
         printDiagram("almgznStepCrossesToMgzn2OnIncreasingXZnStaysSinglePhaseOnDecreasing", diagram);
 
-        assertEquals(1, diagram.nodes.size());
+        // node0 plus one C2-created node at the MGZN2-appears crossing,
+        // x(Zn)=0.050236 -- whose own STEP-continuation exit then walks
+        // off and is excluded by the global-stability check (a documented,
+        // separate gap), so no further nodes are created.
+        assertEquals(2, diagram.nodes.size());
         PhaseDiagramEngine.DiagramNode node0 = diagram.nodes.get(0);
         assertEquals(700.0, node0.equilibrium.T, 1.0e-9);
         assertEquals(Set.of("FCC_A1"), node0.equilibrium.stablePhases);
@@ -452,6 +465,7 @@ public class PhaseDiagramEngineAlgorithmC1Test {
         PhaseDiagramEngine.DiagramLineResult increasingLine = null;
         PhaseDiagramEngine.DiagramLineResult decreasingLine = null;
         for (PhaseDiagramEngine.DiagramLineResult line : diagram.lines) {
+            if (line.startNode != node0) continue;
             if (line.equilibria.isEmpty()) {
                 decreasingLine = line; // x(Zn)=0.04 is already the axis min
             } else {
@@ -575,7 +589,13 @@ public class PhaseDiagramEngineAlgorithmC1Test {
                 conds, new double[] { 1207.0 }, agCu());
         printDiagram("twoPhaseStartStepCrossesOnBothSidesOfItsOwnTwoPhaseRegion", diagram);
 
-        assertEquals(1, diagram.nodes.size());
+        // node0 plus one C2-created node at the cooling line's own crossing
+        // (T=1176.13, LIQUID disappears back to FCC_A1-only). The heating
+        // line's own crossing (T=1207.60) resolves to a boundary equilibrium
+        // that fails the global-stability check, so C2 excludes that line
+        // before a node is created for it -- matching heatingLine's own
+        // "phase change" -> (no node) below.
+        assertEquals(2, diagram.nodes.size());
         PhaseDiagramEngine.DiagramNode node0 = diagram.nodes.get(0);
         assertEquals(1207.0, node0.equilibrium.T, 1.0e-9);
         assertEquals(Set.of("LIQUID", "FCC_A1"), node0.equilibrium.stablePhases);
@@ -585,8 +605,11 @@ public class PhaseDiagramEngineAlgorithmC1Test {
 
         // Heating: T=1207+5=1212 is already past OC's own crossing at
         // T=1207.60, so the very first step detects the phase change with
-        // nothing saved yet.
-        assertEquals("phase change", heatingLine.terminatedReason);
+        // nothing saved yet. C2 then solves the boundary but its own
+        // global-stability check rejects it (a documented, separate gap),
+        // so the line's terminatedReason is overwritten to "excluded" and
+        // no node is created for this crossing.
+        assertEquals("excluded", heatingLine.terminatedReason);
         assertTrue(heatingLine.equilibria.isEmpty(),
                 "the first 5K heating step (to T=1212) already overshoots OC's own T=1207.60 crossing");
 

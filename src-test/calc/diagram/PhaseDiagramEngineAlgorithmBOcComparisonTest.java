@@ -96,7 +96,10 @@ public class PhaseDiagramEngineAlgorithmBOcComparisonTest {
                 conds, new double[] { 1150.0 }, agCu());
         printDiagram("1) agCuStepNode0MatchesOcsInitialEquilibrium", diagram);
 
-        assertEquals(1, diagram.nodes.size());
+        // node0 plus one C2-created node at the +1 line's own crossing
+        // (LIQUID appears, T=1176.13) -- see PhaseDiagramEngineAlgorithmC1Test's
+        // directionPlusOneStopsAtPhaseChangeDirectionMinusOneStopsAtAxisLimit.
+        assertEquals(2, diagram.nodes.size());
         PhaseDiagramEngine.DiagramNode node0 = diagram.nodes.get(0);
 
         assertEquals(1150.0, node0.equilibrium.T, T_ABSOLUTE_TOLERANCE);
@@ -265,7 +268,12 @@ public class PhaseDiagramEngineAlgorithmBOcComparisonTest {
                 conds, new double[] { 1207.0 }, agCu());
         printDiagram("5) stepNode0StartsFromCallersInitialConditionNotAxisMin", diagram);
 
-        assertEquals(1, diagram.nodes.size());
+        // node0 plus one C2-created node at the cooling line's own crossing
+        // (T=1176.13); the heating line's own crossing (T=1207.60) fails
+        // C2's global-stability check and creates no node -- see
+        // PhaseDiagramEngineAlgorithmC1Test's own
+        // twoPhaseStartStepCrossesOnBothSidesOfItsOwnTwoPhaseRegion.
+        assertEquals(2, diagram.nodes.size());
         PhaseDiagramEngine.DiagramNode node0 = diagram.nodes.get(0);
 
         assertEquals(1207.0, node0.equilibrium.T, T_ABSOLUTE_TOLERANCE,

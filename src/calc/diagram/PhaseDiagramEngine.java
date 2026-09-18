@@ -458,7 +458,7 @@ public final class PhaseDiagramEngine {
                 if (!result.stablePhases.equals(runningStableSet)) {
                     line.terminatedReason = "phase change";
                     exit.done = true;
-                    // C2(exit, result, axis, currentAxisValues, diagram, line) -- deferred: not yet wired.
+                    callAlgorithmC2(exit, result, axis, runningStableSet, conds, diagram, line, candidates);
                     break;
                 }
 
@@ -505,6 +505,211 @@ public final class PhaseDiagramEngine {
                         conds, currentAxisValues, axis, exit.fixedPhase, seed, candidates);
             }
         }
+    }
+
+    /** OC's own T/P node-matching relative tolerance ({@code vz}, {@code map_newnode}, smp2A.F90). */
+    private static final double NODE_TP_RELATIVE_TOLERANCE = 1.0e-8;
+
+    /** OC's own chemical-potential node-matching relative tolerance ({@code 20*vz}, {@code map_newnode}). */
+    private static final double NODE_MU_RELATIVE_TOLERANCE = 2.0e-7;
+
+    /**
+     * Algorithm C2 (Sundman 2021 Fig. 6): resolves a stable-phase-set
+     * change detected by C1 into a boundary equilibrium and, from it, a
+     * matched-or-new {@link DiagramNode} with its own exits, so C1's own
+     * {@code searchPendingExit} can pick them up on a later loop
+     * iteration. Every branch below terminates {@code line} and leaves
+     * {@code exit.done = true} (already set by the caller) before
+     * returning -- there is no explicit "back to C1" call, since
+     * returning here puts control back at {@code callAlgorithmC1}'s own
+     * {@code searchPendingExit} loop directly.
+     *
+     * @param exit              the exit whose line just detected a crossing
+     * @param crossingResult    the (not-yet-saved) equilibrium at/after the crossing
+     * @param axis              the axis {@code exit}'s line was walking at
+     *                          the moment of crossing (may differ from
+     *                          {@code exit.initialAxis} after an axis switch)
+     * @param runningStableSet  the line's own stable-phase set before the crossing
+     * @param conds             full condition set for the diagram
+     * @param diagram           diagram being built; a matched-or-new node
+     *                          may be appended to its {@code nodes} list
+     * @param line              the line that detected the crossing
+     * @param candidates        candidate phase models
+     */
+    private static void callAlgorithmC2(
+            DiagramExit exit,
+            DiagramEquilibrium crossingResult,
+            int axis,
+            java.util.Set<String> runningStableSet,
+            ConditionSet conds,
+            DiagramResult diagram,
+            DiagramLineResult line,
+            List<GibbsEnergyModel> candidates) {
+
+        String alpha = changedPhase(runningStableSet, crossingResult.stablePhases);
+
+        List<Condition> axes = conds.axisConditions();
+        Condition axisCondition = axes.get(axis);
+
+        double t = conds.fixedTemperature();
+        double p = conds.fixedPressure();
+        double[] comp = overallComposition(crossingResult);
+        EquilibriumSolverV2.ReleasedVariable released;
+        int releasedComponentIndex = -1;
+        switch (axisCondition.variable) {
+            case TEMPERATURE:
+                released = EquilibriumSolverV2.ReleasedVariable.TEMPERATURE;
+                break;
+            case PRESSURE:
+                released = EquilibriumSolverV2.ReleasedVariable.PRESSURE;
+                break;
+            case COMPOSITION:
+                released = EquilibriumSolverV2.ReleasedVariable.COMPOSITION;
+                releasedComponentIndex = axisCondition.componentIndex;
+                break;
+            default:
+                throw new IllegalStateException("Unhandled axis variable: " + axisCondition.variable);
+        }
+        // Every non-walked, non-released condition stays at its own fixed
+        // value; T/P above already default to conds' fixed values and are
+        // only overwritten below when the walked axis is TEMPERATURE/PRESSURE
+        // (a released T/P is instead seeded from the crossing result and
+        // solved for by solveZpf itself).
+        if (axisCondition.variable == Condition.Variable.TEMPERATURE) {
+            t = crossingResult.T;
+        } else if (axisCondition.variable == Condition.Variable.PRESSURE) {
+            p = crossingResult.P;
+        }
+
+        EquilibriumResult seedResult = toEquilibriumResultForSeeding(crossingResult);
+
+        EquilibriumSolverV2.BoundarySolveResult boundary;
+        try {
+            boundary = new EquilibriumSolverV2().solveZpf(
+                    t, p, comp, candidates, seedResult, alpha, 0.0, released, releasedComponentIndex);
+        } catch (RuntimeException e) {
+            boundary = null;
+        }
+
+        if (boundary == null || !boundary.equilibrium.isConverged()) {
+            line.terminatedReason = "boundary solve failed";
+            return;
+        }
+
+        DiagramEquilibrium boundaryEquilibrium = toDiagramEquilibrium(boundary.equilibrium, conds, candidates);
+
+        if (!isGloballyStable(boundary.equilibrium, candidates)) {
+            line.terminatedReason = "excluded";
+            return;
+        }
+
+        DiagramNode matched = findMatchingNode(diagram.nodes, boundaryEquilibrium);
+        if (matched != null) {
+            exit.done = true;
+            line.endNode = matched;
+            return;
+        }
+
+        DiagramNode node = new DiagramNode(boundaryEquilibrium, new java.util.ArrayList<>());
+        diagram.nodes.add(node);
+        line.endNode = node;
+
+        NodeClass nodeClass = classifyNode(conds, boundaryEquilibrium.stablePhases.size());
+
+        if (exit.fixedPhase == null) {
+            // STEP line (Sundman 2021 S3.2): single continuation exit, same
+            // axis/direction, no fixed phase -- a 1-axis STEP diagram has no
+            // released axis to hold anything at zero along the next line.
+            node.exits.add(new DiagramExit(node, boundaryEquilibrium, false, null, axis, exit.direction, null));
+            return;
+        }
+
+        if (nodeClass == NodeClass.TIE_LINE_IN_PLANE) {
+            node.exits.add(new DiagramExit(node, boundaryEquilibrium, false, alpha, axis, +1, exit.fixedPhase));
+            node.exits.add(new DiagramExit(node, boundaryEquilibrium, false, alpha, axis, -1, exit.fixedPhase));
+            return;
+        }
+
+        if (nodeClass == NodeClass.INVARIANT) {
+            attachInvariantExits(node, boundaryEquilibrium, axis, alpha, exit.fixedPhase, conds);
+            return;
+        }
+
+        // ISOPLETH_CROSSING: exit.fixedPhase's own line continues one more
+        // step in the same direction (forbidding alpha), plus alpha's own
+        // ZPF line in both directions (forbidding exit.fixedPhase).
+        node.exits.add(new DiagramExit(
+                node, boundaryEquilibrium, false, exit.fixedPhase, axis, exit.direction, alpha));
+        node.exits.add(new DiagramExit(node, boundaryEquilibrium, false, alpha, axis, +1, exit.fixedPhase));
+        node.exits.add(new DiagramExit(node, boundaryEquilibrium, false, alpha, axis, -1, exit.fixedPhase));
+    }
+
+    /**
+     * Algorithm D (Fig. 7, Eq. 9): finds every valid exit-phase pair at an
+     * invariant node (all other stable phases at strictly positive
+     * amount) and attaches 2 exits per pair, excluding the pair already
+     * on the arriving line -- see {@link InvariantExitPairFinder}.
+     */
+    private static void attachInvariantExits(
+            DiagramNode node,
+            DiagramEquilibrium boundaryEquilibrium,
+            int axis,
+            String alpha,
+            String arrivingLineFixedPhase,
+            ConditionSet conds) {
+
+        List<String> phaseNames = new java.util.ArrayList<>(boundaryEquilibrium.stablePhases);
+        double[][] compositions = new double[phaseNames.size()][];
+        for (int i = 0; i < phaseNames.size(); i++) {
+            compositions[i] = boundaryEquilibrium.phaseMoleFractions.get(phaseNames.get(i));
+        }
+        double[] targetComposition = overallComposition(boundaryEquilibrium);
+
+        InvariantExitPairFinder.ExitPair arrivalPair =
+                new InvariantExitPairFinder.ExitPair(alpha, arrivingLineFixedPhase);
+        List<InvariantExitPairFinder.ExitPair> exitPairs = InvariantExitPairFinder.findExitPairs(
+                phaseNames, compositions, targetComposition, arrivalPair);
+
+        for (InvariantExitPairFinder.ExitPair pair : exitPairs) {
+            node.exits.add(new DiagramExit(node, boundaryEquilibrium, false, pair.beta2, axis, +1, pair.beta1));
+            node.exits.add(new DiagramExit(node, boundaryEquilibrium, false, pair.beta2, axis, -1, pair.beta1));
+            node.exits.add(new DiagramExit(node, boundaryEquilibrium, false, pair.beta1, axis, +1, pair.beta2));
+            node.exits.add(new DiagramExit(node, boundaryEquilibrium, false, pair.beta1, axis, -1, pair.beta2));
+        }
+    }
+
+    /**
+     * Finds an already-registered node matching {@code candidate} under
+     * OC's own {@code map_newnode} rule: identical stable phase set, T
+     * and P within {@link #NODE_TP_RELATIVE_TOLERANCE}, and every
+     * chemical potential within {@link #NODE_MU_RELATIVE_TOLERANCE} --
+     * both tolerances scaled relative to the EXISTING registered node's
+     * own value, floored at 1.0. Returns {@code null} if none match.
+     */
+    private static DiagramNode findMatchingNode(List<DiagramNode> nodes, DiagramEquilibrium candidate) {
+        for (DiagramNode existing : nodes) {
+            DiagramEquilibrium reference = existing.equilibrium;
+            if (!reference.stablePhases.equals(candidate.stablePhases)) continue;
+            if (!withinRelativeTolerance(candidate.T, reference.T, NODE_TP_RELATIVE_TOLERANCE)) continue;
+            if (!withinRelativeTolerance(candidate.P, reference.P, NODE_TP_RELATIVE_TOLERANCE)) continue;
+            if (reference.chemicalPotentials.length != candidate.chemicalPotentials.length) continue;
+            boolean muMatch = true;
+            for (int i = 0; i < reference.chemicalPotentials.length; i++) {
+                if (!withinRelativeTolerance(candidate.chemicalPotentials[i],
+                        reference.chemicalPotentials[i], NODE_MU_RELATIVE_TOLERANCE)) {
+                    muMatch = false;
+                    break;
+                }
+            }
+            if (!muMatch) continue;
+            return existing;
+        }
+        return null;
+    }
+
+    private static boolean withinRelativeTolerance(double candidate, double reference, double relativeTolerance) {
+        double scale = Math.max(1.0, Math.abs(reference));
+        return Math.abs(candidate - reference) <= scale * relativeTolerance;
     }
 
     /**
