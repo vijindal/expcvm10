@@ -897,20 +897,20 @@ public class EquilibriumSolverV2 {
         }
 
         /*
-         * validateState()/validateMultiphaseUpdate() (and, for the same
-         * reason, buildEquilibriumMatrix(), which solveBoundaryInternalGeneric()
-         * deliberately does NOT call) hardcode omega > 0.0 as an
-         * "invalid state" guard everywhere a phase amount is read -- a
-         * genuinely fixed-at-zero amount trips that guard even though it
-         * is exactly what Algorithm C2 requires. Use the same
-         * MIN_PHASE_AMOUNT floor this class already uses to distinguish
-         * "extinct" from "exactly zero" (updateStablePhaseSet()'s own
-         * removal threshold) as the actual stored value whenever the
-         * caller asks for an amount at or below it -- physically
-         * indistinguishable from zero, but satisfies every existing
-         * positivity guard without having to special-case each one.
+         * The fixed phase's amount is stored and reported EXACTLY as
+         * given -- 0.0 for the paper's own ZPF condition (Sundman 2021
+         * S2.3.1: "a stable phase alpha has negative amount... removed";
+         * S3.2: "the phase which appears or disappears is set fix with
+         * zero amount"). solveBoundaryInternalGeneric() never reads
+         * phaseAmounts[fixedSlotIndex] as a divisor (it is a linear
+         * coefficient in the mass-balance row, see
+         * GlobalEquilibriumMatrixAssembler's own class javadoc) and
+         * deliberately does not call buildEquilibriumMatrix()/
+         * validateState() (whose omega > 0.0 guards exist for the
+         * ORDINARY solve path, not this one) -- so no flooring is needed
+         * here to keep the boundary Newton loop well-defined.
          */
-        double internalFixedAmount = Math.max(fixedAmount, MIN_PHASE_AMOUNT);
+        double internalFixedAmount = fixedAmount;
 
         if (fixedSlotIndex < 0) {
             fixedSlotIndex = addNewStableSlot(candidates, fixedPhaseName, internalFixedAmount);
@@ -1049,6 +1049,52 @@ public class EquilibriumSolverV2 {
         EquilibriumResult eq = buildEquilibriumResult(true, 0);
 
         return new BoundarySolveResult(eq, releasedP);
+    }
+
+    /**
+     * Dispatches to {@link #solveBoundary}/{@link
+     * #solveBoundaryReleasingT}/{@link #solveBoundaryReleasingP} by which
+     * variable {@code released} names -- the single entry point Algorithm
+     * C1 (Sundman 2021 Fig. 5) needs to solve a ZPF line's next point
+     * regardless of which condition the walk currently releases.
+     *
+     * @param released either {@code COMPOSITION} ({@code
+     *                  releasedComponentIndex} selects which component),
+     *                  {@code TEMPERATURE}, or {@code PRESSURE}
+     * @throws IllegalArgumentException if {@code released} is not one of
+     *                                   the three handled values
+     */
+    public BoundarySolveResult solveZpf(
+            double T,
+            double P,
+            double[] compOverAll,
+            List<GibbsEnergyModel> candidates,
+            EquilibriumResult seed,
+            String fixedPhaseName,
+            double fixedAmount,
+            ReleasedVariable released,
+            int releasedComponentIndex) {
+
+        switch (released) {
+            case COMPOSITION:
+                return solveBoundary(
+                        T, P, compOverAll, candidates,
+                        seed, fixedPhaseName, fixedAmount,
+                        releasedComponentIndex);
+
+            case TEMPERATURE:
+                return solveBoundaryReleasingT(
+                        T, P, compOverAll, candidates,
+                        seed, fixedPhaseName, fixedAmount);
+
+            case PRESSURE:
+                return solveBoundaryReleasingP(
+                        T, P, compOverAll, candidates,
+                        seed, fixedPhaseName, fixedAmount);
+
+            default:
+                throw new IllegalArgumentException("Unsupported released variable: " + released);
+        }
     }
 
     /**

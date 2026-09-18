@@ -115,12 +115,14 @@ public class PhaseDiagramEngineAlgorithmBOcComparisonTest {
         assertEquals(ocGPerMol, gPerMol, Math.abs(ocGPerMol) * MU_RELATIVE_TOLERANCE, "G/N vs OC");
 
         // Sundman 2021 3.2: step's node0 gets 2 exits, +1/-1, no fixed phase.
+        // C1 walks both to completion (axis limit within [1150,1230]), so
+        // both come back done=true.
         assertEquals(2, node0.exits.size());
         for (PhaseDiagramEngine.DiagramExit exit : node0.exits) {
             assertNull(exit.fixedPhase);
             assertNull(exit.forbiddenPhase);
             assertEquals(0, exit.initialAxis);
-            assertTrue(!exit.done);
+            assertTrue(exit.done);
         }
         assertEquals(Set.of(1, -1), Set.of(node0.exits.get(0).direction, node0.exits.get(1).direction));
     }
@@ -164,11 +166,13 @@ public class PhaseDiagramEngineAlgorithmBOcComparisonTest {
 
         // Sundman 2021 3.3: MAP's node0 gets 2 exits along the OTHER axis
         // (x(Cu), index 1), both fixing the phase that appeared (LIQUID).
+        // C1 walks both to completion (convergence failure further out on
+        // this line), so both come back done=true.
         assertEquals(2, node0.exits.size());
         for (PhaseDiagramEngine.DiagramExit exit : node0.exits) {
             assertEquals("LIQUID", exit.fixedPhase);
             assertEquals(1, exit.initialAxis);
-            assertTrue(!exit.done);
+            assertTrue(exit.done);
         }
         assertEquals(Set.of(1, -1), Set.of(node0.exits.get(0).direction, node0.exits.get(1).direction));
     }

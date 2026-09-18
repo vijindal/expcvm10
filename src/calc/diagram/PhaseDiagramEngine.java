@@ -1,5 +1,6 @@
 package calc.diagram;
 
+import calc.equil.EquilibriumSolverV2;
 import calc.equil.GridMinimizer;
 import calc.diagram.PhaseDiagramResult.LineSegment;
 import calc.diagram.PhaseDiagramResult.NodePoint;
@@ -95,7 +96,7 @@ public final class PhaseDiagramEngine {
         public boolean done;
         public final String fixedPhase;
         public final int initialAxis;
-        public final int direction;
+        public int direction;
         public final String forbiddenPhase;
 
         public DiagramExit(
@@ -305,7 +306,7 @@ public final class PhaseDiagramEngine {
             node0.exits.add(new DiagramExit(node0, equilibrium0, false, null, 0, +1, null));
             node0.exits.add(new DiagramExit(node0, equilibrium0, false, null, 0, -1, null));
             diagram.nodes.add(node0);
-            // C1(node0.exits, diagram) -- deferred: not yet wired.
+            callAlgorithmC1(node0.exits, diagram, conds, candidates);
 
         } else {
             int axis = walkedAxisIndex(axes);
@@ -329,7 +330,7 @@ public final class PhaseDiagramEngine {
             node0.exits.add(new DiagramExit(node0, current, false, alpha, otherAxis, +1, null));
             node0.exits.add(new DiagramExit(node0, current, false, alpha, otherAxis, -1, null));
             diagram.nodes.add(node0);
-            // C1(node0.exits, diagram) -- deferred: not yet wired.
+            callAlgorithmC1(node0.exits, diagram, conds, candidates);
         }
 
         return diagram;
@@ -369,6 +370,255 @@ public final class PhaseDiagramEngine {
                     + ", found " + symmetricDifference);
         }
         return symmetricDifference.iterator().next();
+    }
+
+    private static final int MAX_CONVERGENCE_RETRIES = 3;
+    private static final int GLOBAL_CHECK_INTERVAL = 10;
+
+    /**
+     * Algorithm C1: searches {@code pendingExits} for an unresolved exit
+     * and walks it, one small axis increment at a time, until the walked
+     * axis runs out of bounds, convergence repeatedly fails, or the
+     * stable phase set changes. A plain (STEP) exit walks via {@link
+     * #callAlgorithmA}; a ZPF exit ({@code exit.fixedPhase != null},
+     * Sundman 2021 S3.3) walks via {@link EquilibriumSolverV2#solveZpf},
+     * releasing the diagram's other axis to hold the fixed phase at zero
+     * amount along the line.
+     *
+     * @param pendingExits exits to search, typically one node's {@code exits}
+     * @param diagram      diagram being built; lines are appended here
+     * @param conds        full condition set for the diagram
+     * @param candidates   candidate phase models
+     */
+    static void callAlgorithmC1(
+            List<DiagramExit> pendingExits,
+            DiagramResult diagram,
+            ConditionSet conds,
+            List<GibbsEnergyModel> candidates) {
+
+        List<Condition> axes = conds.axisConditions();
+
+        while (true) {
+            DiagramExit exit = searchPendingExit(pendingExits);
+            if (exit == null) {
+                return;
+            }
+
+            java.util.Set<String> runningStableSet = exit.equilibrium.stablePhases;
+
+            DiagramLineResult line = new DiagramLineResult(exit.node);
+            diagram.lines.add(line);
+
+            int axis = exit.initialAxis;
+            Condition axisCondition = axes.get(axis);
+            double[] anchorAxisValues = extractAxisValues(exit.equilibrium, conds);
+            double stepSize = axisCondition.step;
+            DiagramEquilibrium seed = exit.equilibrium;
+
+            double[] currentAxisValues = anchorAxisValues.clone();
+            currentAxisValues[axis] += stepSize * exit.direction;
+            DiagramEquilibrium result = callAlgorithmAOrZpf(
+                    conds, currentAxisValues, axis, exit.fixedPhase, seed, candidates);
+
+            if (exit.forbiddenPhase != null && result.stablePhases.contains(exit.forbiddenPhase)) {
+                exit.direction = -exit.direction;
+                currentAxisValues = anchorAxisValues.clone();
+                currentAxisValues[axis] += stepSize * exit.direction;
+                result = callAlgorithmAOrZpf(
+                        conds, currentAxisValues, axis, exit.fixedPhase, seed, candidates);
+            }
+
+            int attempts = 0;
+            while (true) {
+                if (!result.converged) {
+                    if (attempts >= MAX_CONVERGENCE_RETRIES) {
+                        line.terminatedReason = "convergence failure";
+                        exit.done = true;
+                        break;
+                    }
+                    stepSize *= 0.5;
+                    currentAxisValues = anchorAxisValues.clone();
+                    currentAxisValues[axis] += stepSize * exit.direction;
+                    result = callAlgorithmAOrZpf(
+                            conds, currentAxisValues, axis, exit.fixedPhase, seed, candidates);
+                    attempts++;
+                    continue;
+                }
+
+                if (!axisCondition.toAxisConfig().inBounds(currentAxisValues[axis])) {
+                    line.terminatedReason = "axis limit";
+                    exit.done = true;
+                    break;
+                }
+
+                if (!result.stablePhases.equals(runningStableSet)) {
+                    line.terminatedReason = "phase change";
+                    exit.done = true;
+                    // C2(exit, result, axis, currentAxisValues, diagram, line) -- deferred: not yet wired.
+                    break;
+                }
+
+                diagram.equilibriaBuffer.add(result);
+                line.equilibria.add(result);
+
+                if (GLOBAL_CHECK_INTERVAL > 0 && line.equilibria.size() % GLOBAL_CHECK_INTERVAL == 0
+                        && !result.globallyStable) {
+                    line.terminatedReason = "excluded";
+                    exit.done = true;
+                    break;
+                }
+
+                attempts = 0;
+                stepSize = axisCondition.step;
+                seed = result;
+                anchorAxisValues = currentAxisValues.clone();
+                currentAxisValues = anchorAxisValues.clone();
+                currentAxisValues[axis] += stepSize * exit.direction;
+                result = callAlgorithmAOrZpf(
+                        conds, currentAxisValues, axis, exit.fixedPhase, seed, candidates);
+            }
+        }
+    }
+
+    /**
+     * One C1 line-walking step: an ordinary {@link #callAlgorithmA} call
+     * when {@code fixedPhase} is {@code null} (STEP), or a ZPF boundary
+     * solve via {@link EquilibriumSolverV2#solveZpf} when not (MAP) --
+     * {@code walkedAxis}'s own condition is set to {@code
+     * axisValues[walkedAxis]} directly, while the diagram's OTHER axis
+     * condition is released and solved for so that {@code fixedPhase}
+     * stays at exactly zero amount, per Sundman 2021 S3.3.
+     */
+    private static DiagramEquilibrium callAlgorithmAOrZpf(
+            ConditionSet conds,
+            double[] axisValues,
+            int walkedAxis,
+            String fixedPhase,
+            DiagramEquilibrium seed,
+            List<GibbsEnergyModel> candidates) {
+
+        if (fixedPhase == null) {
+            return callAlgorithmA(conds, axisValues, candidates);
+        }
+
+        List<Condition> axes = conds.axisConditions();
+        if (axes.size() != 2) {
+            throw new UnsupportedOperationException(
+                    "Algorithm C1: a ZPF exit (fixedPhase != null) requires exactly 2 axis "
+                    + "conditions (the walked axis and the one released to hold the fixed "
+                    + "phase at zero amount); got " + axes.size() + ".");
+        }
+        int releasedAxis = 1 - walkedAxis;
+        Condition releasedCondition = axes.get(releasedAxis);
+
+        double t = conds.fixedTemperature();
+        double p = conds.fixedPressure();
+        double[] comp = new double[conds.numComponents()];
+        boolean[] specified = new boolean[comp.length];
+        double specifiedSum = 0.0;
+
+        for (Condition c : conds.all()) {
+            if (c.variable != Condition.Variable.COMPOSITION || !c.isFixed()) continue;
+            comp[c.componentIndex] = c.fixedValue;
+            specified[c.componentIndex] = true;
+            specifiedSum += c.fixedValue;
+        }
+
+        Condition walkedCondition = axes.get(walkedAxis);
+        switch (walkedCondition.variable) {
+            case TEMPERATURE: t = axisValues[walkedAxis]; break;
+            case PRESSURE: p = axisValues[walkedAxis]; break;
+            case COMPOSITION:
+                comp[walkedCondition.componentIndex] = axisValues[walkedAxis];
+                specified[walkedCondition.componentIndex] = true;
+                specifiedSum += axisValues[walkedAxis];
+                break;
+            default: throw new IllegalStateException("Unhandled axis variable: " + walkedCondition.variable);
+        }
+
+        // The released axis's own last-known value seeds comp/T/P where
+        // solveZpf does not overwrite it outright (T and P, released via
+        // solveBoundaryReleasingT/P, are seeded then solved for in place;
+        // a released COMPOSITION entry is overwritten by solveBoundary's
+        // own releasedComponentIndex mechanism, so its seed value here is
+        // only a starting point for that Newton iteration).
+        EquilibriumSolverV2.ReleasedVariable released;
+        int releasedComponentIndex = -1;
+        switch (releasedCondition.variable) {
+            case TEMPERATURE:
+                released = EquilibriumSolverV2.ReleasedVariable.TEMPERATURE;
+                t = seed.T;
+                break;
+            case PRESSURE:
+                released = EquilibriumSolverV2.ReleasedVariable.PRESSURE;
+                p = seed.P;
+                break;
+            case COMPOSITION:
+                released = EquilibriumSolverV2.ReleasedVariable.COMPOSITION;
+                releasedComponentIndex = releasedCondition.componentIndex;
+                comp[releasedComponentIndex] = overallComposition(seed)[releasedComponentIndex];
+                specified[releasedCondition.componentIndex] = true;
+                specifiedSum += comp[releasedComponentIndex];
+                break;
+            default: throw new IllegalStateException("Unhandled axis variable: " + releasedCondition.variable);
+        }
+
+        int unspecifiedCount = 0;
+        for (boolean s : specified) if (!s) unspecifiedCount++;
+        if (unspecifiedCount > 0) {
+            double remainder = Math.max(0.0, 1.0 - specifiedSum) / unspecifiedCount;
+            for (int i = 0; i < comp.length; i++) {
+                if (!specified[i]) comp[i] = remainder;
+            }
+        }
+
+        EquilibriumResult seedResult = toEquilibriumResultForSeeding(seed);
+
+        EquilibriumSolverV2.BoundarySolveResult boundary;
+        try {
+            boundary = new EquilibriumSolverV2().solveZpf(
+                    t, p, comp, candidates, seedResult, fixedPhase, 0.0,
+                    released, releasedComponentIndex);
+        } catch (RuntimeException e) {
+            return toDiagramEquilibrium(
+                    new EquilibriumResult(t, p, new double[comp.length],
+                            java.util.Collections.emptyList(), java.util.Collections.emptyList(),
+                            false, 0),
+                    conds, candidates);
+        }
+
+        return toDiagramEquilibrium(boundary.equilibrium, conds, candidates);
+    }
+
+    /**
+     * Rebuilds a solver-level {@link EquilibriumResult} from a {@link
+     * DiagramEquilibrium}, carrying exactly the fields Sundman 2021 S3.1
+     * requires an exit's stored equilibrium to retain ("T, P, the amount
+     * and constitution of all phases and the chemical potentials") --
+     * sufficient to seed {@link EquilibriumSolverV2#solveZpf}, which only
+     * reads {@code phaseName}/{@code amount}/{@code y} off each seed
+     * {@code PhaseResult} and recomputes everything else itself.
+     */
+    private static EquilibriumResult toEquilibriumResultForSeeding(DiagramEquilibrium eq) {
+        List<EquilibriumResult.PhaseResult> stable = new java.util.ArrayList<>();
+        for (String phaseName : eq.stablePhases) {
+            stable.add(new EquilibriumResult.PhaseResult(
+                    phaseName, "", eq.phaseAmounts.get(phaseName),
+                    eq.phaseMoleFractions.get(phaseName), eq.phaseConstitutions.get(phaseName),
+                    0.0, 0.0, eq.phaseTotalMoles.get(phaseName)));
+        }
+        return new EquilibriumResult(eq.T, eq.P, eq.chemicalPotentials,
+                stable, java.util.Collections.emptyList(), eq.converged, 0);
+    }
+
+    /** Scans {@code pendingExits} for the first not-yet-{@code done} exit, or {@code null} if none remain. */
+    private static DiagramExit searchPendingExit(List<DiagramExit> pendingExits) {
+        for (DiagramExit exit : pendingExits) {
+            if (!exit.done) {
+                return exit;
+            }
+        }
+        return null;
     }
 
     /**
