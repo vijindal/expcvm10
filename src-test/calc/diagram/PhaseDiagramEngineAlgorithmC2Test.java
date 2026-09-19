@@ -68,7 +68,7 @@ public class PhaseDiagramEngineAlgorithmC2Test {
                 Condition.fixed(Condition.Variable.TOTAL_MOLES, "N", 1.0),
                 Condition.fixedComposition(1, "x(Cu)", 0.05)));
 
-        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.callAlgorithmB(
                 conds, new double[] { 1150.0 }, agCu());
 
         // node0 (the diagram's own start, FCC_A1-only at T=1150) plus the
@@ -132,7 +132,7 @@ public class PhaseDiagramEngineAlgorithmC2Test {
                 Condition.fixed(Condition.Variable.TOTAL_MOLES, "N", 1.0),
                 Condition.fixedComposition(1, "x(Cu)", 0.05)));
 
-        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.callAlgorithmB(
                 conds, new double[] { 1150.0 }, agCu());
 
         PhaseDiagramEngine.DiagramNode c2Node = diagram.nodes.get(1);

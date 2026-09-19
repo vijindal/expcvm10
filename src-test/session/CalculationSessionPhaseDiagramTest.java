@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * {@link CalculationSession#calculatePhaseDiagram} -- the UI-facing entry
- * point wiring {@link calc.diagram.PhaseDiagramEngine#traceAlgorithmB}
+ * point wiring {@link calc.diagram.PhaseDiagramEngine#callAlgorithmB}
  * into {@link CalculationSession}.
  *
  * <p>OC reference: the Ag-Cu liquidus crossing at x(Cu)=0.05, T=1176.13K
@@ -35,7 +35,7 @@ public class CalculationSessionPhaseDiagramTest {
         // axis's own starting value, same length/order") -- the OLD
         // implementation silently ignored startAxes[1] for the
         // composition axis and always used compOverall instead; the
-        // current traceAlgorithmB-based implementation honors it, so
+        // current callAlgorithmB-based implementation honors it, so
         // this call must actually agree with compOverall now.
         session.calculatePhaseDiagram(
                 new AxisConfig[] { walkAxis, releaseAxis },

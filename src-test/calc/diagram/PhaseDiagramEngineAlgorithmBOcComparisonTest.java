@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Cross-checks {@link PhaseDiagramEngine#traceAlgorithmB} (fresh Algorithm B,
+ * Cross-checks {@link PhaseDiagramEngine#callAlgorithmB} (fresh Algorithm B,
  * pre-C1) against real OpenCalphad {@code step}/{@code map} runs, at 4
  * conditions across 2 systems.
  *
@@ -92,7 +92,7 @@ public class PhaseDiagramEngineAlgorithmBOcComparisonTest {
                 Condition.fixedComposition(1, "x(Cu)", 0.05));
         ConditionSet conds = new ConditionSet(2, conditions);
 
-        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.callAlgorithmB(
                 conds, new double[] { 1150.0 }, agCu());
         printDiagram("1) agCuStepNode0MatchesOcsInitialEquilibrium", diagram);
 
@@ -152,7 +152,7 @@ public class PhaseDiagramEngineAlgorithmBOcComparisonTest {
                 Condition.axisComposition(1, "x(Cu)", 0.0, 1.0, 0.025));
         ConditionSet conds = new ConditionSet(2, conditions);
 
-        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.callAlgorithmB(
                 conds, new double[] { 1150.0, 0.05 }, agCu());
         printDiagram("2) agCuMapNode0MatchesOcsOwnFirstCrossing", diagram);
 
@@ -194,7 +194,7 @@ public class PhaseDiagramEngineAlgorithmBOcComparisonTest {
                 Condition.fixedComposition(2, "x(Zn)", 0.05));
         ConditionSet conds = new ConditionSet(3, conditions);
 
-        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.callAlgorithmB(
                 conds, new double[] { 630.0 }, alMgZn());
         printDiagram("3) alMgZnStepNode0MatchesOcsInitialTwoPhaseEquilibrium", diagram);
 
@@ -263,7 +263,7 @@ public class PhaseDiagramEngineAlgorithmBOcComparisonTest {
                 Condition.fixedComposition(1, "x(Cu)", 0.05));
         ConditionSet conds = new ConditionSet(2, conditions);
 
-        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.callAlgorithmB(
                 conds, new double[] { 1207.0 }, agCu());
         printDiagram("5) stepNode0StartsFromCallersInitialConditionNotAxisMin", diagram);
 
@@ -299,9 +299,9 @@ public class PhaseDiagramEngineAlgorithmBOcComparisonTest {
 
         // startAxisValues is in each ConditionSet's OWN axisConditions()
         // order -- (T, x(Cu)) for tFirst, (x(Cu), T) for xCuFirst.
-        PhaseDiagramEngine.DiagramResult diagramTFirst = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagramTFirst = PhaseDiagramEngine.callAlgorithmB(
                 tFirst, new double[] { 1150.0, 0.05 }, agCu());
-        PhaseDiagramEngine.DiagramResult diagramXCuFirst = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagramXCuFirst = PhaseDiagramEngine.callAlgorithmB(
                 xCuFirst, new double[] { 0.05, 1150.0 }, agCu());
         printDiagram("6a) mapWalksThePotentialAxis (T first)", diagramTFirst);
         printDiagram("6b) mapWalksThePotentialAxis (x(Cu) first)", diagramXCuFirst);

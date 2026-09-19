@@ -97,7 +97,7 @@ public class PhaseDiagramEngineAlgorithmC1Test {
     void directionPlusOneStopsAtPhaseChangeDirectionMinusOneStopsAtAxisLimit() throws IOException {
         ConditionSet conds = agCuStepConditions(1150.0, 1230.0, 5.0);
 
-        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.callAlgorithmB(
                 conds, new double[] { 1150.0 }, agCu());
         printDiagram("directionPlusOneStopsAtPhaseChangeDirectionMinusOneStopsAtAxisLimit", diagram);
 
@@ -149,7 +149,7 @@ public class PhaseDiagramEngineAlgorithmC1Test {
     void bothExitsTerminateImmediatelyWhenAxisWindowIsAlreadyExhausted() throws IOException {
         ConditionSet conds = agCuStepConditions(1148.0, 1152.0, 5.0);
 
-        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.callAlgorithmB(
                 conds, new double[] { 1150.0 }, agCu());
 
         assertEquals(1, diagram.nodes.size());
@@ -167,7 +167,7 @@ public class PhaseDiagramEngineAlgorithmC1Test {
     }
 
     // ------------------------------------------------------------------
-    // Sanity check: C1 must actually run inside traceAlgorithmB (not be a
+    // Sanity check: C1 must actually run inside callAlgorithmB (not be a
     // dead call) -- diagram.equilibriaBuffer collects every point C1 saved
     // across both lines, and it must be non-empty when there is room to walk.
     // ------------------------------------------------------------------
@@ -175,7 +175,7 @@ public class PhaseDiagramEngineAlgorithmC1Test {
     void equilibriaBufferAccumulatesPointsFromBothLines() throws IOException {
         ConditionSet conds = agCuStepConditions(1150.0, 1230.0, 5.0);
 
-        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.callAlgorithmB(
                 conds, new double[] { 1150.0 }, agCu());
 
         assertFalse(diagram.equilibriaBuffer.isEmpty());
@@ -202,7 +202,7 @@ public class PhaseDiagramEngineAlgorithmC1Test {
         }
         // No saved equilibria (e.g. immediate axis-limit termination): fall
         // back to matching by exit order (exits[] and lines[] are created
-        // in the same +1/-1 order by traceAlgorithmB and callAlgorithmC1).
+        // in the same +1/-1 order by callAlgorithmB and callAlgorithmC1).
         int index = direction > 0 ? 0 : 1;
         return diagram.lines.get(index);
     }
@@ -210,7 +210,7 @@ public class PhaseDiagramEngineAlgorithmC1Test {
     @Test
     void forbiddenPhaseIsNeverUsedOnAStepExit() throws IOException {
         ConditionSet conds = agCuStepConditions(1150.0, 1230.0, 5.0);
-        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.callAlgorithmB(
                 conds, new double[] { 1150.0 }, agCu());
 
         PhaseDiagramEngine.DiagramNode node0 = diagram.nodes.get(0);
@@ -228,7 +228,7 @@ public class PhaseDiagramEngineAlgorithmC1Test {
     @Test
     void plusOneLineMatchesOcsPerPointGValuesAlongTheWalk() throws IOException {
         ConditionSet conds = agCuStepConditions(1150.0, 1230.0, 5.0);
-        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.callAlgorithmB(
                 conds, new double[] { 1150.0 }, agCu());
 
         PhaseDiagramEngine.DiagramLineResult plusLine = lineStartingFrom(diagram, diagram.nodes.get(0), +1);
@@ -276,7 +276,7 @@ public class PhaseDiagramEngineAlgorithmC1Test {
                 Condition.axisComposition(1, "x(Cu)", 0.0, 1.0, 0.025));
         ConditionSet conds = new ConditionSet(2, conditions);
 
-        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.callAlgorithmB(
                 conds, new double[] { 1150.0, 0.05 }, agCu());
         printDiagram("zpfLineExitWalksXCuReleasingTWithLiquidFixedAtExactlyZero", diagram);
 
@@ -350,7 +350,7 @@ public class PhaseDiagramEngineAlgorithmC1Test {
     void curichStepCrossesToTwoPhaseOnCoolingStaysLiquidOnHeating() throws IOException {
         ConditionSet conds = agCuStepConditions(1000.0, 1300.0, 5.0, 0.5);
 
-        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.callAlgorithmB(
                 conds, new double[] { 1100.0 }, agCu());
         printDiagram("curichStepCrossesToTwoPhaseOnCoolingStaysLiquidOnHeating", diagram);
 
@@ -404,7 +404,7 @@ public class PhaseDiagramEngineAlgorithmC1Test {
                 Condition.axisComposition(1, "x(Cu)", 0.0, 1.0, 0.025));
         ConditionSet conds = new ConditionSet(2, conditions);
 
-        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.callAlgorithmB(
                 conds, new double[] { 1150.0, 0.05 }, agCu());
         printDiagram("zpfLineWalksTowardTheAxisLimitsBeforeHittingItsOwnConvergenceWall", diagram);
 
@@ -449,7 +449,7 @@ public class PhaseDiagramEngineAlgorithmC1Test {
     void almgznStepCrossesToMgzn2OnIncreasingXZnStaysSinglePhaseOnDecreasing() throws IOException {
         ConditionSet conds = almgznStepXZnConditions(0.04, 0.08, 0.001, 0.05);
 
-        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.callAlgorithmB(
                 conds, new double[] { 0.04 }, alMgZn());
         printDiagram("almgznStepCrossesToMgzn2OnIncreasingXZnStaysSinglePhaseOnDecreasing", diagram);
 
@@ -497,7 +497,7 @@ public class PhaseDiagramEngineAlgorithmC1Test {
     void almgznStepStaysSinglePhaseInBothDirections() throws IOException {
         ConditionSet conds = almgznStepXZnConditions(0.005, 0.06, 0.001, 0.03);
 
-        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.callAlgorithmB(
                 conds, new double[] { 0.02 }, alMgZn());
         printDiagram("almgznStepStaysSinglePhaseInBothDirections", diagram);
 
@@ -542,7 +542,7 @@ public class PhaseDiagramEngineAlgorithmC1Test {
                 Condition.fixedComposition(2, "x(Zn)", 0.05));
         ConditionSet conds = new ConditionSet(3, conditions);
 
-        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.callAlgorithmB(
                 conds, new double[] { 630.0 }, alMgZn());
         printDiagram("almgznTwoPhaseStartWalkGetsExcludedByGlobalStabilityBeforeOcsOwnCrossing", diagram);
 
@@ -568,7 +568,7 @@ public class PhaseDiagramEngineAlgorithmC1Test {
 
     // ------------------------------------------------------------------
     // OC (agcu_step_xcu05_full_walk.txt), a 2-phase-start STEP node (not
-    // node0 of a fresh traceAlgorithmB call, but a later line's own start
+    // node0 of a fresh callAlgorithmB call, but a later line's own start
     // equilibrium, reused directly as a caller-supplied initial condition
     // per this codebase's own stepNode0StartsFromCallersInitialCondition-
     // NotAxisMin test): T=1207K, x(Cu)=0.05, LIQUID+FCC_A1. This point sits
@@ -585,7 +585,7 @@ public class PhaseDiagramEngineAlgorithmC1Test {
     void twoPhaseStartStepCrossesOnBothSidesOfItsOwnTwoPhaseRegion() throws IOException {
         ConditionSet conds = agCuStepConditions(1150.0, 1230.0, 5.0);
 
-        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.traceAlgorithmB(
+        PhaseDiagramEngine.DiagramResult diagram = PhaseDiagramEngine.callAlgorithmB(
                 conds, new double[] { 1207.0 }, agCu());
         printDiagram("twoPhaseStartStepCrossesOnBothSidesOfItsOwnTwoPhaseRegion", diagram);
 
