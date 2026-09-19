@@ -48,7 +48,16 @@ tasks.named('test', Test) {
 
 tasks.named('run') {
     workingDir = project.projectDir
-    standardInput = System.in
+    // Only the interactive CLI (no args, or args not starting with --gui)
+    // reads stdin (see ui.cli.CliApp's Prompter); wiring System.in
+    // unconditionally makes `gradlew run --args="--gui"` hang/misbehave
+    // under a non-interactive caller (CI, IDE launcher, agent tooling)
+    // that provides no real stdin.
+    doFirst {
+        if (!args.contains('--gui')) {
+            standardInput = System.in
+        }
+    }
 }
 
 tasks.register('fatJar', Jar) {

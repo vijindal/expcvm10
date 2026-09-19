@@ -153,20 +153,25 @@ public class PhaseDiagramConfigPanel extends JPanel {
         int row = 0;
 
         // ── Axis 0 ─────────────────────────────────────────────────
+        // MAP's axis 1 is fixed to COMPOSITION below, so axis 0 defaults
+        // to TEMPERATURE for the classic T-x map; STEP has no axis 1 and
+        // keeps its own COMPOSITION default.
         addSectionLabel(panel, gbc, row++, isStep ? "AXIS (Scan Variable)" : "AXIS 0 (X-Axis)");
-        axis0TypeCombo = addAxisTypeCombo(panel, gbc, row++, "Type", isStep ? "COMPOSITION" : "COMPOSITION");
-        axis0Range = addRangeField(panel, gbc, row++, "Range",
-                isStep ? "300, 2500, 100" : "0.0, 1.0, 0.1");
+        axis0TypeCombo = addAxisTypeCombo(panel, gbc, row++, "Type", isStep ? "COMPOSITION" : "TEMPERATURE");
+        axis0Range = addRangeField(panel, gbc, row++, "Range", "300, 2500, 100");
         axis0TypeCombo.addItemListener(e -> axis0Range.setText(
                 "COMPOSITION".equals(axis0TypeCombo.getSelectedItem()) ? "0.0, 1.0, 0.1" : "300, 2500, 100"));
 
         // ── Axis 1 (MAP only) ───────────────────────────────────────
+        // PhaseDiagramEngine.calculatePhaseDiagram requires axes[1] to be
+        // COMPOSITION for a 2-axis MAP (Sundman 2021 S3.3's binary case);
+        // offering TEMPERATURE/PRESSURE here would only fail later in the
+        // background worker, so the combo is fixed to the one legal value.
         if (!isStep) {
             addSectionLabel(panel, gbc, row++, "AXIS 1 (Y-Axis)");
-            axis1TypeCombo = addAxisTypeCombo(panel, gbc, row++, "Type", "TEMPERATURE");
-            axis1Range = addRangeField(panel, gbc, row++, "Range", "300, 2500, 100");
-            axis1TypeCombo.addItemListener(e -> axis1Range.setText(
-                    "COMPOSITION".equals(axis1TypeCombo.getSelectedItem()) ? "0.0, 1.0, 0.1" : "300, 2500, 100"));
+            axis1TypeCombo = addAxisTypeCombo(panel, gbc, row++, "Type", "COMPOSITION",
+                    new String[]{"COMPOSITION"});
+            axis1Range = addRangeField(panel, gbc, row++, "Range", "0.0, 1.0, 0.1");
         }
 
         row = addPhaseSelectionSection(panel, gbc, row);
@@ -464,13 +469,20 @@ public class PhaseDiagramConfigPanel extends JPanel {
 
     private JComboBox<String> addAxisTypeCombo(JPanel panel, GridBagConstraints gbc, int row,
                                                String label, String selected) {
+        return addAxisTypeCombo(panel, gbc, row, label, selected,
+                new String[]{"COMPOSITION", "TEMPERATURE", "PRESSURE"});
+    }
+
+    private JComboBox<String> addAxisTypeCombo(JPanel panel, GridBagConstraints gbc, int row,
+                                               String label, String selected, String[] options) {
         JLabel labelComp = new JLabel(label);
         labelComp.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0; gbc.gridwidth = 1;
         panel.add(labelComp, gbc);
 
-        JComboBox<String> combo = new JComboBox<>(new String[]{"COMPOSITION", "TEMPERATURE", "PRESSURE"});
+        JComboBox<String> combo = new JComboBox<>(options);
         combo.setSelectedItem(selected);
+        combo.setEnabled(options.length > 1);
         combo.setBackground(DarkTheme.BG_INPUT);
         combo.setForeground(DarkTheme.FG_PRIMARY);
         combo.setRenderer(new DarkTheme.ComboRenderer());
