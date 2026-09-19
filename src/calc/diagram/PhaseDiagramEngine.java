@@ -759,17 +759,48 @@ public final class PhaseDiagramEngine {
     /**
      * One candidate exit pair from Algorithm D: the two phases that go to
      * zero amount together at the node, with all other stable phases at
-     * strictly positive amount.
+     * the strictly positive amounts Eq. (9) solved for -- S3.3: "the
+     * amounts N^phi will be different and must be stored together with
+     * the phases phi1 and phi2."
      */
     private static final class ExitPair {
 
         final String beta1;
         final String beta2;
+        final java.util.Map<String, Double> phaseAmounts;
 
-        ExitPair(String beta1, String beta2) {
+        ExitPair(String beta1, String beta2, java.util.Map<String, Double> phaseAmounts) {
             this.beta1 = beta1;
             this.beta2 = beta2;
+            this.phaseAmounts = phaseAmounts;
         }
+    }
+
+    /**
+     * The calculated plane's own conditions on extensive or normalized
+     * properties -- S3.3: "we have 2 axes and c-1 additional conditions
+     * on extensive or normalized variables"; "all conditions on
+     * extensive or normalized properties in the plane of the
+     * calculation, not just mole fractions, must be included in Eq.
+     * (9)." T/P (potentials, already fixed by the invariant itself) are
+     * excluded; TOTAL_MOLES is excluded too since it is not one of the
+     * "c-1 additional" conditions -- {@link #solveRemainingAmounts} adds
+     * its own closing total-amount equation instead. Today the only
+     * other {@link Condition.Variable} is COMPOSITION, but this is
+     * written as an exclusion so a future extensive/normalized condition
+     * type is picked up automatically.
+     */
+    private static List<Condition> eq9PlaneConditions(ConditionSet conds) {
+        List<Condition> planeConditions = new java.util.ArrayList<>();
+        for (Condition c : conds.all()) {
+            if (c.variable == Condition.Variable.TEMPERATURE
+                    || c.variable == Condition.Variable.PRESSURE
+                    || c.variable == Condition.Variable.TOTAL_MOLES) {
+                continue;
+            }
+            planeConditions.add(c);
+        }
+        return planeConditions;
     }
 
     /**
@@ -791,16 +822,21 @@ public final class PhaseDiagramEngine {
         for (int i = 0; i < phaseNames.size(); i++) {
             compositions[i] = boundaryEquilibrium.phaseMoleFractions.get(phaseNames.get(i));
         }
-        double[] targetComposition = overallComposition(boundaryEquilibrium);
 
-        ExitPair arrivalPair = new ExitPair(alpha, arrivingLineFixedPhase);
-        List<ExitPair> exitPairs = findExitPairs(phaseNames, compositions, targetComposition, arrivalPair);
+        List<Condition> planeConditions = eq9PlaneConditions(conds);
+
+        ExitPair arrivalPair = new ExitPair(alpha, arrivingLineFixedPhase, null);
+        List<ExitPair> exitPairs = findExitPairs(
+                phaseNames, compositions, planeConditions, boundaryEquilibrium, arrivalPair);
 
         // Sundman 2021 S3.3: exactly 2 exits per pair; C1's own sign-flip
-        // (Fig. 5) corrects direction, so it isn't enumerated here.
+        // (Fig. 5) corrects direction, so it isn't enumerated here. Each
+        // exit stores the Eq. (9) amounts for ITS pair, not the invariant
+        // node's own amounts.
         for (ExitPair pair : exitPairs) {
-            node.exits.add(new DiagramExit(node, boundaryEquilibrium, false, pair.beta2, axis, +1, pair.beta1));
-            node.exits.add(new DiagramExit(node, boundaryEquilibrium, false, pair.beta1, axis, +1, pair.beta2));
+            DiagramEquilibrium exitEquilibrium = boundaryEquilibrium.withPhaseAmounts(pair.phaseAmounts);
+            node.exits.add(new DiagramExit(node, exitEquilibrium, false, pair.beta2, axis, +1, pair.beta1));
+            node.exits.add(new DiagramExit(node, exitEquilibrium, false, pair.beta1, axis, +1, pair.beta2));
         }
     }
 
@@ -811,7 +847,13 @@ public final class PhaseDiagramEngine {
      * @param stableCompositions  each phase's mole fractions,
      *                            {@code [phase][component]}, same
      *                            order/length as {@code stablePhaseNames}
-     * @param targetComposition   the node's overall mole fractions
+     * @param planeConditions     the diagram's own COMPOSITION conditions
+     *                            (Eq. 9's "c-1 additional conditions");
+     *                            {@link #solveRemainingAmounts} adds the
+     *                            closing total-amount equation itself
+     * @param boundaryEquilibrium the invariant node's own equilibrium,
+     *                            read for each plane condition's overall
+     *                            target value
      * @param arrivalPair         the pair of phases already known to have
      *                            zero amount together on the line the
      *                            algorithm arrived by, excluded from the
@@ -822,7 +864,8 @@ public final class PhaseDiagramEngine {
     private static List<ExitPair> findExitPairs(
             List<String> stablePhaseNames,
             double[][] stableCompositions,
-            double[] targetComposition,
+            List<Condition> planeConditions,
+            DiagramEquilibrium boundaryEquilibrium,
             ExitPair arrivalPair) {
 
         int p = stablePhaseNames.size();
@@ -832,7 +875,7 @@ public final class PhaseDiagramEngine {
             for (int j = i + 1; j < p; j++) {
 
                 double[] remainingAmounts = solveRemainingAmounts(
-                        i, j, stableCompositions, targetComposition);
+                        i, j, stableCompositions, planeConditions, boundaryEquilibrium);
 
                 if (remainingAmounts == null) {
                     continue;
@@ -856,7 +899,18 @@ public final class PhaseDiagramEngine {
                     continue;
                 }
 
-                pairs.add(new ExitPair(beta1, beta2));
+                // S3.3: phi1/phi2 (this pair) get zero amount; every other
+                // stable phase gets its Eq. (9)-solved amount.
+                java.util.Map<String, Double> phaseAmounts = new java.util.HashMap<>();
+                int k = 0;
+                for (int idx = 0; idx < p; idx++) {
+                    if (idx == i || idx == j) continue;
+                    phaseAmounts.put(stablePhaseNames.get(idx), remainingAmounts[k++]);
+                }
+                phaseAmounts.put(beta1, 0.0);
+                phaseAmounts.put(beta2, 0.0);
+
+                pairs.add(new ExitPair(beta1, beta2, phaseAmounts));
             }
         }
 
@@ -870,8 +924,13 @@ public final class PhaseDiagramEngine {
 
     /**
      * Solves for the amounts of every stable phase excluding the pair at
-     * indices {@code excludeI}/{@code excludeJ}, via mass-balance plus
-     * sum-to-one (Eq. 9).
+     * indices {@code excludeI}/{@code excludeJ}, via Eq. (9): one linear
+     * equation per condition in {@code planeConditions} ("2 axes and c-1
+     * additional conditions on extensive or normalized variables",
+     * S3.3), summing each phase's own contribution ({@code A_C^phi})
+     * times its unknown amount {@code N^phi}, plus one closing equation
+     * fixing the total system amount -- not a hardcoded mole-fractions-
+     * plus-sum-to-one scheme.
      *
      * @return the solved amounts, same order as {@code stableCompositions}
      *         with indices {@code excludeI}/{@code excludeJ} removed, or
@@ -881,13 +940,15 @@ public final class PhaseDiagramEngine {
             int excludeI,
             int excludeJ,
             double[][] stableCompositions,
-            double[] targetComposition) {
+            List<Condition> planeConditions,
+            DiagramEquilibrium boundaryEquilibrium) {
 
         int p = stableCompositions.length;
-        int ncomp = targetComposition.length;
         int remainingCount = p - 2;
 
-        if (remainingCount != ncomp - 1) {
+        // planeConditions.size() "additional conditions" plus the closing
+        // total-amount equation this method adds itself.
+        if (remainingCount != planeConditions.size() + 1) {
             return null;
         }
 
@@ -898,26 +959,47 @@ public final class PhaseDiagramEngine {
             remaining[k++] = idx;
         }
 
-        double[][] A = new double[ncomp][remainingCount];
-        double[] b = new double[ncomp];
-
-        for (int i = 0; i < ncomp - 1; i++) {
-            for (int j = 0; j < remainingCount; j++) {
-                A[i][j] = stableCompositions[remaining[j]][i];
+        // Total system amount N (formula units): the diagram's own fixed
+        // TOTAL_MOLES condition if it has one, else the invariant node's
+        // own current total -- Eq. (9) must preserve whatever total the
+        // node itself has, excluded phases contributing zero.
+        double totalMoles = Double.NaN;
+        for (Condition c : boundaryEquilibrium.conditions.all()) {
+            if (c.variable == Condition.Variable.TOTAL_MOLES && c.isFixed()) {
+                totalMoles = c.fixedValue;
             }
-            b[i] = targetComposition[i];
+        }
+        if (Double.isNaN(totalMoles)) {
+            totalMoles = 0.0;
+            for (String phaseName : boundaryEquilibrium.stablePhases) {
+                totalMoles += boundaryEquilibrium.phaseAmounts.get(phaseName);
+            }
+        }
+        double[] overallMoleFractions = overallComposition(boundaryEquilibrium);
+
+        int n = remainingCount;
+        double[][] A = new double[n][n];
+        double[] b = new double[n];
+
+        for (int row = 0; row < planeConditions.size(); row++) {
+            Condition c = planeConditions.get(row);
+            for (int j = 0; j < n; j++) {
+                A[row][j] = stableCompositions[remaining[j]][c.componentIndex];
+            }
+            b[row] = overallMoleFractions[c.componentIndex] * totalMoles;
         }
 
-        // Sum-to-one row.
-        for (int j = 0; j < remainingCount; j++) {
-            A[ncomp - 1][j] = 1.0;
+        // Closing equation: total amount across the remaining phases
+        // equals the node's own total (excluded phases contribute zero).
+        for (int j = 0; j < n; j++) {
+            A[n - 1][j] = 1.0;
         }
-        b[ncomp - 1] = 1.0;
+        b[n - 1] = totalMoles;
 
         try {
 
             Matrix matA = new Matrix(A);
-            Matrix matB = new Matrix(b, ncomp);
+            Matrix matB = new Matrix(b, n);
             return matA.solve(matB).getColumnPackedCopy();
 
         } catch (RuntimeException e) {
