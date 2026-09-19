@@ -7,7 +7,7 @@ import java.util.List;
  *
  * <p>This wrapper allows UI components to receive phase diagram results
  * without directly importing from calc.diagram. The actual rendering-ready
- * {@link calc.diagram.PhaseDiagramResult} is accessed through CalculationSession only.
+ * {@link calc.diagram.PhaseDiagramResult} is accessed through ApplicationLayer only.
  *
  * <p>Currently a simple facade; future versions may add UI-specific
  * transformations or caching.

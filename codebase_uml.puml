@@ -80,8 +80,8 @@ package "ui.request & ui.result" #36558F {
 ' ===========================================================================================
 ' LAYER 2: SESSION LAYER (Middle) - The Coordinator
 ' ===========================================================================================
-package "session (4th Layer Coordinator)" #4B2F72 {
-    class CalculationSession {
+package "application (4th Layer Coordinator)" #4B2F72 {
+    class ApplicationLayer {
         -currentKey: ModelKey
         -currentSystem: ThermodynamicSystem
         -currentEquilibriumResult: EquilibriumResult
@@ -321,12 +321,12 @@ package "util" #D3D3D3 {
 ' RELATIONSHIPS: UI ↔ SESSION (Two-way bridge)
 ' ===========================================================================================
 
-MainController -.->|browse / calculate| CalculationSession
-CliApp -.->|browse / calculate| CalculationSession
-CalculationApiServer -.->|browse / calculate| CalculationSession
+MainController -.->|browse / calculate| ApplicationLayer
+CliApp -.->|browse / calculate| ApplicationLayer
+CalculationApiServer -.->|browse / calculate| ApplicationLayer
 
-ModelBrowseService -.->|uses| CalculationSession
-ModelInspectionService -.->|uses| CalculationSession
+ModelBrowseService -.->|uses| ApplicationLayer
+ModelInspectionService -.->|uses| ApplicationLayer
 
 ' UI-internal composition
 MainController --> ModelBrowseService
@@ -338,20 +338,20 @@ MainController --> PhaseDiagramPanel
 MainController --> CoarseDiagramPanel
 
 ' UI panels read results from session
-MapResultPanel -.->|reads from| CalculationSession
-StepResultPanel -.->|reads from| CalculationSession
-PhaseDiagramPanel -.->|reads from| CalculationSession
-CoarseDiagramPanel -.->|reads from| CalculationSession
+MapResultPanel -.->|reads from| ApplicationLayer
+StepResultPanel -.->|reads from| ApplicationLayer
+PhaseDiagramPanel -.->|reads from| ApplicationLayer
+CoarseDiagramPanel -.->|reads from| ApplicationLayer
 
 ' ===========================================================================================
 ' RELATIONSHIPS: SESSION → SYSTEM & CALCULATION (Unidirectional - Session controls both)
 ' ===========================================================================================
 
-CalculationSession --> ModelKey
-CalculationSession --> CalculationInterface
+ApplicationLayer --> ModelKey
+ApplicationLayer --> CalculationInterface
 
 ' Session → System Layer
-CalculationSession --> ThermodynamicSystem
+ApplicationLayer --> ThermodynamicSystem
 ThermodynamicSystem --> GibbsEnergyModel
 GibbsEnergyModel <|-- CefGibbs
 GibbsEnergyModel <|-- CvmGibbs
@@ -364,11 +364,11 @@ ElementGibbs --> SgtePolynomial
 ElementGibbs --> PhaseType
 
 ' Session → Calculation Layer
-CalculationSession --> EquilibriumSolverV2
-CalculationSession --> GridMinimizer
-CalculationSession --> PhaseDiagramEngine
-CalculationSession --> StepTracer
-CalculationSession --> CoarseDiagramTracer
+ApplicationLayer --> EquilibriumSolverV2
+ApplicationLayer --> GridMinimizer
+ApplicationLayer --> PhaseDiagramEngine
+ApplicationLayer --> StepTracer
+ApplicationLayer --> CoarseDiagramTracer
 
 ' Calculation layer internal relationships
 EquilibriumSolverV2 --> GibbsEnergyModel
@@ -394,9 +394,9 @@ CoarseDiagramTracer --> GridPoint
 CoarseDiagramTracer --> AxisConfig
 
 ' Session → Result storage
-CalculationSession --> EquilibriumResult
-CalculationSession --> PhaseDiagramResult
-CalculationSession --> CoarseDiagramResult
+ApplicationLayer --> EquilibriumResult
+ApplicationLayer --> PhaseDiagramResult
+ApplicationLayer --> CoarseDiagramResult
 
 ' ===========================================================================================
 ' UTILITY LAYER RELATIONSHIPS
@@ -418,13 +418,13 @@ NodePoint --> NodeType
 
 note top of MainController
   **UI LAYER (Top)**
-  - Sends browsing requests to CalculationSession
+  - Sends browsing requests to ApplicationLayer
   - Sends calculation requests via CalculationInterface
-  - Reads results from CalculationSession
+  - Reads results from ApplicationLayer
   - NO direct access to System/Calculation layers
 end note
 
-note top of CalculationSession
+note top of ApplicationLayer
   **SESSION LAYER (Middle) - THE COORDINATOR**
   - Holds current ThermodynamicSystem (caches parsed TDB)
   - Holds latest results (EquilibriumResult, PhaseDiagramResult, etc.)
@@ -437,7 +437,7 @@ note bottom of EquilibriumSolverV2
   - Solves equilibrium using Sundman Algorithm A
   - Performs phase diagram tracing (Algorithms B/C/D)
   - Queries GibbsEnergyModel for G and derivatives
-  - Called by CalculationSession only (never by UI directly)
+  - Called by ApplicationLayer only (never by UI directly)
 end note
 
 note bottom of ThermodynamicSystem
@@ -445,7 +445,7 @@ note bottom of ThermodynamicSystem
   - Builds GibbsEnergyModel[] from TDB file
   - Models: CEF, CVM, Unary
   - Provides G(T,P,y), dG/dy, d2G/dy2, etc.
-  - Called by CalculationSession only (never by UI directly)
+  - Called by ApplicationLayer only (never by UI directly)
 end note
 
 @enduml

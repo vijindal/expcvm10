@@ -1,4 +1,4 @@
-package session.result;
+package application.result;
 
 /**
  * Result of an equilibrium calculation.

@@ -1,4 +1,4 @@
-package session;
+package application;
 
 import ui.request.AxisConfig;
 import calc.diagram.CoarseDiagramTracer;
@@ -20,56 +20,16 @@ import java.util.List;
 
 /**
  * UI-agnostic coordinator sitting above the Thermodynamic System Layer and
- * the Calculation Layer (see README.md "Structure").
+ * the Calculation Layer (see README.md "Structure"). Single point of
+ * contact for a caller (GUI, CLI, API) in both directions -- never exposes
+ * {@link ThermodynamicSystem} construction or a solver directly.
  *
- * <p>A caller (GUI, CLI, API -- anything) sends model details via
- * {@link #setModel} and calculation details via one of several calculation
- * methods -- {@link #calculateEquilibrium} (single point),
- * {@link #calculateStep} (single-axis property scan), or
- * {@link #calculatePhaseDiagram} (the main controller path: full
- * boundary-exact tracing over 1 or 2 axes, Sundman 2021 Calphad 75
- * Algorithms A/B/C1/C2/D) -- then reads results back via the matching
- * {@code currentXxx()} accessor rather than getting them returned
- * directly. This class is the single point of contact for a caller in
- * both directions; it never exposes {@link ThermodynamicSystem}
- * construction or a solver to be called directly.
+ * <p>Not thread-safe; one instance is intended for one sequential caller.
  *
- * <p>{@link #calculateStep} walks a single axis (Sundman 2021 Calphad 75,
- * Algorithm B's step branch), via {@link calc.diagram.StepTracer}, locating
- * crossings by black-box bisection. {@link #calculatePhaseDiagram} walks
- * one or two axes with exact zero-phase-amount boundary solving (Algorithm
- * C2) and genuine invariant-node detection (Algorithm D), via {@link
- * calc.diagram.PhaseDiagramEngine}.
- *
- * <p>{@link #setModel} rebuilds the held {@link ThermodynamicSystem} only
- * when the model details (database path, elements, phases) actually change,
- * so multiple calculations against the same system -- e.g. a single-point
- * calculation followed by a phase diagram -- do not re-parse the database.
- *
- * <p>This class is also the single point of contact for browsing a
- * database, not just calculating against one: {@link #availableElements}
- * and {@link #availablePhasesFor} answer "what elements/phases exist in
- * this file" without requiring a full model build, for a UI's
- * pick-a-database / pick-elements steps that happen before a phase
- * selection (and therefore a {@link #setModel} call) is possible. A UI
- * must never reach a database/parser class directly for this -- doing so
- * defeats the caching this class and {@code TdbParser} provide and
- * reintroduces the redundant-parsing problem this design fixes (see
- * {@code docs/plan-gui-calculationsession-wiring.md}).
- *
- * <p>Not thread-safe; one session is intended for one sequential caller.
- *
- * <p>As of {@code session.calctype}, UI code (CLI/GUI/API) must not call
- * these methods directly -- go through {@link
- * session.calctype.CalculationInterface} instead, which also gates that
- * TDB parsing only ever happens for {@link
- * session.calctype.CalculationGroup#CALCULATE} calculations. This class's
- * methods remain public only because {@code session.calctype}
- * implementations and {@link ui.layer.ModelBrowseService} (which still
- * calls {@link #availableElements}/{@link #availablePhasesFor}/{@link
- * #setModel} directly for the pre-calculation browse flow) need them.
+ * <p>UI code must not call these methods directly -- go through {@link
+ * application.calctype.CalculationInterface} instead.
  */
-public final class CalculationSession {
+public final class ApplicationLayer {
 
     /** Identifies "what system is currently loaded." */
     public record ModelKey(String tdbFilePath, List<String> elements, List<String> phases,
@@ -219,7 +179,7 @@ public final class CalculationSession {
      *
      * <p>Returns paths relative to {@value #DATABASE_DIRECTORY} (e.g.
      * {@code "data/VZR-re2.TDB"}), matching the relative-path convention
-     * every other {@code CalculationSession} method already accepts.
+     * every other {@code ApplicationLayer} method already accepts.
      * Returns an empty list if the directory doesn't exist; never throws
      * for a missing directory, since "no databases found" is a normal,
      * displayable UI state, not an error.

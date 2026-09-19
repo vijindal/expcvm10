@@ -14,10 +14,10 @@ import com.google.gson.Gson;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
-import session.calctype.CalculationInterface;
-import session.calctype.CalculationKind;
-import session.calctype.CalculationOutcome;
-import session.calctype.ModelSelection;
+import application.calctype.CalculationInterface;
+import application.calctype.CalculationKind;
+import application.calctype.CalculationOutcome;
+import application.calctype.ModelSelection;
 import system.ports.EquilibriumResult;
 
 import java.io.IOException;
@@ -31,12 +31,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * HTTP/JSON REST API exposing {@link session.CalculationSession} to
+ * HTTP/JSON REST API exposing {@link application.ApplicationLayer} to
  * external, cross-process, cross-language callers.
  *
  * <p>See {@code docs/plan-rest-api-calculation-session.md} for the full
  * design: session lifecycle (explicit create/delete, one
- * {@code CalculationSession} per session id, never a shared singleton),
+ * {@code ApplicationLayer} per session id, never a shared singleton),
  * concurrency policy (synchronized per session), and error-to-HTTP-status
  * mapping.
  *
@@ -55,21 +55,21 @@ import java.util.regex.Pattern;
  * </pre>
  *
  * <p>Every {@code /calculations/{kind}} request is routed through {@link
- * session.calctype.CalculationInterface}, never {@link
- * session.CalculationSession#calculateEquilibrium}/{@code calculatePhaseDiagram}
+ * application.calctype.CalculationInterface}, never {@link
+ * application.ApplicationLayer#calculateEquilibrium}/{@code calculatePhaseDiagram}
  * directly: {@code equilibrium}/{@code phase-diagram} call {@link
- * session.calctype.CalculationInterface#runCalculating} using the {@link
- * session.calctype.ModelSelection} recorded by the most recent {@code PUT
+ * application.calctype.CalculationInterface#runCalculating} using the {@link
+ * application.calctype.ModelSelection} recorded by the most recent {@code PUT
  * .../model} call (409 if none has been made yet); {@code assessment} calls
- * {@link session.calctype.CalculationInterface#runAssessing}, which never
+ * {@link application.calctype.CalculationInterface#runAssessing}, which never
  * touches the session at all. The {@code cal}/{@code opt} group choice is
  * therefore not a separate landing request -- each calculation kind already
  * names its own group in the URL.
  *
  * <p>{@code /elements} and {@code /phases} are the browsing counterpart to
  * {@code /model}: routed through {@link ui.layer.ModelBrowseService}, the
- * same shared bridge to {@link session.CalculationSession#availableElements}/
- * {@link session.CalculationSession#availablePhasesFor} the GUI and CLI
+ * same shared bridge to {@link application.ApplicationLayer#availableElements}/
+ * {@link application.ApplicationLayer#availablePhasesFor} the GUI and CLI
  * use, so element/phase discovery (and its pseudo-element filtering)
  * behaves identically across all three UIs rather than being
  * reimplemented per UI.
@@ -309,9 +309,9 @@ public final class CalculationApiServer {
     }
 
     /**
-     * {@link session.calctype.CalculationGroup#ASSESS} ("opt") -- not
+     * {@link application.calctype.CalculationGroup#ASSESS} ("opt") -- not
      * implemented yet. Never touches {@code entry.session}: {@link
-     * CalculationInterface#runAssessing} takes no {@code CalculationSession}
+     * CalculationInterface#runAssessing} takes no {@code ApplicationLayer}
      * parameter at all, so nothing on this path can reach one.
      */
     private void runAssessment(HttpExchange exchange) throws IOException {

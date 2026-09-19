@@ -1,21 +1,21 @@
 """
 Generates docs/dataflow_target.png: the TARGET core data flow of expCVM10
-with CalculationSession as the UI-agnostic coordinator (the "4th layer").
+with ApplicationLayer as the UI-agnostic coordinator (the "4th layer").
 
 Kept deliberately simple -- a clean vertical stack matching the ASCII
 diagram in README.md "Structure":
 
-  UI  <->  CalculationSession  <->  { System Layer , Calculation Layer }
+  UI  <->  ApplicationLayer  <->  { System Layer , Calculation Layer }
 
-- UI <-> CalculationSession: one bidirectional arrow. The UI never talks
+- UI <-> ApplicationLayer: one bidirectional arrow. The UI never talks
   to the System or Calculation layers directly. Both browsing (list a
   TDB's databases / elements / phases) and calculating go through the
   session; results and browse lists come back the same way.
-- CalculationSession -> System Layer: setModel(...) builds the
+- ApplicationLayer -> System Layer: setModel(...) builds the
   GibbsEnergyModel[] once, then it is reused.
-- CalculationSession <-> System Layer: browse -- a lightweight, two-way
+- ApplicationLayer <-> System Layer: browse -- a lightweight, two-way
   query path (request down, lists back up), no model build.
-- CalculationSession <-> Calculation Layer: calculate(...) down, result
+- ApplicationLayer <-> Calculation Layer: calculate(...) down, result
   back to the session (which the UI then reads).
 - System Layer <-> Calculation Layer: a real, repeated two-way loop
   within one calculate(...) call -- many (T, y) queries per solve.
@@ -69,14 +69,14 @@ def label(x, y, text, color="#333", fs=11, ha="center"):
 # ── Title ─────────────────────────────────────────────────────────
 ax.text(CX, FIG_H - 0.45, "expCVM10 -- Target Core Data Flow",
         ha="center", fontsize=21, fontweight="bold")
-ax.text(CX, FIG_H - 0.95, "UI  <->  CalculationSession  <->  System + Calculation Layers",
+ax.text(CX, FIG_H - 0.95, "UI  <->  ApplicationLayer  <->  System + Calculation Layers",
         ha="center", fontsize=13, style="italic", color="#444")
 
-# ── Boxes: UI and CalculationSession stacked; System + Calculation side by side ──
+# ── Boxes: UI and ApplicationLayer stacked; System + Calculation side by side ──
 b_ui = box(CX, 10.0, 9.2, 1.5, "UI  (GUI / CLI / API)",
            "browses databases + sends model / calculation details;\nreads results and status back",
            COL_UI, title_fs=15)
-b_session = box(CX, 7.0, 9.2, 1.6, "CalculationSession   (4th layer)",
+b_session = box(CX, 7.0, 9.2, 1.6, "ApplicationLayer   (4th layer)",
                 "holds the current system AND the latest result;\n"
                 "single point of contact for the UI, both ways", COL_SESSION, title_fs=15)
 b_sys = box(CX - 3.0, 3.4, 5.4, 2.2, "Thermodynamic System Layer",
@@ -87,7 +87,7 @@ b_calc = box(CX + 3.0, 3.4, 5.4, 2.2, "Calculation Layer",
              "runs the solver,\nquerying the models\nmany times per solve",
              COL_CALC, title_fs=13, sub_fs=9.5)
 
-# ── UI <-> CalculationSession : two phases, each a two-way channel ──
+# ── UI <-> ApplicationLayer : two phases, each a two-way channel ──
 mid_uisess = (b_ui['bot'] + b_session['top']) / 2
 # (a) PRE-CALCULATION: browse / setup -- left
 varrow(CX - 2.5, b_ui['bot'], b_session['top'], "#888")
@@ -106,7 +106,7 @@ label(CX + 2.4, mid_uisess,
       "setModel / calculate  (two-way)\nrequest ->  results + status back",
       color=COL_UI, fs=9)
 
-# ── CalculationSession <-> System Layer : browse (pre-calc, TWO-WAY, no build) ──
+# ── ApplicationLayer <-> System Layer : browse (pre-calc, TWO-WAY, no build) ──
 mid_sesssys = (b_session['bot'] + b_sys['top']) / 2
 varrow(b_sys['left'] + 1.0, b_session['bot'], b_sys['top'], "#888")
 varrow(b_sys['left'] + 1.25, b_sys['top'], b_session['bot'], "#888")
@@ -114,12 +114,12 @@ label(b_sys['left'] + 1.1, mid_sesssys,
       "browse  (two-way)\nlist db / elements /\nphases -- no build",
       color="#555", fs=8.5)
 
-# ── CalculationSession -> System Layer : setModel (main flow, ONE-WAY build) ──
+# ── ApplicationLayer -> System Layer : setModel (main flow, ONE-WAY build) ──
 varrow(b_sys['right'] - 1.1, b_session['bot'], b_sys['top'], COL_SESSION)
 label(b_sys['right'] - 1.1, mid_sesssys,
       "setModel(...)\nbuild once,\nreuse  (one-way)", color=COL_SESSION, fs=9)
 
-# ── CalculationSession <-> Calculation Layer : calculate / result ──
+# ── ApplicationLayer <-> Calculation Layer : calculate / result ──
 mid_sesscalc = (b_session['bot'] + b_calc['top']) / 2
 varrow(b_calc['cx'] - 0.12, b_session['bot'], b_calc['top'], COL_SESSION)
 varrow(b_calc['cx'] + 0.12, b_calc['top'], b_session['bot'], COL_CALC)
@@ -141,7 +141,7 @@ ax.text(CX, b_sys['bot'] - 0.5,
 # ── Legend ────────────────────────────────────────────────────────
 legend = [
     Line2D([0], [0], marker='s', color='w', markerfacecolor=COL_UI, markersize=16, label='UI Layer'),
-    Line2D([0], [0], marker='s', color='w', markerfacecolor=COL_SESSION, markersize=16, label='CalculationSession (new, UI-agnostic)'),
+    Line2D([0], [0], marker='s', color='w', markerfacecolor=COL_SESSION, markersize=16, label='ApplicationLayer (new, UI-agnostic)'),
     Line2D([0], [0], marker='s', color='w', markerfacecolor=COL_SYS, markersize=16, label='Thermodynamic System Layer'),
     Line2D([0], [0], marker='s', color='w', markerfacecolor=COL_CALC, markersize=16, label='Calculation Layer'),
 ]

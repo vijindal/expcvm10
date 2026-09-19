@@ -1,4 +1,4 @@
-package session.result;
+package application.result;
 
 import java.util.ArrayList;
 import java.util.Collections;

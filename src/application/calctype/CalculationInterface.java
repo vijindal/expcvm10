@@ -1,7 +1,7 @@
-package session.calctype;
+package application.calctype;
 
 import ui.request.AxisConfig;
-import session.CalculationSession;
+import application.ApplicationLayer;
 import system.ports.EquilibriumResult;
 import ui.result.CoarseDiagramResult;
 import calc.diagram.PhaseDiagramResult;
@@ -12,12 +12,12 @@ import java.util.function.Consumer;
 
 /**
  * The single point of contact between UI code (CLI/GUI/API) and {@link
- * CalculationSession} for running a calculation -- no UI calls {@code
- * CalculationSession.setModel}/{@code calculate*} directly.
+ * ApplicationLayer} for running a calculation -- no UI calls {@code
+ * ApplicationLayer.setModel}/{@code calculate*} directly.
  *
  * <p>{@link #runCalculating} handles every {@link CalculationGroup#CALCULATE}
  * ("cal") kind: it calls {@code session.setModel(...)} with the given {@link
- * ModelSelection}, dispatches into the matching {@code CalculationSession
+ * ModelSelection}, dispatches into the matching {@code ApplicationLayer
  * .calculate*} method, and returns the result directly to the caller (read
  * back from the matching {@code current*()} accessor) -- callers get their
  * result as an ordinary return value, the same way as before this class
@@ -27,10 +27,10 @@ import java.util.function.Consumer;
  * ("opt") kind -- today just {@link CalculationKind#ASSESSMENT}, always
  * "not implemented yet." Unlike the earlier two-interface design (a sealed
  * {@code CalculatingType}/{@code AssessingType} pair where an ASSESS-group
- * implementation had no {@code CalculationSession} parameter in scope at
+ * implementation had no {@code ApplicationLayer} parameter in scope at
  * all, so it could not reach {@code setModel} even by a coding mistake),
  * this single class only keeps that guarantee by inspection: {@link
- * #runAssessing} simply never has a {@code CalculationSession} parameter to
+ * #runAssessing} simply never has a {@code ApplicationLayer} parameter to
  * pass along, so nothing here calls {@code setModel}, but that is no longer
  * compiler-enforced. Acceptable for now -- assessment itself is revisited
  * later.
@@ -82,7 +82,7 @@ public final class CalculationInterface {
     /**
      * Runs a {@link CalculationGroup#CALCULATE} calculation: calls {@code
      * session.setModel(...)} with {@code model}, then dispatches {@code
-     * params} into the {@code CalculationSession.calculate*} method matching
+     * params} into the {@code ApplicationLayer.calculate*} method matching
      * {@code kind}, returning the result read back from the matching {@code
      * current*()} accessor.
      *
@@ -90,7 +90,7 @@ public final class CalculationInterface {
      *         kind, or {@code model} is {@code null}
      */
     @SuppressWarnings("unchecked")
-    public static <P, R> R runCalculating(CalculationSession session, CalculationKind kind,
+    public static <P, R> R runCalculating(ApplicationLayer session, CalculationKind kind,
                                            ModelSelection model, P params) throws IOException {
         if (kind.group() != CalculationGroup.CALCULATE) {
             throw new IllegalArgumentException(kind + " is not a CALCULATE-group calculation type");
@@ -162,7 +162,7 @@ public final class CalculationInterface {
             case ASSESSMENT:
                 return (R) new CalculationOutcome.NotImplemented<>(
                         "Thermodynamic assessment (opt) is not implemented yet in the "
-                        + "CalculationSession architecture. Use the legacy opt command for now.");
+                        + "ApplicationLayer architecture. Use the legacy opt command for now.");
             default:
                 throw new IllegalArgumentException("Unhandled ASSESS-group kind: " + kind);
         }

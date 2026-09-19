@@ -1,4 +1,4 @@
-package session.calctype;
+package application.calctype;
 
 import java.util.List;
 

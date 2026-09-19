@@ -1,6 +1,6 @@
 package ui.layer;
 
-import session.CalculationSession;
+import application.ApplicationLayer;
 import system.database.tdb;
 import util.AppLevel;
 import util.Trace;
@@ -16,7 +16,7 @@ import java.util.logging.Logger;
  * Service: TDB inspection and model metadata.
  *
  * <p>Per the target data flow ({@code docs/dataflow_target.png}), this service
- * accesses the TDB database through {@link CalculationSession}, never by creating
+ * accesses the TDB database through {@link ApplicationLayer}, never by creating
  * a {@link system.ports.DatabasePort} or {@link TdbParser} directly. Database
  * browsing methods ({@link #inspectModel}, {@link #getPhasesForElements},
  * {@link #getPhaseParameters}) delegate to the session's cache, so repeated
@@ -25,19 +25,19 @@ import java.util.logging.Logger;
 public class ModelInspectionService {
 
     private static final Logger LOG = Logger.getLogger(ModelInspectionService.class.getName());
-    private final CalculationSession session;
+    private final ApplicationLayer session;
 
     /**
      * Constructor with dependency injection.
-     * @param session the CalculationSession through which all TDB access happens
+     * @param session the ApplicationLayer through which all TDB access happens
      */
-    public ModelInspectionService(CalculationSession session) {
+    public ModelInspectionService(ApplicationLayer session) {
         this.session = session;
     }
 
     /**
      * Inspect TDB and return model metadata for GUI/CLI, routed through
-     * {@link CalculationSession} to benefit from its caching.
+     * {@link ApplicationLayer} to benefit from its caching.
      */
     public ui.result.ModelInfo inspectModel(String tdbPath, String[] elements) {
         Trace.enter(LOG, AppLevel.FLOW, "ModelInspectionService", "inspectModel");
@@ -77,7 +77,7 @@ public class ModelInspectionService {
 
     /**
      * Returns phase names whose constituents are a subset of the given elements,
-     * routed through {@link CalculationSession}.
+     * routed through {@link ApplicationLayer}.
      */
     public List<String> getPhasesForElements(String tdbPath, List<String> elements) {
         if (elements == null || elements.isEmpty()) return Collections.emptyList();
@@ -93,14 +93,14 @@ public class ModelInspectionService {
      * Returns the Parameter list for a given phase + element set from the loaded TDB.
      *
      * <p><b>TODO:</b> This method accesses internal TDB details (the parsed {@code tdb}
-     * object) that {@link CalculationSession} does not currently expose. This needs a
-     * new {@code CalculationSession} method to bridge it, or the GUI inspector to
+     * object) that {@link ApplicationLayer} does not currently expose. This needs a
+     * new {@code ApplicationLayer} method to bridge it, or the GUI inspector to
      * be redesigned to work without raw parameter access.
      */
     public List<tdb.Parameter> getPhaseParameters(String tdbPath, List<String> elements, String phaseName) {
         if (elements == null || elements.isEmpty() || phaseName == null) return Collections.emptyList();
-        // TODO: Implement via CalculationSession
-        LOG.log(AppLevel.WARN, "getPhaseParameters not yet wired through CalculationSession");
+        // TODO: Implement via ApplicationLayer
+        LOG.log(AppLevel.WARN, "getPhaseParameters not yet wired through ApplicationLayer");
         return Collections.emptyList();
     }
 

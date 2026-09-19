@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Exercises {@link EquilibriumSolverV2#solve(double, double, double[],
  * List, boolean)}'s new {@code stopOnStableSetChange} early exit --
  * Sundman 2021 Fig. 1's {@code step or map?} branch (see {@code
- * docs/sundman2021_zpf_line_notes.md} Section 9 for the full derivation
+ * docs/sundman2021_reference_notes.md} Section 9 for the full derivation
  * and plan). Solver-only: does not touch the diagram tracers or any of
  * their existing tests.
  *

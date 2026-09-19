@@ -1,4 +1,4 @@
-package session.calctype;
+package application.calctype;
 
 /**
  * Generic, UI-agnostic description of one parameter a {@link CalculationType}

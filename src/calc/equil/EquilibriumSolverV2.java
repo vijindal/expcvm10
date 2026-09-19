@@ -419,7 +419,7 @@ public class EquilibriumSolverV2 {
      * existing caller is unaffected. This overload exists so a future
      * step/map diagram tracer can opt into the paper's finer-grained,
      * mid-Newton crossing detection (see {@code
-     * docs/sundman2021_zpf_line_notes.md} Section 9) without disturbing
+     * docs/sundman2021_reference_notes.md} Section 9) without disturbing
      * any current caller; no tracer in this codebase uses {@code true}
      * yet.
      *
@@ -712,7 +712,7 @@ public class EquilibriumSolverV2 {
                 // stable set just changed -- bail out NOW, before even
                 // checking convergence, with the state as it stands
                 // (NOT reconverged with the corrected stable set). See
-                // this method's own javadoc and docs/sundman2021_zpf_line_notes.md
+                // this method's own javadoc and docs/sundman2021_reference_notes.md
                 // Section 9.
                 return buildEquilibriumResult(false, iteration, stableSetChange);
             }

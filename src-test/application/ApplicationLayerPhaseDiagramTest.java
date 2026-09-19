@@ -1,6 +1,6 @@
-package session;
+package application;
 
-import calc.diagram.AxisConfig;
+import ui.request.AxisConfig;
 import calc.diagram.PhaseDiagramResult;
 import org.junit.jupiter.api.Test;
 
@@ -13,18 +13,18 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link CalculationSession#calculatePhaseDiagram} -- the UI-facing entry
+ * {@link ApplicationLayer#calculatePhaseDiagram} -- the UI-facing entry
  * point wiring {@link calc.diagram.PhaseDiagramEngine#callAlgorithmB}
- * into {@link CalculationSession}.
+ * into {@link ApplicationLayer}.
  *
  * <p>OC reference: the Ag-Cu liquidus crossing at x(Cu)=0.05, T=1176.13K
  * (data/agcu.TDB).
  */
-public class CalculationSessionPhaseDiagramTest {
+public class ApplicationLayerPhaseDiagramTest {
 
     @Test
     void calculatePhaseDiagramTwoAxesReturnsTheOcConfirmedLiquidus() throws IOException {
-        CalculationSession session = new CalculationSession();
+        ApplicationLayer session = new ApplicationLayer();
         session.setModel("data/agcu.TDB", List.of("AG", "CU"), List.of("LIQUID", "FCC_A1"));
 
         AxisConfig walkAxis = new AxisConfig("T / K", AxisConfig.Type.TEMPERATURE, 1150.0, 1230.0, 5.0);
@@ -52,13 +52,13 @@ public class CalculationSessionPhaseDiagramTest {
             }
         }
         assertTrue(foundOcConfirmedLiquidus,
-                "CalculationSession.calculatePhaseDiagram should reach OC's own confirmed "
+                "ApplicationLayer.calculatePhaseDiagram should reach OC's own confirmed "
                 + "liquidus crossing near T=1176.13K");
     }
 
     @Test
     void calculatePhaseDiagramOneAxisRunsTheStepBranch() throws IOException {
-        CalculationSession session = new CalculationSession();
+        ApplicationLayer session = new ApplicationLayer();
         session.setModel("data/agcu.TDB", List.of("AG", "CU"), List.of("LIQUID", "FCC_A1"));
 
         AxisConfig axis = new AxisConfig("T / K", AxisConfig.Type.TEMPERATURE, 1150.0, 1230.0, 5.0);
@@ -78,13 +78,13 @@ public class CalculationSessionPhaseDiagramTest {
             }
         }
         assertTrue(foundOcConfirmedLiquidus,
-                "CalculationSession.calculatePhaseDiagram's 1-axis (STEP) branch should reach "
+                "ApplicationLayer.calculatePhaseDiagram's 1-axis (STEP) branch should reach "
                 + "OC's own confirmed liquidus crossing at T=1176.13K");
     }
 
     @Test
     void calculatePhaseDiagramRejectsANonCompositionReleaseAxis() throws IOException {
-        CalculationSession session = new CalculationSession();
+        ApplicationLayer session = new ApplicationLayer();
         session.setModel("data/agcu.TDB", List.of("AG", "CU"), List.of("LIQUID", "FCC_A1"));
 
         AxisConfig walkAxis = new AxisConfig("T / K", AxisConfig.Type.TEMPERATURE, 1150.0, 1230.0, 5.0);
@@ -98,7 +98,7 @@ public class CalculationSessionPhaseDiagramTest {
 
     @Test
     void calculatePhaseDiagramRejectsAnUnsupportedAxisCount() throws IOException {
-        CalculationSession session = new CalculationSession();
+        ApplicationLayer session = new ApplicationLayer();
         session.setModel("data/agcu.TDB", List.of("AG", "CU"), List.of("LIQUID", "FCC_A1"));
 
         assertThrows(IllegalArgumentException.class, () -> session.calculatePhaseDiagram(
@@ -107,7 +107,7 @@ public class CalculationSessionPhaseDiagramTest {
 
     @Test
     void calculatePhaseDiagramRequiresSetModelFirst() {
-        CalculationSession session = new CalculationSession();
+        ApplicationLayer session = new ApplicationLayer();
         AxisConfig axis = new AxisConfig("T / K", AxisConfig.Type.TEMPERATURE, 1150.0, 1230.0, 5.0);
 
         assertThrows(IllegalStateException.class, () -> session.calculatePhaseDiagram(

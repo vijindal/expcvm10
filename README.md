@@ -15,8 +15,7 @@ multiphase equilibria, traces phase diagrams, and supports parameter
 assessment against experimental data.
 
 Phase-diagram tracing is the current top priority — see
-[docs/roadmap_phase_diagrams.md](docs/roadmap_phase_diagrams.md) and
-[docs/phase_diagram_engine_flowchart.md](docs/phase_diagram_engine_flowchart.md)
+[docs/roadmap_phase_diagrams.md](docs/roadmap_phase_diagrams.md)
 for the target diagram types, the unified engine design, and current
 progress.
 
@@ -33,14 +32,14 @@ rest of the system.
 Three core layers — UI, Thermodynamic System, Calculation — following the
 PANDAT/Sundman separation of a **static** system from a **dynamic**
 calculation. A fourth package, `session/`, holds a UI-agnostic coordinator
-(`CalculationSession`) every UI goes through in both directions.
+(`ApplicationLayer`) every UI goes through in both directions.
 
 | Package     | Layer                    | Responsibility |
 |-------------|--------------------------|----------------|
 | `ui/`       | UI                       | Entry points (`ui/gui`, `ui/cli`, `ui/api`), request/result DTOs. Never touches solvers or models directly. |
 | `system/`   | Thermodynamic System     | `system/database` (TDB parsing), `system/model` (RK / CEF / CVM / unary Gibbs models), `ThermodynamicSystem` (built once, immutable). Static. |
 | `calc/`     | Calculation              | `calc/equil` (single-point equilibrium, Sundman Algorithm A), `calc/diagram` (phase-diagram tracing, Algorithms B/C1/C2/D). Dynamic. Internal result objects are calc-specific; public-facing results flow through Session. |
-| `session/`  | Coordinator (UI-agnostic) | `CalculationSession` — single point of contact between any UI and the System + Calculation layers. Holds session.result objects (EquilibriumResult, PhaseDiagramResult) that may be extended in future refactors. |
+| `session/`  | Coordinator (UI-agnostic) | `ApplicationLayer` — single point of contact between any UI and the System + Calculation layers. Holds application.result objects (EquilibriumResult, PhaseDiagramResult) that may be extended in future refactors. |
 | `system/ports/` | Shared contracts     | `DatabasePort`, `LoggingPort`, etc. Currently holds `EquilibriumResult` (calc-internal). |
 | `util/`     | Shared utilities         | Matrix/JAMA math, formatting, IO. |
 
@@ -65,7 +64,7 @@ iteration.
 UI → problem object → System Layer builds `GibbsEnergyModel`s once →
 Calculation Layer's solver iterates, querying the System Layer for
 `G, ∂G/∂y, ∂²G/∂y²` each step → converged result flows back through
-`CalculationSession` to the UI. See
+`ApplicationLayer` to the UI. See
 [docs/dataflow_target.png](docs/dataflow_target.png) for the diagram.
 
 ## Entry points
@@ -76,7 +75,7 @@ Calculation Layer's solver iterates, querying the System Layer for
 | `java ui.Main --gui` | Swing GUI (`ui.gui.GuiApp`) |
 | `java ui.api.ApiMain [port]` | REST/JSON API on `com.sun.net.httpserver` (default 8080) |
 
-All three route calculations through `session.CalculationSession`.
+All three route calculations through `application.ApplicationLayer`.
 
 ## Build
 
@@ -96,7 +95,7 @@ Most validation is still standalone diagnostic `main()` programs under
 ## Running the CLI
 
 Every calculation/browse command is a thin wrapper around one
-`CalculationSession` method — the same session the GUI and REST API use.
+`ApplicationLayer` method — the same session the GUI and REST API use.
 
 **For interactive use (no-args menu, or a command with `-i` / no flags),
 run the built jar directly, not `./gradlew run`** — Gradle's own progress
@@ -123,7 +122,7 @@ output) — check `$LASTEXITCODE` instead.
 `-h` / `--help` (bare, or after any command) prints usage and exits 0.
 Unknown commands exit 2.
 
-| Command | CalculationSession method | Example |
+| Command | ApplicationLayer method | Example |
 |---|---|---|
 | `equilibrium` | `calculateEquilibrium` | `equilibrium --tdb data/agcu.TDB --elements AG,CU --phases LIQUID,FCC_A1 --T 1000 --P 1e5 --composition 0.8,0.2` |
 | `initial-state` | `calculateInitialState` (grid-minimizer only, no Newton step) | `initial-state --tdb data/VZR-re2.TDB --elements V,ZR --phases V2ZR --T 1000 --P 10000 --composition 0.6667,0.3333` |

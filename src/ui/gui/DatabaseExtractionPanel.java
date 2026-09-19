@@ -386,7 +386,7 @@ public class DatabaseExtractionPanel extends JPanel {
     /**
      * Populates the database dropdown via
      * {@link MainController#availableDatabases()} (backed by
-     * {@code CalculationSession.availableDatabases()}) rather than
+     * {@code ApplicationLayer.availableDatabases()}) rather than
      * scanning the filesystem directly -- see
      * {@code docs/plan-gui-calculationsession-wiring.md} Fix 3, which
      * found this panel was the only place in the whole codebase doing

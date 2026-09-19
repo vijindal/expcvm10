@@ -1,4 +1,4 @@
-package session.calctype;
+package application.calctype;
 
 /**
  * The top-level choice every caller (CLI/GUI/API) makes before picking a
@@ -11,7 +11,7 @@ package session.calctype;
  * {@code legacy.calbince} {@code opt}/{@code cal} commands.
  */
 public enum CalculationGroup {
-    /** Database-consuming calculations (equilibrium, phase diagrams, ...). Requires a Gibbs model via {@code CalculationSession.setModel}. Default. */
+    /** Database-consuming calculations (equilibrium, phase diagrams, ...). Requires a Gibbs model via {@code ApplicationLayer.setModel}. Default. */
     CALCULATE,
     /** Database-creating calculations (thermodynamic assessment / optimization). Never parses a TDB. */
     ASSESS

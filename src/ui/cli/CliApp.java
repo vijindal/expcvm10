@@ -7,12 +7,12 @@ import ui.layer.ModelInspectionService;
 import ui.layer.ModelBrowseService;
 import ui.layer.CompositionUnits;
 import system.ports.EquilibriumResult;
-import session.CalculationSession;
-import session.calctype.CalculationInterface;
-import session.calctype.CalculationGroup;
-import session.calctype.CalculationKind;
-import session.calctype.CalculationOutcome;
-import session.calctype.ModelSelection;
+import application.ApplicationLayer;
+import application.calctype.CalculationInterface;
+import application.calctype.CalculationGroup;
+import application.calctype.CalculationKind;
+import application.calctype.CalculationOutcome;
+import application.calctype.ModelSelection;
 import ui.request.AxisConfig;
 import ui.request.AxisConfig.Type;
 import ui.result.EquilibriumReport;
@@ -28,11 +28,11 @@ import java.util.logging.Logger;
  *
  * <p>Per the target data flow (README "Structure" / {@code
  * docs/dataflow_target.png}), the CLI's contact with the System and
- * Calculation layers is {@link session.calctype.CalculationInterface}, never
- * {@link CalculationSession} directly: every calculation command below
+ * Calculation layers is {@link application.calctype.CalculationInterface}, never
+ * {@link ApplicationLayer} directly: every calculation command below
  * builds a {@link ModelSelection} and a calculation type's own typed
  * params, then calls {@link CalculationInterface#runCalculating} -- no
- * command calls {@code CalculationSession.setModel}/{@code calculate*}
+ * command calls {@code ApplicationLayer.setModel}/{@code calculate*}
  * itself, and none reaches into {@code calc.equil}/{@code calc.diagram}'s
  * solver classes directly either. This mirrors the GUI and REST API, which
  * go through the same interface the same way -- the CLI is a thin
@@ -47,7 +47,7 @@ import java.util.logging.Logger;
  *   opt                    Run parameter optimization (legacy pathway)
  *   cal                    Run CalModel calculation (legacy pathway)
  *   diagram [options]      Phase-diagram tracing (currently unimplemented
- *                          in CalculationSession -- see calculatePhaseDiagram)
+ *                          in ApplicationLayer -- see calculatePhaseDiagram)
  *   inspect [options]      Browse a TDB database file
  *   equilibrium [opts]     Single-point equilibrium (Newton-refined)
  *   initial-state [opts]   Grid-minimizer starting point only, no Newton step
@@ -62,7 +62,7 @@ public class CliApp {
 
     private final OptimizationUseCase optimizationUseCase;
     private final ModelInspectionService modelInspectionService;
-    private final CalculationSession session = new CalculationSession();
+    private final ApplicationLayer session = new ApplicationLayer();
     private final ModelBrowseService modelBrowseService = new ModelBrowseService(session);
 
     /**
@@ -204,7 +204,7 @@ public class CliApp {
     private void runMenu(String cwd) throws IOException {
         System.out.println("A command-line workbench for CALPHAD-style thermodynamic");
         System.out.println("equilibrium and phase-diagram calculations, built around");
-        System.out.println("session.CalculationSession -- the same session the GUI and");
+        System.out.println("application.ApplicationLayer -- the same session the GUI and");
         System.out.println("REST API use.");
         System.out.println();
         System.out.println("Choose a calculation group:");
@@ -366,12 +366,12 @@ public class CliApp {
     }
 
     // ──────────────────────────────────────────────────────────────────
-    // Phase diagram (via CalculationSession)
+    // Phase diagram (via ApplicationLayer)
     // ──────────────────────────────────────────────────────────────────
 
     /**
      * Automated binary phase-diagram tracing (Sundman Algorithms
-     * A/B/C1/C2/D) via {@link CalculationSession#calculatePhaseDiagram}.
+     * A/B/C1/C2/D) via {@link ApplicationLayer#calculatePhaseDiagram}.
      * axis0 is walked in fixed increments (typically TEMPERATURE), axis1
      * is released and solved exactly at each boundary (must be
      * COMPOSITION).
@@ -387,7 +387,7 @@ public class CliApp {
                         "AG,CU", "LIQUID,FCC_A1", "TEMPERATURE,1000,1200,5",
                         "COMPOSITION:1,0.0,1.0,0.01", 1000.0, "0.5,0.5");
 
-        System.out.println("--- Phase Diagram Calculation (via CalculationSession) ---");
+        System.out.println("--- Phase Diagram Calculation (via ApplicationLayer) ---");
         p.printSummary("Axis 0 (walked)", "Axis 1 (released, must be COMPOSITION)");
         System.out.println("-------------------------------------------------------");
 
@@ -410,12 +410,12 @@ public class CliApp {
     }
 
     // ──────────────────────────────────────────────────────────────────
-    // Single-point equilibrium via CalculationSession
+    // Single-point equilibrium via ApplicationLayer
     // ──────────────────────────────────────────────────────────────────
 
     /**
      * Single-point equilibrium calculation routed through
-     * {@link CalculationSession} -- the same session/model/calculation
+     * {@link ApplicationLayer} -- the same session/model/calculation
      * lifecycle the REST API and the GUI use.
      *
      * <p>Usage:
@@ -444,7 +444,7 @@ public class CliApp {
                         ? EquilibriumParams.fromPrompts(prompter(cwd))
                         : EquilibriumParams.fromArgs(args, cwd, this::resolvePath);
 
-        System.out.println("--- Single-Point Equilibrium (via CalculationSession) ---");
+        System.out.println("--- Single-Point Equilibrium (via ApplicationLayer) ---");
         System.out.println("TDB:         " + p.tdbPath);
         System.out.println("Elements:    " + p.elements);
         System.out.println("Phases:      " + p.phases);
@@ -522,12 +522,12 @@ public class CliApp {
     }
 
     // ──────────────────────────────────────────────────────────────────
-    // Grid-minimizer initial state (via CalculationSession)
+    // Grid-minimizer initial state (via ApplicationLayer)
     // ──────────────────────────────────────────────────────────────────
 
     /**
      * Grid-minimizer starting point only (no Newton refinement), routed
-     * through {@link CalculationSession#calculateInitialState}. Shares
+     * through {@link ApplicationLayer#calculateInitialState}. Shares
      * {@link EquilibriumParams} with {@code equilibrium} since both take
      * the same (tdb, elements, phases, T, P, composition) inputs.
      */
@@ -545,7 +545,7 @@ public class CliApp {
                         ? EquilibriumParams.fromPrompts(prompter(cwd))
                         : EquilibriumParams.fromArgs(args, cwd, this::resolvePath);
 
-        System.out.println("--- Grid-Minimizer Initial State (via CalculationSession) ---");
+        System.out.println("--- Grid-Minimizer Initial State (via ApplicationLayer) ---");
         System.out.println("TDB:         " + p.tdbPath);
         System.out.println("Elements:    " + p.elements);
         System.out.println("Phases:      " + p.phases);
@@ -571,12 +571,12 @@ public class CliApp {
     }
 
     // ──────────────────────────────────────────────────────────────────
-    // Step (single-axis scan, via CalculationSession)
+    // Step (single-axis scan, via ApplicationLayer)
     // ──────────────────────────────────────────────────────────────────
 
     /**
      * Single-axis property scan (Sundman 2021 Calphad 75, Algorithm B's
-     * step branch), routed through {@link CalculationSession#calculateStep}.
+     * step branch), routed through {@link ApplicationLayer#calculateStep}.
      */
     private void runStep(String[] args, String cwd) throws IOException {
         runStep(args, cwd, null);
@@ -592,7 +592,7 @@ public class CliApp {
                         ? StepParams.fromPrompts(prompter(cwd))
                         : StepParams.fromArgs(args, cwd, this::resolvePath);
 
-        System.out.println("--- Step Calculation (via CalculationSession) ---");
+        System.out.println("--- Step Calculation (via ApplicationLayer) ---");
         System.out.println("TDB:         " + p.tdbPath);
         System.out.println("Elements:    " + p.elements);
         System.out.println("Phases:      " + p.phases);
@@ -698,7 +698,7 @@ public class CliApp {
     /**
      * Inputs shared by {@code coarse-binary}, {@code coarse-ternary}, and
      * {@code map} -- all three take (tdb, elements, phases, two axes, fixed
-     * T/P, overall composition); only which {@code CalculationSession}
+     * T/P, overall composition); only which {@code ApplicationLayer}
      * method consumes {@code axis1}/{@code axis2} differs. See
      * {@link EquilibriumParams} for the flags-vs-prompts pattern.
      */
@@ -822,12 +822,12 @@ public class CliApp {
     }
 
     // ──────────────────────────────────────────────────────────────────
-    // Coarse binary / ternary diagrams (via CalculationSession)
+    // Coarse binary / ternary diagrams (via ApplicationLayer)
     // ──────────────────────────────────────────────────────────────────
 
     /**
      * 2D grid of independent equilibrium samples over two axes, routed
-     * through {@link CalculationSession#calculateCoarseBinaryDiagram}.
+     * through {@link ApplicationLayer#calculateCoarseBinaryDiagram}.
      */
     private void runCoarseBinary(String[] args, String cwd) throws IOException {
         runCoarseBinary(args, cwd, null);
@@ -849,7 +849,7 @@ public class CliApp {
                                 "V,ZR", "V2ZR,BCC_A2", "COMPOSITION:1,0.02,0.20,0.01",
                                 "TEMPERATURE,1200,1600,50", 1500.0, "1.0,0.0");
 
-        System.out.println("--- Coarse Binary Diagram (via CalculationSession) ---");
+        System.out.println("--- Coarse Binary Diagram (via ApplicationLayer) ---");
         p.printSummary("Axis X", "Axis Y");
         System.out.println("-------------------------------------------------------");
 
@@ -871,7 +871,7 @@ public class CliApp {
 
     /**
      * 2D grid over two composition axes (third+ component(s) renormalized),
-     * routed through {@link CalculationSession#calculateCoarseTernaryDiagram}.
+     * routed through {@link ApplicationLayer#calculateCoarseTernaryDiagram}.
      */
     private void runCoarseTernary(String[] args, String cwd) throws IOException {
         runCoarseTernary(args, cwd, null);
@@ -893,7 +893,7 @@ public class CliApp {
                                 "CR,FE,MO", "LIQUID,A2", "COMPOSITION:1,0.0,0.6,0.1",
                                 "COMPOSITION:2,0.0,0.6,0.1", 1800.0, "1.0,0.0,0.0");
 
-        System.out.println("--- Coarse Ternary Diagram (via CalculationSession) ---");
+        System.out.println("--- Coarse Ternary Diagram (via ApplicationLayer) ---");
         p.printSummary("Axis I", "Axis J");
         System.out.println("--------------------------------------------------------");
 
@@ -933,13 +933,13 @@ public class CliApp {
     }
 
     // ──────────────────────────────────────────────────────────────────
-    // Map (two-axis ZPF phase diagram, via CalculationSession)
+    // Map (two-axis ZPF phase diagram, via ApplicationLayer)
     // ──────────────────────────────────────────────────────────────────
 
     /**
      * True two-axis ZPF phase-diagram map (Sundman 2021 Calphad 75,
      * Algorithms A/B/C1/C2/D), routed through {@link
-     * CalculationSession#calculatePhaseDiagram}. {@code axis1} (released,
+     * ApplicationLayer#calculatePhaseDiagram}. {@code axis1} (released,
      * solved for exactly at each boundary) must be COMPOSITION.
      */
     private void runMap(String[] args, String cwd) throws IOException {
@@ -962,7 +962,7 @@ public class CliApp {
                                 "AG,CU", "LIQUID,FCC_A1", "TEMPERATURE,1000,1200,5",
                                 "COMPOSITION:1,0.0,1.0,0.01", 1000.0, "0.5,0.5");
 
-        System.out.println("--- Map Calculation (via CalculationSession) ---");
+        System.out.println("--- Map Calculation (via ApplicationLayer) ---");
         p.printSummary("Axis 0", "Axis 1");
         System.out.println("-------------------------------------------------");
 
@@ -1212,7 +1212,7 @@ public class CliApp {
          * Prompts for the overall composition, in the caller's choice of
          * mole fraction (default) or weight percent -- always returns mole
          * fractions, in {@code elements} order, since that is the only
-         * unit {@code CalculationSession}/{@code CalculationInterface}
+         * unit {@code ApplicationLayer}/{@code CalculationInterface}
          * understand. wt.% input is converted here, immediately, using
          * {@link CompositionUnits}'s standard atomic-weight table; the
          * converted mole-fraction vector is echoed back so the conversion
@@ -1361,7 +1361,7 @@ public class CliApp {
     /**
      * Browse a TDB database file: list its elements, and (given
      * elements) the phases available for them. Routed through
-     * {@link CalculationSession}'s browse methods -- the pre-calculation
+     * {@link ApplicationLayer}'s browse methods -- the pre-calculation
      * path in the target data flow, no model build.
      *
      * Usage:
@@ -1373,7 +1373,7 @@ public class CliApp {
         if (interactive) {
             Prompter p = prompter(cwd);
             String tdbPath = p.tdbPath("tizr_kum_cvm.tdb");
-            System.out.println("--- TDB Inspection (browse via CalculationSession) ---");
+            System.out.println("--- TDB Inspection (browse via ApplicationLayer) ---");
             System.out.println("File: " + tdbPath);
             try {
                 List<String> elements = p.pickElements(tdbPath);
@@ -1398,7 +1398,7 @@ public class CliApp {
             }
         }
 
-        System.out.println("--- TDB Inspection (browse via CalculationSession) ---");
+        System.out.println("--- TDB Inspection (browse via ApplicationLayer) ---");
         System.out.println("File: " + tdbPath);
 
         try {
@@ -1468,7 +1468,7 @@ public class CliApp {
         System.out.println("       (or) java -cp build/classes ui.Main [command] [options]");
         System.out.println();
         System.out.println("Every calculation/browse command below is a thin wrapper around one");
-        System.out.println("session.CalculationSession method -- the same session the GUI and REST");
+        System.out.println("application.ApplicationLayer method -- the same session the GUI and REST");
         System.out.println("API use. Run '<command> --help' for that command's options.");
         System.out.println();
         System.out.println("Commands:");

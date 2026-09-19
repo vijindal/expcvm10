@@ -1,4 +1,4 @@
-package session.calctype;
+package application.calctype;
 
 /**
  * Every calculation a caller can run through {@link CalculationInterface},

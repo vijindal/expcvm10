@@ -608,7 +608,7 @@ public class PhaseDiagramConfigPanel extends JPanel {
      * {@link #populateCoarseElementUI}), falling back to a uniform
      * composition over {@code numElements} components if the fields
      * haven't been populated yet or don't match -- {@link
-     * session.CalculationSession#calculateCoarseBinaryDiagram}/
+     * application.ApplicationLayer#calculateCoarseBinaryDiagram}/
      * {@code calculateCoarseTernaryDiagram} both require a non-null
      * composition vector to renormalize/distribute the non-swept
      * components against; values for axis-swept components are
