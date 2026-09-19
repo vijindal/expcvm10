@@ -1,35 +1,9 @@
 package calc.diagram;
 
 /**
- * One thermodynamic condition in a {@link ConditionSet} -- the
- * engine-internal generalization behind {@code
- * docs/phase_diagram_engine_flowchart.md}'s claim that ONE engine
- * handles every target diagram type in {@code
- * docs/roadmap_phase_diagrams.md} by varying only which conditions are
- * {@link Role#FIXED} vs. {@link Role#AXIS} (free/varying), never by
- * branching to different tracer code per diagram type.
- *
- * <p>Concretely, per Sundman 2021 §2.3.2's n+2 condition rule:
- * <ul>
- *   <li>Binary T-x map (today's only implemented case, Steps 1-4):
- *       n=2 components, 4 conditions -- T=AXIS, P=FIXED, N=FIXED,
- *       x(B)=AXIS. 2 AXIS conditions.</li>
- *   <li>Ternary isothermal section (Step 5 target): n=3 components, 5
- *       conditions -- T=FIXED, P=FIXED, N=FIXED, x(B)=AXIS, x(C)=AXIS.
- *       Still 2 AXIS conditions, but BOTH composition, no T axis at
- *       all -- exactly the shape difference the flowchart's "diagram
- *       type only affects which conditions are fixed vs. free" claim
- *       predicts.</li>
- * </ul>
- *
- * <p><b>Scope note (engine-internal only).</b> This class and {@link
- * ConditionSet} are consumed by {@code calc/diagram}'s tracers only
- * ({@link MapTracer}, {@link MapDiagramTracer}, {@link
- * PhaseDiagramEngine}) -- {@link AxisConfig} remains completely
- * unchanged for every existing caller ({@code CalculationSession}, the
- * CLI/GUI/API layers, {@link StepTracer}, {@link CoarseDiagramTracer}).
- * {@link ConditionSet#fromBinaryAxes} is the one bridge point converting
- * today's {@code AxisConfig} pairs into this model.
+ * One thermodynamic condition in a {@link ConditionSet}, per Sundman
+ * 2021 §2.3.2's n+2 condition rule -- e.g. a binary T-x map is n=2
+ * components, 4 conditions (T=AXIS, P=FIXED, N=FIXED, x(B)=AXIS).
  */
 public final class Condition {
 

@@ -93,12 +93,10 @@ public final class ConditionSet {
     }
 
     /**
-     * Constructs a {@link ConditionSet} equivalent to today's binary
-     * map call ({@link MapDiagramTracer#drain}'s existing {@code
-     * AxisConfig} pair): T and/or P and/or one composition axis walked,
-     * one composition axis released, N fixed at 1 -- the ONE bridge
-     * point between {@link AxisConfig}-based callers (unchanged) and
-     * this engine-internal model.
+     * Constructs a {@link ConditionSet} for a binary MAP: T and/or P
+     * and/or one composition axis walked, one composition axis
+     * released, N fixed at 1 -- the bridge from an {@link AxisConfig}
+     * pair to this engine-internal model.
      *
      * @param numComponents the number of components (2 for a binary)
      * @param walkAxis      today's walk axis (T, P, or a composition)
@@ -119,10 +117,9 @@ public final class ConditionSet {
             // A binary has exactly ONE independent composition degree of
             // freedom -- walkAxis and releaseAxis would both be
             // COMPOSITION conditions, one too many alongside T/P/N (5
-            // total, not n+2=4). Every existing MapTracer/MapDiagramTracer
-            // caller uses a TEMPERATURE (or PRESSURE) walkAxis with a
-            // COMPOSITION releaseAxis; this combination is unsupported
-            // here rather than silently mis-modeled.
+            // total, not n+2=4). Callers use a TEMPERATURE (or PRESSURE)
+            // walkAxis with a COMPOSITION releaseAxis; this combination
+            // is unsupported here rather than silently mis-modeled.
             throw new IllegalArgumentException(
                     "fromBinaryAxes does not support a COMPOSITION walkAxis together with a "
                     + "COMPOSITION releaseAxis for a 2-component system -- that is 2 composition "
@@ -155,6 +152,80 @@ public final class ConditionSet {
         // explicitly, and the other implied by summing to 1 --
         // initialComposition()'s "implicit remainder" logic handles that
         // second component automatically.
+
+        return new ConditionSet(numComponents, conditions);
+    }
+
+    /**
+     * Constructs a {@link ConditionSet} equivalent to today's single-axis
+     * STEP call: one axis (T, P, or a composition) walked, every other
+     * composition held FIXED at {@code compOverall}'s own value (the
+     * last unspecified component filled in by {@link #initialComposition()}'s
+     * implicit-remainder rule), N fixed at 1 -- the STEP-mode counterpart
+     * of {@link #fromBinaryAxes} (which is MAP-only: it always supplies
+     * exactly one released COMPOSITION axis, which STEP has none of).
+     *
+     * @param numComponents the number of components
+     * @param walkAxis      the axis walked (T, P, or a composition)
+     * @param fixedT        used when {@code walkAxis.type != TEMPERATURE}
+     * @param fixedP        used when {@code walkAxis.type != PRESSURE}
+     * @param compOverall   starting overall composition (length {@code numComponents});
+     *                      every component except {@code walkAxis}'s own (if it is a
+     *                      composition axis) and the last is supplied as a FIXED condition,
+     *                      the last left implicit (per {@link #initialComposition()})
+     */
+    public static ConditionSet fromStepAxis(
+            int numComponents,
+            AxisConfig walkAxis,
+            double fixedT,
+            double fixedP,
+            double[] compOverall) {
+
+        List<Condition> conditions = new ArrayList<>();
+
+        if (walkAxis.type == AxisConfig.Type.TEMPERATURE) {
+            conditions.add(Condition.axis(Condition.Variable.TEMPERATURE, walkAxis.name,
+                    walkAxis.min, walkAxis.max, walkAxis.step));
+        } else {
+            conditions.add(Condition.fixed(Condition.Variable.TEMPERATURE, "T", fixedT));
+        }
+
+        if (walkAxis.type == AxisConfig.Type.PRESSURE) {
+            conditions.add(Condition.axis(Condition.Variable.PRESSURE, walkAxis.name,
+                    walkAxis.min, walkAxis.max, walkAxis.step));
+        } else {
+            conditions.add(Condition.fixed(Condition.Variable.PRESSURE, "P", fixedP));
+        }
+
+        conditions.add(Condition.fixed(Condition.Variable.TOTAL_MOLES, "N", 1.0));
+
+        // Every component gets an explicit condition -- the walked axis
+        // itself if it is a composition axis, otherwise FIXED at
+        // compOverall's own value -- except exactly one, left implicit
+        // (filled in by initialComposition()'s remainder rule) to match
+        // n+2's own count: T, P, N, plus (numComponents - 1) composition
+        // conditions = numComponents + 2. The implicit component is the
+        // LAST index not equal to the walked composition axis's own
+        // index (if any), so a composition walkAxis at the last index
+        // still gets its own AXIS condition rather than being silently
+        // dropped as "the implicit one."
+        int walkedComponentIndex = walkAxis.type == AxisConfig.Type.COMPOSITION
+                ? walkAxis.componentIndex : -1;
+        int implicitComponentIndex = numComponents - 1;
+        if (implicitComponentIndex == walkedComponentIndex) {
+            implicitComponentIndex = numComponents - 2;
+        }
+        for (int i = 0; i < numComponents; i++) {
+            if (i == implicitComponentIndex) {
+                continue;
+            }
+            if (i == walkedComponentIndex) {
+                conditions.add(Condition.axisComposition(i, walkAxis.name,
+                        walkAxis.min, walkAxis.max, walkAxis.step));
+            } else {
+                conditions.add(Condition.fixedComposition(i, "x(" + i + ")", compOverall[i]));
+            }
+        }
 
         return new ConditionSet(numComponents, conditions);
     }

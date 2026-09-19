@@ -12,10 +12,9 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * Top-level orchestration for phase-diagram tracing, implementing Sundman 2021
- * Algorithms A/B/C1/C2/D. Provides one method per flowchart stage (see
- * {@code docs/phase_diagram_engine_flowchart.md}). Supported diagram types:
- * binary T-x, ternary isothermal, ternary isopleth, and property/step diagrams.
+ * Top-level orchestration for phase-diagram tracing, implementing Sundman
+ * 2021 Algorithms A/B/C1/C2/D. Supports 1-axis STEP and 2-axis binary MAP
+ * diagrams via {@link #calculatePhaseDiagram}.
  */
 public final class PhaseDiagramEngine {
 
@@ -128,11 +127,22 @@ public final class PhaseDiagramEngine {
         public final List<DiagramEquilibrium> equilibria;
         public String terminatedReason;
 
-        public DiagramLineResult(DiagramNode startNode) {
+        /**
+         * The phase held at zero amount along this line (the originating
+         * {@link DiagramExit#fixedPhase}), or {@code null} for a STEP
+         * line -- retained here (not recoverable from {@link #startNode}
+         * alone, which may have multiple exits with different fixed
+         * phases) for {@link #buildResultFromDiagram}'s own {@link
+         * LineSegment#fixedPhase}.
+         */
+        public final String fixedPhase;
+
+        public DiagramLineResult(DiagramNode startNode, String fixedPhase) {
             this.startNode = startNode;
             this.endNode = null;
             this.equilibria = new java.util.ArrayList<>();
             this.terminatedReason = null;
+            this.fixedPhase = fixedPhase;
         }
     }
 
@@ -314,11 +324,18 @@ public final class PhaseDiagramEngine {
 
             double[] currentAxisValues = extractAxisValues(equilibrium0, conds);
             DiagramEquilibrium current = equilibrium0;
+            AxisConfig walkAxisConfig = axes.get(axis).toAxisConfig();
             while (true) {
                 currentAxisValues[axis] += axes.get(axis).step;
+                if (!walkAxisConfig.inBounds(currentAxisValues[axis])) {
+                    throw new IllegalStateException(
+                            "No stable-set change found searching " + axes.get(axis).name + " in ["
+                            + walkAxisConfig.min + ", " + walkAxisConfig.max + "] from the starting "
+                            + "condition -- nothing for Algorithm C1 to start from.");
+                }
                 current = callAlgorithmA(conds, currentAxisValues, candidates);
-                if (current.stablePhases.equals(equilibrium0.stablePhases)) {
-                    continue; // no phase change
+                if (!current.converged || current.stablePhases.equals(equilibrium0.stablePhases)) {
+                    continue; // not converged, or no phase change
                 } else {
                     break; // phases changed
                 }
@@ -334,6 +351,100 @@ public final class PhaseDiagramEngine {
         }
 
         return diagram;
+    }
+
+    /**
+     * Converts a {@link DiagramResult} (Algorithm B/C1/C2/D's own object
+     * graph) into the rendering-ready {@link PhaseDiagramResult} DTO.
+     * Applies Sundman 2021 §4.1: a proper composition-axis diagram plots
+     * each stable phase's OWN mole fraction, not the walked run's
+     * overall composition, so a 2-axis line with a released composition
+     * axis is split into one {@link LineSegment} per phase name actually
+     * present throughout that line.
+     *
+     * @param diagram                  traced diagram (nodes + lines)
+     * @param conds                    the full condition set the diagram was traced with
+     * @param axisNames                per-axis display names, {@code conds.axisConditions()} order
+     * @param compositionAxisIndex     index into {@code conds.axisConditions()} of the
+     *                                 released composition axis to split per-phase, or
+     *                                 -1 if no axis should be split this way (e.g. STEP)
+     * @return the classified, rendering-ready result
+     */
+    public static PhaseDiagramResult buildResultFromDiagram(
+            DiagramResult diagram,
+            ConditionSet conds,
+            String[] axisNames,
+            int compositionAxisIndex) {
+
+        List<Condition> axes = conds.axisConditions();
+        int numAxes = axes.size();
+        double[] axisMin = new double[numAxes];
+        double[] axisMax = new double[numAxes];
+        for (int i = 0; i < numAxes; i++) {
+            AxisConfig cfg = axes.get(i).toAxisConfig();
+            axisMin[i] = cfg.min;
+            axisMax[i] = cfg.max;
+        }
+        int compositionComponentIndex = compositionAxisIndex >= 0
+                ? axes.get(compositionAxisIndex).componentIndex : -1;
+
+        PhaseDiagramResult result = new PhaseDiagramResult(axisNames, axisMin, axisMax);
+
+        for (DiagramLineResult line : diagram.lines) {
+            if (line.equilibria.isEmpty()) {
+                continue;
+            }
+            String fixedPhase = line.fixedPhase;
+
+            List<double[]> walkCoords = new java.util.ArrayList<>(line.equilibria.size());
+            for (DiagramEquilibrium eq : line.equilibria) {
+                walkCoords.add(extractAxisValues(eq, conds));
+            }
+
+            if (compositionAxisIndex < 0) {
+                result.addLine(new LineSegment(walkCoords, fixedPhase,
+                        new java.util.ArrayList<>(line.equilibria.get(0).stablePhases)));
+                continue;
+            }
+
+            // Sundman 2021 §4.1: split into one LineSegment per stable
+            // phase, substituting that phase's own mole fraction in at
+            // compositionAxisIndex.
+            java.util.Set<String> phaseNames = new java.util.LinkedHashSet<>();
+            for (DiagramEquilibrium eq : line.equilibria) {
+                phaseNames.addAll(eq.stablePhases);
+            }
+            for (String phaseName : phaseNames) {
+                List<double[]> perPhaseCoords = new java.util.ArrayList<>(line.equilibria.size());
+                boolean phasePresentThroughout = true;
+                for (int i = 0; i < line.equilibria.size(); i++) {
+                    double[] x = line.equilibria.get(i).phaseMoleFractions.get(phaseName);
+                    if (x == null) {
+                        phasePresentThroughout = false;
+                        break;
+                    }
+                    double[] coord = walkCoords.get(i).clone();
+                    coord[compositionAxisIndex] = x[compositionComponentIndex];
+                    perPhaseCoords.add(coord);
+                }
+                if (phasePresentThroughout && !perPhaseCoords.isEmpty()) {
+                    result.addLine(new LineSegment(perPhaseCoords, fixedPhase, List.of(phaseName)));
+                }
+            }
+        }
+
+        for (DiagramNode node : diagram.nodes) {
+            NodeClass nodeClass = classifyNode(conds, node.equilibrium.stablePhases.size());
+            NodePoint.Type type = nodeClass == NodeClass.INVARIANT
+                    ? NodePoint.Type.INVARIANT
+                    : NodePoint.Type.CROSSING;
+            result.addNode(new NodePoint(
+                    extractAxisValues(node.equilibrium, conds),
+                    new java.util.ArrayList<>(node.equilibrium.stablePhases),
+                    type));
+        }
+
+        return result;
     }
 
     /**
@@ -410,7 +521,7 @@ public final class PhaseDiagramEngine {
 
             java.util.Set<String> runningStableSet = exit.equilibrium.stablePhases;
 
-            DiagramLineResult line = new DiagramLineResult(exit.node);
+            DiagramLineResult line = new DiagramLineResult(exit.node, exit.fixedPhase);
             diagram.lines.add(line);
 
             int axis = exit.initialAxis;
@@ -929,18 +1040,6 @@ public final class PhaseDiagramEngine {
     }
 
     /**
-     * Generates starting point(s) for diagram tracing. Currently returns
-     * a single starting point; multiple starting points are a manual,
-     * user-driven operation (issue #TODO: linked disconnected components).
-     *
-     * @param singleStartWalkValue the starting value along the walk axis
-     * @return a list containing the single starting point
-     */
-    public static List<double[]> generateStartingPoints(double singleStartWalkValue) {
-        return List.of(new double[] { singleStartWalkValue });
-    }
-
-    /**
      * Algorithm B orchestration: the single top-to-bottom entry point for
      * automated phase-diagram tracing, from condition validation through
      * plot classification. Validates the n+2 condition count, generates
@@ -970,44 +1069,6 @@ public final class PhaseDiagramEngine {
             double[] compOverall,
             List<GibbsEnergyModel> candidates) {
 
-        Traced traced = traceForClassification(
-                numComponents, axes, startValues, fixedT, fixedP, compOverall, candidates);
-        return classifyPlot(traced.registry, traced.plotType, traced.axisNames,
-                traced.axisMin, traced.axisMax, traced.compositionAxisIndex,
-                traced.compositionComponentIndex);
-    }
-
-    /** Bundles a traced {@link NodeRegistry} with the metadata {@link #classifyPlot} needs. */
-    private static final class Traced {
-        final NodeRegistry registry;
-        final PlotType plotType;
-        final String[] axisNames;
-        final double[] axisMin;
-        final double[] axisMax;
-        final int compositionAxisIndex;
-        final int compositionComponentIndex;
-
-        Traced(NodeRegistry registry, PlotType plotType, String[] axisNames, double[] axisMin,
-                double[] axisMax, int compositionAxisIndex, int compositionComponentIndex) {
-            this.registry = registry;
-            this.plotType = plotType;
-            this.axisNames = axisNames;
-            this.axisMin = axisMin;
-            this.axisMax = axisMax;
-            this.compositionAxisIndex = compositionAxisIndex;
-            this.compositionComponentIndex = compositionComponentIndex;
-        }
-    }
-
-    private static Traced traceForClassification(
-            int numComponents,
-            AxisConfig[] axes,
-            double[] startValues,
-            double fixedT,
-            double fixedP,
-            double[] compOverall,
-            List<GibbsEnergyModel> candidates) {
-
         if (axes.length != startValues.length) {
             throw new IllegalArgumentException(
                     "axes.length (" + axes.length + ") must equal startValues.length ("
@@ -1023,160 +1084,23 @@ public final class PhaseDiagramEngine {
                     "For 2-axis MAP, axes[1] must be COMPOSITION; got " + axes[1].type);
         }
 
-        validateConditionCount(numComponents, numComponents + 2);
-        generateStartingPoints(startValues[0]);
-
-        EquilibriumResult initialEquilibrium = solveInitialEquilibrium(
-                axes[0], fixedT, fixedP, startValues[0], compOverall, candidates);
-
-        LineFollower.Setup setup;
-        PlotType plotType;
         String[] axisNames;
-        double[] axisMin, axisMax;
-        int compositionAxisIndex, compositionComponentIndex;
+        int compositionAxisIndex;
+        ConditionSet conds;
 
         if (axes.length == 1) {
-            setup = new StepDiagramTracer().setUp(
-                    axes[0], fixedT, fixedP, compOverall, candidates, initialEquilibrium);
-
-            plotType = PlotType.PROPERTY_OR_STEP_DIAGRAM;
+            conds = ConditionSet.fromStepAxis(numComponents, axes[0], fixedT, fixedP, compOverall);
             axisNames = new String[] { axes[0].name };
-            axisMin = new double[] { axes[0].min };
-            axisMax = new double[] { axes[0].max };
             compositionAxisIndex = -1;
-            compositionComponentIndex = -1;
         } else {
-            setup = new MapDiagramTracer().setUp(
-                    axes[0], axes[1], fixedT, fixedP, startValues[0], compOverall, candidates,
-                    initialEquilibrium);
-
-            plotType = PlotType.BINARY_T_X;
+            conds = ConditionSet.fromBinaryAxes(
+                    numComponents, axes[0], axes[1], fixedT, fixedP, compOverall);
             axisNames = new String[] { axes[0].name, axes[1].name };
-            axisMin = new double[] { axes[0].min, axes[1].min };
-            axisMax = new double[] { axes[0].max, axes[1].max };
             compositionAxisIndex = 1;
-            compositionComponentIndex = axes[1].componentIndex;
         }
 
-        LineFollower.drain(setup, candidates);
-
-        return new Traced(setup.registry(), plotType, axisNames, axisMin, axisMax,
-                compositionAxisIndex, compositionComponentIndex);
-    }
-
-    /**
-     * Solves a single equilibrium at the starting conditions. This is the
-     * shared Algorithm A box that Algorithm B executes before branching
-     * to STEP or MAP, ensuring both branches operate from the same
-     * converged starting point.
-     *
-     * @param axis the first/walked axis
-     * @param fixedT temperature (modified by axis if axis is TEMPERATURE)
-     * @param fixedP pressure (modified by axis if axis is PRESSURE)
-     * @param startWalkValue the axis value where to solve
-     * @param compOverall overall composition
-     * @param candidates candidate phase models
-     * @return converged equilibrium result
-     * @throws IllegalStateException if convergence fails
-     */
-    public static EquilibriumResult solveInitialEquilibrium(
-            AxisConfig axis,
-            double fixedT,
-            double fixedP,
-            double startWalkValue,
-            double[] compOverall,
-            List<GibbsEnergyModel> candidates) {
-
-        double t0 = fixedT, p0 = fixedP;
-        double[] comp = compOverall.clone();
-        switch (axis.type) {
-            case TEMPERATURE: t0 = startWalkValue; break;
-            case PRESSURE: p0 = startWalkValue; break;
-            case COMPOSITION: comp = StepTracer.applyCompositionAxis(axis, startWalkValue, comp); break;
-            default: throw new IllegalStateException("Unhandled axis type: " + axis.type);
-        }
-
-        EquilibriumResult result = EquilibriumSolveHelper.solveOrSentinel(t0, p0, comp, candidates);
-        if (!result.isConverged()) {
-            throw new IllegalStateException(
-                    "Initial equilibrium did not converge at " + axis.name + "=" + startWalkValue);
-        }
-        return result;
-    }
-
-    /**
-     * Drains the map diagram (2-axis ZPF tracing) from one starting point --
-     * the 2-axis counterpart of {@link #drainStepLoop}. Walks the first
-     * axis while keeping a phase at zero amount.
-     *
-     * @param walkAxis axis to walk
-     * @param releaseAxis axis to release (must be COMPOSITION for binary MAP)
-     * @param fixedT temperature
-     * @param fixedP pressure
-     * @param startWalkValue starting walk value
-     * @param compOverall overall composition
-     * @param candidates candidate phase models
-     * @param startResult pre-solved initial equilibrium, or null to solve it here
-     * @return registry of traced nodes and lines
-     */
-    public static NodeRegistry drainMapLoop(
-            AxisConfig walkAxis,
-            AxisConfig releaseAxis,
-            double fixedT,
-            double fixedP,
-            double startWalkValue,
-            double[] compOverall,
-            List<GibbsEnergyModel> candidates,
-            EquilibriumResult startResult) {
-
-        return new MapDiagramTracer().drain(
-                walkAxis, releaseAxis, fixedT, fixedP, startWalkValue, compOverall, candidates, startResult);
-    }
-
-    /**
-     * Drains the map diagram using a ConditionSet for generalized diagram
-     * types (binary, ternary isothermal, isopleth, etc.).
-     *
-     * @param conds full condition set for the diagram
-     * @param searchAxisIndex index of the axis to search/walk
-     * @param releaseAxisIndex index of the axis to release
-     * @param startSearchValue starting value for the search axis
-     * @param compOverall overall composition
-     * @param candidates candidate phase models
-     * @return registry of traced nodes and lines
-     */
-    public static NodeRegistry drainMapLoop(
-            ConditionSet conds,
-            int searchAxisIndex,
-            int releaseAxisIndex,
-            double startSearchValue,
-            double[] compOverall,
-            List<GibbsEnergyModel> candidates) {
-
-        return new MapDiagramTracer().drain(
-                conds, searchAxisIndex, releaseAxisIndex, startSearchValue, compOverall, candidates);
-    }
-
-    /**
-     * Drains the step diagram (single-axis property scan) from one starting point.
-     *
-     * @param axis the axis to walk
-     * @param fixedT temperature
-     * @param fixedP pressure
-     * @param compOverall overall composition
-     * @param candidates candidate phase models
-     * @param startResult pre-solved initial equilibrium, or null to solve it here
-     * @return registry of traced nodes and lines
-     */
-    public static NodeRegistry drainStepLoop(
-            AxisConfig axis,
-            double fixedT,
-            double fixedP,
-            double[] compOverall,
-            List<GibbsEnergyModel> candidates,
-            EquilibriumResult startResult) {
-
-        return new StepDiagramTracer().drain(axis, fixedT, fixedP, compOverall, candidates, startResult);
+        DiagramResult diagram = traceAlgorithmB(conds, startValues, candidates);
+        return buildResultFromDiagram(diagram, conds, axisNames, compositionAxisIndex);
     }
 
     private static final double GLOBAL_STABILITY_RELATIVE_TOLERANCE = 1.0e-4;
@@ -1280,231 +1204,4 @@ public final class PhaseDiagramEngine {
         return f == 0 ? NodeClass.INVARIANT : ordinary;
     }
 
-    /**
-     * Filters the traced line network, removing excluded lines and returning
-     * the lines ready for plotting. Nodes are deduplicated inline during
-     * tracing via {@link NodeRegistry#findOrCreate}.
-     *
-     * @param registry the traced node/line registry
-     * @return all non-excluded lines in the registry
-     */
-    public static List<Line> mergeDedupNetwork(NodeRegistry registry) {
-        List<Line> kept = new java.util.ArrayList<>();
-        for (Node node : registry.getNodes()) {
-            for (Line line : node.getLines()) {
-                if (!line.isExcluded()) {
-                    kept.add(line);
-                }
-            }
-        }
-        return kept;
-    }
-
-    /**
-     * Identifies and labels phase regions from the traced line network.
-     * Assigns stable-phase labels to each line and node, and computes
-     * tie-triangles for 3-phase regions.
-     *
-     * @param registry the traced node/line registry
-     * @return phase regions with labels and tie-triangles
-     */
-    public static PhaseRegions identifyPhaseRegions(NodeRegistry registry) {
-        java.util.Map<Line, java.util.Set<String>> lineLabels = new java.util.LinkedHashMap<>();
-        java.util.Map<Node, java.util.Set<String>> nodeLabels = new java.util.LinkedHashMap<>();
-        List<PhaseRegions.TieTriangle> tieTriangles = new java.util.ArrayList<>();
-
-        for (Node node : registry.getNodes()) {
-            nodeLabels.put(node, node.stablePhaseNames);
-
-            if (node.stablePhaseNames.size() == 3) {
-                List<String> phaseNames = new java.util.ArrayList<>();
-                List<double[]> vertices = new java.util.ArrayList<>();
-                for (EquilibriumResult.PhaseResult pr : node.equilibrium.getStablePhases()) {
-                    phaseNames.add(pr.phaseName);
-                    vertices.add(pr.x);
-                }
-                tieTriangles.add(new PhaseRegions.TieTriangle(node, phaseNames, vertices));
-            }
-
-            for (Line line : node.getLines()) {
-                lineLabels.put(line, lineStablePhaseNames(line));
-            }
-        }
-
-        return new PhaseRegions(lineLabels, nodeLabels, tieTriangles);
-    }
-
-    /**
-     * The stable-phase set bounding {@code line} -- every point sampled
-     * along it shares the same stable-phase set by construction (a
-     * {@link Line} terminates exactly when that set changes), so the
-     * first sampled point's set suffices; empty if no points were
-     * sampled (e.g. a line terminated immediately at an axis limit).
-     */
-    private static java.util.Set<String> lineStablePhaseNames(Line line) {
-        List<EquilibriumResult> points = line.getPoints();
-        if (points.isEmpty()) {
-            return java.util.Set.of();
-        }
-        java.util.Set<String> names = new java.util.LinkedHashSet<>();
-        for (EquilibriumResult.PhaseResult pr : points.get(0).getStablePhases()) {
-            names.add(pr.phaseName);
-        }
-        return names;
-    }
-
-    // ------------------------------------------------------------------
-    // CLASSIFY REQUESTED PLOT / VALIDATE PLOT
-    // ------------------------------------------------------------------
-
-    /** The plot types the flowchart's CLASSIFY REQUESTED PLOT box lists. */
-    public enum PlotType {
-        BINARY_T_X,
-        ACTIVITY_OR_CHEMICAL_POTENTIAL,
-        H_X_S_X_G_X,
-        TERNARY_ISOTHERMAL,
-        TERNARY_ISOPLETH,
-        MULTICOMPONENT_ISOPLETH_OR_PSEUDO_ISOTHERMAL,
-        PROPERTY_OR_STEP_DIAGRAM
-    }
-
-    /**
-     * Converts the traced node/line network into a renderable phase diagram
-     * result for the specified plot type. Validates axis count and converts
-     * stored equilibria into line segments and node points. For diagrams with
-     * a released composition axis, splits multi-phase lines into one segment
-     * per stable phase using each phase's own composition.
-     *
-     * @param registry the traced network
-     * @param requestedType the desired plot type
-     * @param axisNames diagram axis names
-     * @param axisMin minimum value per axis
-     * @param axisMax maximum value per axis
-     * @param compositionAxisIndex index of released composition axis (-1 if none)
-     * @param compositionComponentIndex component index of composition axis
-     * @return the complete classified phase diagram
-     * @throws IllegalArgumentException if axis count does not match requestedType
-     * @throws UnsupportedOperationException if requestedType is not yet implemented
-     */
-    public static PhaseDiagramResult classifyPlot(
-            NodeRegistry registry,
-            PlotType requestedType,
-            String[] axisNames,
-            double[] axisMin,
-            double[] axisMax,
-            int compositionAxisIndex,
-            int compositionComponentIndex) {
-
-        int expectedAxes = expectedAxisCount(requestedType);
-        if (axisNames.length != expectedAxes || axisMin.length != expectedAxes || axisMax.length != expectedAxes) {
-            throw new IllegalArgumentException(
-                    requestedType + " requires exactly " + expectedAxes + " axis/axes, got "
-                    + axisNames.length + " names / " + axisMin.length + " mins / "
-                    + axisMax.length + " maxes -- not a well-posed diagram (VALIDATE PLOT).");
-        }
-
-        switch (requestedType) {
-            case BINARY_T_X:
-            case PROPERTY_OR_STEP_DIAGRAM:
-            case TERNARY_ISOTHERMAL:
-            case TERNARY_ISOPLETH:
-                return buildResult(registry, axisNames, axisMin, axisMax,
-                        compositionAxisIndex, compositionComponentIndex);
-
-            case ACTIVITY_OR_CHEMICAL_POTENTIAL:
-            case H_X_S_X_G_X:
-            case MULTICOMPONENT_ISOPLETH_OR_PSEUDO_ISOTHERMAL:
-            default:
-                throw new UnsupportedOperationException(
-                        requestedType + " not yet implemented -- see "
-                        + "PhaseDiagramEngine#classifyPlot's own javadoc for what's missing "
-                        + "and docs/phase_diagram_engine_flowchart.md's CLASSIFY REQUESTED PLOT box.");
-        }
-    }
-
-    /** VALIDATE PLOT's own axis-count expectation per {@link PlotType} -- see {@link #classifyPlot}'s javadoc. */
-    private static int expectedAxisCount(PlotType type) {
-        return type == PlotType.PROPERTY_OR_STEP_DIAGRAM ? 1 : 2;
-    }
-
-    /**
-     * The actual {@link Node}/{@link Line} -&gt; {@link PhaseDiagramResult}
-     * conversion shared by every implemented {@link PlotType} in {@link
-     * #classifyPlot} -- see that method's javadoc for what this does and
-     * does not compute (in particular the &sect;4.1-driven per-phase
-     * composition split this method performs).
-     */
-    private static PhaseDiagramResult buildResult(
-            NodeRegistry registry, String[] axisNames, double[] axisMin, double[] axisMax,
-            int compositionAxisIndex, int compositionComponentIndex) {
-
-        PhaseDiagramResult result = new PhaseDiagramResult(axisNames, axisMin, axisMax);
-        int numAxes = axisNames.length;
-
-        for (Line line : mergeDedupNetwork(registry)) {
-            List<EquilibriumResult> points = line.getPoints();
-            if (points.isEmpty()) {
-                continue;
-            }
-            String fixedPhase = line.fixedPhases.isEmpty() ? null : line.fixedPhases.get(0);
-
-            if (compositionAxisIndex < 0) {
-                // No released composition (e.g. STEP) -- the stored walk
-                // coordinates are already correct as-is.
-                result.addLine(new LineSegment(line.getAxisCoords(), fixedPhase,
-                        new java.util.ArrayList<>(lineStablePhaseNames(line))));
-                continue;
-            }
-
-            // Sundman 2021 §4.1: a proper T-x diagram plots "the mole
-            // fraction of Cu in ALL STABLE PHASES" -- one curve per
-            // stable phase, not the overall composition Line.getAxisCoords()
-            // stores at compositionAxisIndex. Split this one walked run
-            // into one LineSegment per phase name, each phase's own
-            // PhaseResult.x substituted in at compositionAxisIndex.
-            List<double[]> walkCoords = line.getAxisCoords();
-            for (String phaseName : lineStablePhaseNames(line)) {
-                List<double[]> perPhaseCoords = new java.util.ArrayList<>(points.size());
-                boolean phasePresentThroughout = true;
-                for (int i = 0; i < points.size(); i++) {
-                    double[] x = phaseCompositionOrNull(points.get(i), phaseName);
-                    if (x == null) {
-                        phasePresentThroughout = false;
-                        break;
-                    }
-                    double[] coord = walkCoords.get(i).clone();
-                    coord[compositionAxisIndex] = x[compositionComponentIndex];
-                    perPhaseCoords.add(coord);
-                }
-                if (phasePresentThroughout && !perPhaseCoords.isEmpty()) {
-                    result.addLine(new LineSegment(perPhaseCoords, fixedPhase, List.of(phaseName)));
-                }
-            }
-        }
-
-        for (Node node : registry.getNodes()) {
-            // Every Node in a NodeRegistry is a real phase-set-change
-            // point -- an axis-limit termination (Line#terminateAtAxisLimit)
-            // never creates a Node at all, only a dangling Line with no
-            // end node (see Line.getEndNode()'s javadoc), so
-            // NodePoint.Type.BOUNDARY does not arise from this graph.
-            NodePoint.Type type = node.stablePhaseNames.size() > numAxes + 1
-                    ? NodePoint.Type.INVARIANT
-                    : NodePoint.Type.CROSSING;
-            result.addNode(new NodePoint(
-                    node.axisValues, new java.util.ArrayList<>(node.stablePhaseNames), type));
-        }
-
-        return result;
-    }
-
-    /** {@code eq}'s stable-phase mole-fraction composition for {@code phaseName}, or {@code null} if not stable there. */
-    private static double[] phaseCompositionOrNull(EquilibriumResult eq, String phaseName) {
-        for (EquilibriumResult.PhaseResult pr : eq.getStablePhases()) {
-            if (pr.phaseName.equals(phaseName)) {
-                return pr.x;
-            }
-        }
-        return null;
-    }
 }

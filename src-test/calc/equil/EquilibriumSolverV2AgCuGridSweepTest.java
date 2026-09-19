@@ -15,16 +15,16 @@ import java.util.List;
  * check whether {@link EquilibriumSolverV2#solve} itself is reliable
  * (converges, gives a plausible stable-phase set) across a grid of T and
  * x(Cu) for Ag-Cu, independent of any diagram-tracing/boundary-solve
- * logic (MapTracer, EquilibriumSolverV2#solveBoundaryReleasingT).
+ * logic ({@link EquilibriumSolverV2#solveBoundaryReleasingT}).
  *
- * <p>Investigating a MapTracer node-duplication finding (diagram CLI
- * reports 4 nodes vs. OC's 2 real crossings for Ag-Cu x(Cu)=0.05,
- * T=1150-1230K): root cause traced to solveBoundaryReleasingT failing
- * to converge at every crossing tried. Before chasing that boundary
- * solve specifically, this sweep checks the more basic question: is the
- * plain point-equilibrium solve (no boundary release, just solve()) itself
- * reliable across this system's T-x space, or does convergence trouble
- * show up even here.
+ * <p>Originally written to investigate a node-duplication finding (a
+ * diagram CLI report of 4 nodes vs. OC's 2 real crossings for Ag-Cu
+ * x(Cu)=0.05, T=1150-1230K): root cause traced to
+ * solveBoundaryReleasingT failing to converge at every crossing tried.
+ * Before chasing that boundary solve specifically, this sweep checks the
+ * more basic question: is the plain point-equilibrium solve (no
+ * boundary release, just solve()) itself reliable across this system's
+ * T-x space, or does convergence trouble show up even here.
  *
  * <p>Writes one CSV row per grid point to
  * {@code build/agcu_solver_sweep.csv}: T, x(Cu), converged, iterations,

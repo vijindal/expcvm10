@@ -966,12 +966,12 @@ public class EquilibriumSolverV2 {
      * as a node-solve FAILURE and {@code map_halfstep} retries from the
      * last converged point with a much smaller walk-axis sub-step (10%
      * of the normal increment, up to 3 attempts) until the jump narrows
-     * to a single resolvable phase change -- see {@link
-     * calc.diagram.MapTracer#retryWithHalvedSteps}, which implements
-     * that retry and is the paper/OpenCalphad-faithful mechanism for
-     * locating a genuine invariant, calling this single-fix method (or
-     * {@link #solveBoundary}) only once the jump has been narrowed to
-     * one phase.
+     * to a single resolvable phase change. {@code
+     * calc.diagram.PhaseDiagramEngine}'s own C1 walk does not yet
+     * implement this narrowing retry (only a plain smaller-increment
+     * retry on non-convergence); a genuine two-phases-change-together
+     * crossing can still defeat this single-fix method (or {@link
+     * #solveBoundary}) today.
      *
      * @param T                temperature to seed the search from (the walk's
      *                         current point, at/near the overshoot)

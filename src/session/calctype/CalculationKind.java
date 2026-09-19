@@ -11,7 +11,6 @@ public enum CalculationKind {
     STEP(CalculationGroup.CALCULATE),
     COARSE_BINARY(CalculationGroup.CALCULATE),
     COARSE_TERNARY(CalculationGroup.CALCULATE),
-    MAP(CalculationGroup.CALCULATE),
     PHASE_DIAGRAM(CalculationGroup.CALCULATE),
     /** The lone {@link CalculationGroup#ASSESS} kind; not implemented yet. */
     ASSESSMENT(CalculationGroup.ASSESS);

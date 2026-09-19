@@ -2,7 +2,6 @@ package session;
 
 import calc.diagram.AxisConfig;
 import calc.diagram.CoarseDiagramTracer;
-import calc.diagram.MapTracer;
 import calc.diagram.PhaseDiagramEngine;
 import calc.diagram.StepTracer;
 import calc.equil.EquilibriumSolverV2;
@@ -24,24 +23,23 @@ import java.util.List;
  * the Calculation Layer (see README.md "Structure").
  *
  * <p>A caller (GUI, CLI, API -- anything) sends model details via
- * {@link #setModel} and calculation details via one of four calculation
+ * {@link #setModel} and calculation details via one of several calculation
  * methods -- {@link #calculateEquilibrium} (single point),
- * {@link #calculateStep}, {@link #calculateMap} (property sampled over one
- * or two axes), or {@link #calculatePhaseDiagram} (phase-boundary tracing --
- * a substantially more complex calculation than the other three, kept as
- * its own type rather than unified with step/map) -- then reads results
- * back via the matching {@code currentXxx()} accessor rather than getting
- * them returned directly. This class is the single point of contact for a
- * caller in both directions; it never exposes {@link ThermodynamicSystem}
+ * {@link #calculateStep} (single-axis property scan), or
+ * {@link #calculatePhaseDiagram} (the main controller path: full
+ * boundary-exact tracing over 1 or 2 axes, Sundman 2021 Calphad 75
+ * Algorithms A/B/C1/C2/D) -- then reads results back via the matching
+ * {@code currentXxx()} accessor rather than getting them returned
+ * directly. This class is the single point of contact for a caller in
+ * both directions; it never exposes {@link ThermodynamicSystem}
  * construction or a solver to be called directly.
  *
  * <p>{@link #calculateStep} walks a single axis (Sundman 2021 Calphad 75,
  * Algorithm B's step branch), via {@link calc.diagram.StepTracer}, locating
- * crossings by black-box bisection. {@link #calculateMap} walks two axes
- * (Algorithm B's map branch: C1 line-following + C2 exact zero-phase-amount
- * boundary solving + D invariant-node detection), via {@link
- * calc.diagram.MapTracer} -- see its Javadoc for the composition-release-only
- * scope constraint.
+ * crossings by black-box bisection. {@link #calculatePhaseDiagram} walks
+ * one or two axes with exact zero-phase-amount boundary solving (Algorithm
+ * C2) and genuine invariant-node detection (Algorithm D), via {@link
+ * calc.diagram.PhaseDiagramEngine}.
  *
  * <p>{@link #setModel} rebuilds the held {@link ThermodynamicSystem} only
  * when the model details (database path, elements, phases) actually change,
@@ -83,7 +81,6 @@ public final class CalculationSession {
     private EquilibriumResult currentInitialState;
     private PhaseDiagramResult currentStepResult;
     private CoarseDiagramResult currentCoarseDiagramResult;
-    private PhaseDiagramResult currentMapResult;
     private PhaseDiagramResult currentPhaseDiagram;
 
     /**
@@ -184,7 +181,6 @@ public final class CalculationSession {
         this.currentInitialState = null;
         this.currentStepResult = null;
         this.currentCoarseDiagramResult = null;
-        this.currentMapResult = null;
         this.currentPhaseDiagram = null;
     }
 
@@ -326,7 +322,7 @@ public final class CalculationSession {
     /**
      * Runs a full, automated phase-diagram calculation against the
      * currently held system -- multi-line/node ZPF stitching, not a
-     * single line like {@link #calculateMap}. Stores the result; read it
+     * single line like {@link #calculateStep}. Stores the result; read it
      * back via {@link #currentPhaseDiagram()}.
      *
      * @param axes       1 axis (STEP) or 2 axes (binary MAP, axes[1] must
@@ -359,7 +355,7 @@ public final class CalculationSession {
      * start) and locating each stable-phase-set change by black-box
      * bisection rather than Sundman's own exact zero-amount-phase
      * condition (a separate, larger piece of work -- see
-     * {@code StepTracer}'s own Javadoc). Unlike {@link #calculateMap},
+     * {@code StepTracer}'s own Javadoc). Unlike {@link #calculatePhaseDiagram},
      * a step never fixes a phase at zero amount and never branches into
      * multiple exits.
      *
@@ -435,33 +431,6 @@ public final class CalculationSession {
     }
 
     /**
-     * Runs a true two-axis ZPF (Zero Phase Fraction) phase-diagram map:
-     * walks {@code axis0} in fixed increments (Sundman Algorithm C1),
-     * locating each phase-boundary crossing EXACTLY via a zero-phase-
-     * amount condition (Algorithm C2, {@link
-     * calc.equil.EquilibriumSolverV2#solveBoundary}) rather than {@link
-     * #calculateStep}'s black-box bisection, and confirming genuine
-     * invariant nodes (Algorithm D) where three phases coexist. See
-     * {@link calc.diagram.MapTracer} for the full mechanism.
-     *
-     * <p><b>Scope constraint</b>: {@code axis1} (the axis released and
-     * solved for exactly at each boundary) must be {@link
-     * AxisConfig.Type#COMPOSITION} -- {@code EquilibriumSolverV2} has no
-     * T/P derivative terms yet, so a T- or P-released map is not yet
-     * supported. {@code axis0} (walked in fixed increments) may be any
-     * type, typically TEMPERATURE for a binary T-x map.
-     *
-     * @throws IllegalStateException if {@link #setModel} hasn't been called yet
-     * @throws IllegalArgumentException if {@code axis1.type != COMPOSITION}
-     */
-    public void calculateMap(AxisConfig axis0, AxisConfig axis1,
-                              double fixedT, double fixedP, double[] comp) {
-        this.currentMapResult =
-                new MapTracer().trace(axis0, axis1, fixedT, fixedP, comp,
-                        currentSystem().phaseModels());
-    }
-
-    /**
      * The most recent equilibrium result, or {@code null} if none has
      * completed yet, or it was invalidated by a subsequent {@link #setModel}
      * call onto a different system.
@@ -494,14 +463,6 @@ public final class CalculationSession {
      */
     public CoarseDiagramResult currentCoarseDiagramResult() {
         return currentCoarseDiagramResult;
-    }
-
-    /**
-     * The most recent map result, or {@code null} (same rules as
-     * {@link #currentEquilibriumResult()}).
-     */
-    public PhaseDiagramResult currentMapResult() {
-        return currentMapResult;
     }
 
     /**

@@ -372,16 +372,11 @@ public class CliApp {
     // ──────────────────────────────────────────────────────────────────
 
     /**
-    /**
-     * Automated binary phase-diagram tracing via {@link
-     * calc.diagram.PhaseDiagramEngine} -- unlike {@code map} (a single
-     * ZPF line, {@link calc.diagram.MapTracer}), this walks {@link
-     * calc.diagram.PhaseDiagramEngine#drainMapLoop} to stitch the WHOLE
-     * connected diagram from one starting point (Sundman Algorithms
-     * B/C1/C2/D). Axis convention matches {@code map}'s own: axis0 is
-     * walked in fixed increments (typically TEMPERATURE), axis1 is
-     * released and solved exactly at each boundary (must be
-     * COMPOSITION) -- see {@link CalculationSession#calculatePhaseDiagram}.
+     * Automated binary phase-diagram tracing (Sundman Algorithms
+     * A/B/C1/C2/D) via {@link CalculationSession#calculatePhaseDiagram}.
+     * axis0 is walked in fixed increments (typically TEMPERATURE), axis1
+     * is released and solved exactly at each boundary (must be
+     * COMPOSITION).
      */
     private void runPhaseDiagram(String[] args, String cwd) throws IOException {
         boolean interactive = isInteractive(args);
@@ -945,8 +940,8 @@ public class CliApp {
 
     /**
      * True two-axis ZPF phase-diagram map (Sundman 2021 Calphad 75,
-     * Algorithms C1/C2/D), routed through
-     * {@link CalculationSession#calculateMap}. {@code axis1} (released,
+     * Algorithms A/B/C1/C2/D), routed through {@link
+     * CalculationSession#calculatePhaseDiagram}. {@code axis1} (released,
      * solved for exactly at each boundary) must be COMPOSITION.
      */
     private void runMap(String[] args, String cwd) throws IOException {
@@ -974,13 +969,15 @@ public class CliApp {
         System.out.println("-------------------------------------------------");
 
         ModelSelection model = new ModelSelection(p.tdbPath, p.elements, p.phases);
-        CalculationInterface.MapParams params =
-                new CalculationInterface.MapParams(p.axis1, p.axis2, p.T, p.P, p.composition);
+        AxisConfig[] axes = { p.axis1, p.axis2 };
+        double[] startAxes = { p.axis1.min, p.axis2.min };
+        CalculationInterface.PhaseDiagramParams params =
+                new CalculationInterface.PhaseDiagramParams(axes, startAxes, p.T, p.P, p.composition);
 
         calc.diagram.PhaseDiagramResult result;
         try {
             result = CalculationInterface.runCalculating(
-                    session, CalculationKind.MAP, model, params);
+                    session, CalculationKind.PHASE_DIAGRAM, model, params);
         } catch (IllegalStateException | UnsupportedOperationException | IllegalArgumentException e) {
             System.out.println("Error: " + e.getMessage());
             return;

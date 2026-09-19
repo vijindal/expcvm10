@@ -71,10 +71,6 @@ public final class CalculationInterface {
         }
     }
 
-    public record MapParams(AxisConfig axis0, AxisConfig axis1, double fixedT, double fixedP,
-                             double[] composition) {
-    }
-
     public record PhaseDiagramParams(AxisConfig[] axes, double[] startAxes, double fixedT,
                                       double fixedP, double[] composition) {
     }
@@ -132,11 +128,6 @@ public final class CalculationInterface {
                 session.calculateCoarseTernaryDiagram(p.axisCompI(), p.axisCompJ(), p.fixedT(),
                         p.fixedP(), p.composition(), p.onProgress());
                 return (R) session.currentCoarseDiagramResult();
-            }
-            case MAP: {
-                MapParams p = (MapParams) params;
-                session.calculateMap(p.axis0(), p.axis1(), p.fixedT(), p.fixedP(), p.composition());
-                return (R) session.currentMapResult();
             }
             case PHASE_DIAGRAM: {
                 PhaseDiagramParams p = (PhaseDiagramParams) params;
@@ -226,19 +217,6 @@ public final class CalculationInterface {
                                 "Composition axis I", "", true),
                         new ParameterDescriptor("axisCompJ", ParameterDescriptor.ValueKind.AXIS_CONFIG,
                                 "Composition axis J", "", true),
-                        new ParameterDescriptor("fixedT", ParameterDescriptor.ValueKind.DOUBLE,
-                                "Temperature (K)", "1000.0", true),
-                        new ParameterDescriptor("fixedP", ParameterDescriptor.ValueKind.DOUBLE,
-                                "Pressure (Pa)", "101325.0", true),
-                        new ParameterDescriptor("composition", ParameterDescriptor.ValueKind.DOUBLE_ARRAY,
-                                "Overall composition (mole fractions)", "", true)
-                ));
-            case MAP:
-                return new ParameterSpec(List.of(
-                        new ParameterDescriptor("axis0", ParameterDescriptor.ValueKind.AXIS_CONFIG,
-                                "Axis walked in fixed increments", "", true),
-                        new ParameterDescriptor("axis1", ParameterDescriptor.ValueKind.AXIS_CONFIG,
-                                "Axis released/solved exactly at each boundary (must be COMPOSITION)", "", true),
                         new ParameterDescriptor("fixedT", ParameterDescriptor.ValueKind.DOUBLE,
                                 "Temperature (K)", "1000.0", true),
                         new ParameterDescriptor("fixedP", ParameterDescriptor.ValueKind.DOUBLE,

@@ -12,10 +12,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Regression test for a bug found while stress-testing {@code
- * calc.diagram.MapDiagramTracer}'s drain loop (see {@code
- * docs/roadmap_phase_diagrams.md}, "Two new drain-loop bugs..."):
- * {@link EquilibriumSolverV2#solveBoundary}'s Newton iteration applied
+ * Regression test for a bug found while stress-testing the diagram
+ * tracer's drain loop (see {@code docs/roadmap_phase_diagrams.md}, "Two
+ * new drain-loop bugs..."): {@link EquilibriumSolverV2#solveBoundary}'s
+ * Newton iteration applied
  * NO physical bound to the released composition variable, unlike every
  * other iterated quantity (phase amounts floored at {@code
  * MIN_PHASE_AMOUNT}, site fractions clamped to {@code [1e-14, 1.0]}).
@@ -25,9 +25,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * residuals in an already physically inconsistent system) instead of
  * throwing.
  *
- * <p><b>Concrete reproduction (found via {@code MapDiagramTracer},
- * confirmed directly against {@code solveBoundary} in isolation this
- * session):</b> Ag-Cu (SGTE-style {@code data/agcu.TDB}), fixing
+ * <p><b>Concrete reproduction (found via the diagram tracer's drain
+ * loop, confirmed directly against {@code solveBoundary} in isolation
+ * this session):</b> Ag-Cu (SGTE-style {@code data/agcu.TDB}), fixing
  * FCC_A1's amount at zero and releasing x(Cu) (component index 1) at
  * T=1205K, seeded from a converged LIQUID-only equilibrium at a
  * DIFFERENT point (T=1210K, x(Cu)=0.0453) -- a genuinely poor starting

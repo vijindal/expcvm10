@@ -20,10 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * ~0.9024/iteration), not quadratic, convergence, so
  * {@link EquilibriumSolverV2#solveBoundaryReleasingT} never reached
  * {@code tolerance=1e-10} within the 100-iteration cap even while
- * visibly homing in on the correct crossing -- this in turn caused
- * {@link calc.diagram.MapTracer} to silently fall back to the
- * unrefined grid point at every ZPF crossing found while walking a
- * TEMPERATURE axis, doubling up nodes around each true crossing.
+ * visibly homing in on the correct crossing -- this in turn caused the
+ * diagram tracer to silently fall back to the unrefined grid point at
+ * every ZPF crossing found while walking a TEMPERATURE axis, doubling
+ * up nodes around each true crossing.
  *
  * <p>Reproduces the Ag-Cu x(Cu)=0.05 LIQUID-appearance crossing
  * (OC reference: T=1176.13K) that surfaced the bug.

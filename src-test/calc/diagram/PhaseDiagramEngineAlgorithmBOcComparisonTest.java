@@ -161,8 +161,7 @@ public class PhaseDiagramEngineAlgorithmBOcComparisonTest {
 
         // OC's own map trace: "New line: 1 T= 1176.13 with: LIQUID + FCC_A1#1".
         // This codebase's own 1K search step overshoots to the first point
-        // PAST the crossing (1177K), same bracket relationship documented
-        // in StepDiagramTracerOcFormatterComparisonTest.
+        // PAST the crossing (1177K).
         assertEquals(1176.13, node0.equilibrium.T, 1.0,
                 "crossing T should match OC's own map trace within one search step");
         assertEquals(Set.of("LIQUID", "FCC_A1"), node0.equilibrium.stablePhases);

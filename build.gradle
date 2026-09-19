@@ -39,6 +39,11 @@ tasks.named('test', Test) {
     systemProperties System.properties.findAll { k, v ->
         k.toString().startsWith('sgte.') || k.toString().startsWith('tdb.')
     }
+    // Bound forked test-JVM memory: with no limit here, Gradle defaults
+    // maxParallelForks to (CPU cores / 2) and lets each forked JVM pick
+    // its own default heap, which can exhaust memory on smaller machines.
+    maxHeapSize = '512m'
+    maxParallelForks = 1
 }
 
 tasks.named('run') {
