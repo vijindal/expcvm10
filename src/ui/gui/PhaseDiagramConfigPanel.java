@@ -51,6 +51,13 @@ public class PhaseDiagramConfigPanel extends JPanel {
     private JTextField startCompositionField;
     private JLabel startCompositionLabel;
 
+    // MAP: starting point for Algorithm B's stable-set search, decoupled
+    // from axis0's own scan range (its min/max) and axis1's scan range --
+    // see PhaseDiagramRequest#setStartAxisValue.
+    private JTextField startTemperatureField;
+    private JTextField startCompositionMapField;
+    private JLabel startCompositionMapLabel;
+
     private JTextField pressureField;
     private JTextField temperatureField;
 
@@ -202,7 +209,36 @@ public class PhaseDiagramConfigPanel extends JPanel {
                         els != null && els.size() >= 2 ? "x(" + els.get(1) + ")" : "x(comp 2)");
             });
         } else {
-            temperatureField = addTextField(panel, gbc, row++, "Temperature (K)", "");
+            // MAP: axis0 is T by default and axis1 is COMPOSITION (see
+            // above), so fixedT is unused here (PhaseDiagramRequest#fixedT
+            // is only read when T isn't a diagram axis) -- what MAP needs
+            // instead is where in the diagram Algorithm B starts its
+            // stable-set search, which used to silently default to
+            // axis0.min/axis1.min (composition = 0, a pure-component edge
+            // that often has no transition in range). Both are now
+            // user-set fields.
+            startTemperatureField = addTextField(panel, gbc, row++, "Start T (K)", "300");
+            startCompositionMapLabel = new JLabel("Start x(comp 2)");
+            startCompositionMapLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0; gbc.gridwidth = 1;
+            panel.add(startCompositionMapLabel, gbc);
+
+            startCompositionMapField = new JTextField("0.5");
+            startCompositionMapField.setBackground(DarkTheme.BG_INPUT);
+            startCompositionMapField.setForeground(DarkTheme.FG_PRIMARY);
+            startCompositionMapField.setCaretColor(DarkTheme.FG_PRIMARY);
+            startCompositionMapField.setFont(new Font("Consolas", Font.PLAIN, 10));
+            gbc.gridx = 1; gbc.gridy = row; gbc.weightx = 1; gbc.gridwidth = 2;
+            panel.add(startCompositionMapField, gbc);
+            gbc.gridwidth = 1;
+            row++;
+
+            dbPanel.setOnSelectionChanged(sel -> {
+                populatePhaseCheckBoxes(sel.getAvailablePhases());
+                List<String> els = sel.getElements();
+                startCompositionMapLabel.setText(
+                        els != null && els.size() >= 2 ? "Start x(" + els.get(1) + ")" : "Start x(comp 2)");
+            });
         }
 
         // Filler
@@ -551,10 +587,18 @@ public class PhaseDiagramConfigPanel extends JPanel {
                 catch (NumberFormatException ignored) {}
             }
             request.setStartComposition(readCoarseStartComposition(sel.getElements().size()));
-        } else if (!isStep && temperatureField != null
-                   && !temperatureField.getText().trim().isEmpty()) {
-            try { request.setFixedT(Double.parseDouble(temperatureField.getText().trim())); }
-            catch (NumberFormatException ignored) {}
+        } else if (mode == Mode.MAP) {
+            if (startTemperatureField != null && axis0 != null && axis0.type == Type.TEMPERATURE) {
+                try {
+                    request.setStartAxisValue(0, Double.parseDouble(startTemperatureField.getText().trim()));
+                } catch (NumberFormatException ignored) {}
+            }
+            if (startCompositionMapField != null) {
+                try {
+                    double x2 = Double.parseDouble(startCompositionMapField.getText().trim());
+                    request.setStartComposition(new double[]{1.0 - x2, x2});
+                } catch (NumberFormatException ignored) {}
+            }
         }
         return request;
     }
