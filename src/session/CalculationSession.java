@@ -1,6 +1,6 @@
 package session;
 
-import calc.diagram.AxisConfig;
+import ui.request.AxisConfig;
 import calc.diagram.CoarseDiagramTracer;
 import calc.diagram.PhaseDiagramEngine;
 import calc.diagram.StepTracer;

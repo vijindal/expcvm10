@@ -1,4 +1,5 @@
 package calc.diagram;
+import ui.request.AxisConfig;
 
 /**
  * One thermodynamic condition in a {@link ConditionSet}, per Sundman

@@ -1,0 +1,261 @@
+@startuml ExPCVM_Architecture_Simplified
+!theme plain
+skinparam classBackgroundColor #FEFEFE
+skinparam classArrowColor #333333
+skinparam classBorderColor #333333
+skinparam classTextColor #000000
+
+' ===========================================================================================
+' LAYER 1: UI LAYER (Top)
+' ===========================================================================================
+package "ui" #36558F {
+    class MainController
+    class CliApp
+    class CalculationApiServer
+    class ModelBrowseService
+    class ModelInspectionService
+}
+
+package "ui.gui" #36558F {
+    class PhaseDiagramPanel
+    class PhaseDiagramConfigPanel
+    class MapResultPanel
+    class StepResultPanel
+}
+
+package "ui.request" #36558F {
+    class PhaseDiagramRequest
+}
+
+package "ui.result" #36558F {
+    class CoarseDiagramResult
+    class CalculationResult
+    class ModelInfo
+}
+
+' ===========================================================================================
+' LAYER 2: SESSION LAYER (Middle) - The Coordinator
+' ===========================================================================================
+package "session" #4B2F72 {
+    class CalculationSession {
+        +setModel(tdbPath, elements, phases)
+        +calculateEquilibrium(T, P, comp)
+        +calculateStep(axis, fixedT, fixedP, comp)
+        +calculatePhaseDiagram(axes, startAxes, T, P, comp)
+        +calculateCoarseBinaryDiagram()
+        +calculateCoarseTernaryDiagram()
+        +currentEquilibriumResult()
+        +currentStepResult()
+        +currentPhaseDiagram()
+        +availableElements(tdbPath)
+        +availablePhasesFor(tdbPath, elements)
+    }
+
+    interface CalculationInterface {
+        {static} runCalculating()
+        {static} runAssessing()
+    }
+}
+
+package "session.result" #4B2F72 {
+    class EquilibriumResult {
+        -state: EquilibriumState
+        -converged: boolean
+        -iterations: int
+        -residual: double
+    }
+
+    class PhaseDiagramResult {
+        -axisNames: String[]
+        -lines: List<LineSegment>
+        -nodes: List<NodePoint>
+        -complete: boolean
+    }
+}
+
+' ===========================================================================================
+' LAYER 3A: SYSTEM LAYER (Bottom Left)
+' ===========================================================================================
+package "system" #8B4513 {
+    class ThermodynamicSystem {
+        +build(tdbPath, elements, phases)
+        +getElements()
+        +getPhaseModels()
+    }
+
+    abstract class GibbsEnergyModel {
+        +evaluateG(T, P, y)
+        +gradG_dy(T, P, y)
+        +hessG_dy2(T, P, y)
+    }
+
+    class CefGibbs
+    class CvmGibbs
+    class UnaryGibbs
+}
+
+package "system.ports" #8B4513 {}
+
+' ===========================================================================================
+' LAYER 3B: CALCULATION LAYER (Bottom Right)
+' ===========================================================================================
+package "calc.equil" #228B22 {
+    class EquilibriumSolverV2 {
+        +solve()
+    }
+
+    class GridMinimizer {
+        +solve(phaseModels, T, P, comp)
+    }
+
+    class EquilibriumState {
+        -temperature: double
+        -pressure: double
+        -elementCompositions: double[]
+        -phaseAmounts: double[]
+        -stablePhases: String[]
+    }
+}
+
+package "calc.diagram" #228B22 {
+    class AxisConfig {
+        -axisName: String
+        -min: double
+        -max: double
+        -steps: int
+    }
+
+    class PhaseDiagramEngine {
+        +calculatePhaseDiagram(axes, range)
+    }
+
+    class PhaseDiagramResult {
+        -axisNames: String[]
+        -lines: List<LineSegment>
+        -nodes: List<NodePoint>
+    }
+
+    class StepTracer {
+        +trace(axis, fixedT, fixedP, comp)
+    }
+
+    class CoarseDiagramTracer {
+        +traceBinary()
+        +traceTernary()
+    }
+
+    class LineSegment
+    class NodePoint
+}
+
+' ===========================================================================================
+' CORRECT UI-SESSION INTERACTIONS (Two-way via Session only)
+' ===========================================================================================
+
+ui.MainController -.-> session.CalculationSession : browse/calculate
+ui.CliApp -.-> session.CalculationSession : browse/calculate
+ui.CalculationApiServer -.-> session.CalculationSession : browse/calculate
+ui.ModelBrowseService -.-> session.CalculationSession : uses
+ui.ModelInspectionService -.-> session.CalculationSession : uses
+session.CalculationInterface --> session.CalculationSession
+
+' ===========================================================================================
+' *** VIOLATIONS FIXED ***
+' ===========================================================================================
+' ✅ AxisConfig moved from calc.diagram to ui.request (ALL imports updated)
+' ✅ All legacy code dependencies cleaned up (deprecated stubs in place)
+' ⚠️  PhaseDiagramResult still imported directly from calc.diagram by UI panels (TODO)
+
+' ===========================================================================================
+' SESSION-SYSTEM/CALCULATION INTERACTIONS (Session controls both)
+' ===========================================================================================
+
+session.CalculationSession --> system.ThermodynamicSystem
+session.CalculationSession --> calc.equil.EquilibriumSolverV2
+session.CalculationSession --> calc.equil.GridMinimizer
+session.CalculationSession --> calc.diagram.PhaseDiagramEngine
+session.CalculationSession --> calc.diagram.StepTracer
+session.CalculationSession --> calc.diagram.CoarseDiagramTracer
+
+session.CalculationSession --> session.result.EquilibriumResult
+session.CalculationSession --> session.result.PhaseDiagramResult
+session.CalculationSession --> ui.result.CoarseDiagramResult
+
+' ===========================================================================================
+' SYSTEM LAYER RELATIONSHIPS
+' ===========================================================================================
+
+system.ThermodynamicSystem --> system.GibbsEnergyModel
+system.GibbsEnergyModel <|-- system.CefGibbs
+system.GibbsEnergyModel <|-- system.CvmGibbs
+system.GibbsEnergyModel <|-- system.UnaryGibbs
+
+' ===========================================================================================
+' CALCULATION LAYER RELATIONSHIPS
+' ===========================================================================================
+
+calc.equil.EquilibriumSolverV2 --> system.GibbsEnergyModel
+calc.equil.EquilibriumSolverV2 --> system.ports.EquilibriumResult
+calc.equil.EquilibriumSolverV2 --> calc.equil.EquilibriumState
+
+calc.equil.GridMinimizer --> system.GibbsEnergyModel
+calc.equil.GridMinimizer --> system.ports.EquilibriumResult
+
+calc.diagram.PhaseDiagramEngine --> calc.equil.EquilibriumSolverV2
+calc.diagram.PhaseDiagramEngine --> calc.diagram.PhaseDiagramResult
+calc.diagram.PhaseDiagramEngine --> calc.diagram.LineSegment
+calc.diagram.PhaseDiagramEngine --> calc.diagram.NodePoint
+
+calc.diagram.StepTracer --> calc.equil.EquilibriumSolverV2
+calc.diagram.StepTracer --> calc.diagram.PhaseDiagramResult
+calc.diagram.StepTracer --> ui.request.AxisConfig
+
+calc.diagram.CoarseDiagramTracer --> calc.equil.GridMinimizer
+calc.diagram.CoarseDiagramTracer --> ui.result.CoarseDiagramResult
+calc.diagram.CoarseDiagramTracer --> ui.request.AxisConfig
+
+calc.diagram.PhaseDiagramResult --> calc.diagram.LineSegment
+calc.diagram.PhaseDiagramResult --> calc.diagram.NodePoint
+
+' ===========================================================================================
+' ANNOTATIONS
+' ===========================================================================================
+
+note top of ui.MainController
+  **UI LAYER - CORRECT**
+  Only communicates with CalculationSession
+  OK: UI components composed together
+end note
+
+note right of ui.gui.PhaseDiagramPanel
+  **⚠️ VIOLATIONS DETECTED**
+  Direct imports from calc.diagram:
+  - PhaseDiagramResult
+  - AxisConfig
+
+  These should come through
+  CalculationSession instead!
+end note
+
+note top of session.CalculationSession
+  **SESSION LAYER - THE COORDINATOR**
+  Holds current System + Latest Results
+  Routes all UI requests via CalculationInterface
+  Controls both System and Calculation layers
+end note
+
+note bottom of system.ThermodynamicSystem
+  **SYSTEM LAYER**
+  Builds GibbsEnergyModel from TDB
+  Provides G, dG/dy, d2G/dy2
+  Only called by CalculationSession
+end note
+
+note bottom of calc.equil.EquilibriumSolverV2
+  **CALCULATION LAYER**
+  Solves equilibrium (Sundman Algorithm A)
+  Traces phase diagrams (Algorithms B/C/D)
+  Only called by CalculationSession
+end note
+
+@enduml

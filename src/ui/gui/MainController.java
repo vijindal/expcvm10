@@ -159,9 +159,9 @@ public class MainController {
             ModelSelection model = new ModelSelection(request.getTdbFilePath(),
                     request.getElements(), request.getPhases());
 
-            List<calc.diagram.AxisConfig> axes = request.getAxes();
-            calc.diagram.AxisConfig axisX = axes.get(0);
-            calc.diagram.AxisConfig axisY = axes.get(1);
+            List<ui.request.AxisConfig> axes = request.getAxes();
+            ui.request.AxisConfig axisX = axes.get(0);
+            ui.request.AxisConfig axisY = axes.get(1);
             double[] comp = request.getStartComposition();
 
             ui.result.CoarseDiagramResult r;

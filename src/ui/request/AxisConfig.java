@@ -1,10 +1,10 @@
-package calc.diagram;
+package ui.request;
 
 /**
  * Configuration for one axis of a phase diagram calculation.
  *
  * <p>An axis represents a variable condition that is scanned during diagram
- * tracing.  Common examples:
+ * tracing. Common examples:
  * <ul>
  *   <li>Temperature T (K) — axis type {@link Type#TEMPERATURE}</li>
  *   <li>Mole fraction x(B) — axis type {@link Type#COMPOSITION}</li>

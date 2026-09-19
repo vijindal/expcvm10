@@ -1,4 +1,5 @@
 package calc.diagram;
+import ui.request.AxisConfig;
 
 import calc.diagram.PhaseDiagramResult.LineSegment;
 import calc.diagram.PhaseDiagramResult.NodePoint;

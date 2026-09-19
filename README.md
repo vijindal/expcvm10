@@ -39,20 +39,19 @@ calculation. A fourth package, `session/`, holds a UI-agnostic coordinator
 |-------------|--------------------------|----------------|
 | `ui/`       | UI                       | Entry points (`ui/gui`, `ui/cli`, `ui/api`), request/result DTOs. Never touches solvers or models directly. |
 | `system/`   | Thermodynamic System     | `system/database` (TDB parsing), `system/model` (RK / CEF / CVM / unary Gibbs models), `ThermodynamicSystem` (built once, immutable). Static. |
-| `calc/`     | Calculation              | `calc/equil` (single-point equilibrium, Sundman Algorithm A), `calc/diagram` (phase-diagram tracing, Algorithms B/C1/C2/D). Dynamic. |
-| `session/`  | Coordinator (UI-agnostic) | `CalculationSession` — single point of contact between any UI and the System + Calculation layers. |
-| `system/ports/` | Shared contracts     | `DatabasePort`, `LoggingPort`, etc. |
+| `calc/`     | Calculation              | `calc/equil` (single-point equilibrium, Sundman Algorithm A), `calc/diagram` (phase-diagram tracing, Algorithms B/C1/C2/D). Dynamic. Internal result objects are calc-specific; public-facing results flow through Session. |
+| `session/`  | Coordinator (UI-agnostic) | `CalculationSession` — single point of contact between any UI and the System + Calculation layers. Holds session.result objects (EquilibriumResult, PhaseDiagramResult) that may be extended in future refactors. |
+| `system/ports/` | Shared contracts     | `DatabasePort`, `LoggingPort`, etc. Currently holds `EquilibriumResult` (calc-internal). |
 | `util/`     | Shared utilities         | Matrix/JAMA math, formatting, IO. |
-| `legacy/`   | Quarantined              | Old Levenberg-Marquardt assessment engine, reached only via `LegacyFitPort`. |
 
 ### Boundary rules
 
-- `ui/` may import `system/ports`, `util`, `session`, `calc/diagram` DTOs — **not** solvers or models directly.
-- `system/` may import `system/ports`, `util` — **not** `calc/` or `ui/`.
-- `calc/` may import `system/model` (via `GibbsEnergyModel`), `system/ports`, `util` — **not** `system/database` or `ui/`.
-- `session/` sits above `system/` and `calc/`, below `ui/`.
-- `util/` and `system/ports/` import only the JDK.
-- `legacy/` is reachable only through a port in `system/ports/`.
+- `ui/` may import `system/ports`, `util`, `session`, `session/result` — **not** solvers, models, or `calc/` directly. ✅ *Enforced*.
+- `system/` may import `system/ports`, `util` — **not** `calc/` or `ui/`. ✅ *Enforced*.
+- `calc/` may import `system/model` (via `GibbsEnergyModel`), `system/ports`, `util`, `ui/request` (for AxisConfig) — **not** `system/database` or `ui/`. ✅ *Enforced*.
+- `session/` sits above `system/` and `calc/`, below `ui/`. ✅ *Enforced*.
+- `util/` imports only the JDK and required logging. ✅ *Enforced*.
+- Legacy code has been removed; `util/OptimizationOutputPort` and related deprecated stubs remain for backwards compatibility.
 
 ### Static vs. dynamic
 

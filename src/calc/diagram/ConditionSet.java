@@ -1,4 +1,5 @@
 package calc.diagram;
+import ui.request.AxisConfig;
 
 import java.util.ArrayList;
 import java.util.List;

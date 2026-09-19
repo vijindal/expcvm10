@@ -141,6 +141,16 @@ public final class EquilibriumResult {
      */
     public static final class PhaseResult {
         public final String   phaseName;
+        /**
+         * Unique identity for this stable slot: {@code phaseName} itself
+         * when only one slot uses that phase model, or {@code
+         * phaseName + "#" + n} (OC's own convention) when a miscibility
+         * gap has split one candidate across multiple stable slots --
+         * see {@code calc.equil.EquilibriumSolverV2#buildEquilibriumResult}.
+         * Defaults to {@code phaseName} for callers that don't
+         * disambiguate (metastable results, hand-built test results).
+         */
+        public final String   instanceLabel;
         public final String   modelType;
         public final double   amount;        // ℵ (formula units)
         public final double[] x;             // mole fractions
@@ -152,14 +162,21 @@ public final class EquilibriumResult {
         public PhaseResult(String phaseName, String modelType,
                            double amount, double[] x, double[] y,
                            double G, double drivingForce, double totalMoles) {
-            this.phaseName    = phaseName;
-            this.modelType    = modelType;
-            this.amount       = amount;
-            this.x            = x.clone();
-            this.y            = y.clone();
-            this.G            = G;
-            this.drivingForce = drivingForce;
-            this.totalMoles   = totalMoles;
+            this(phaseName, phaseName, modelType, amount, x, y, G, drivingForce, totalMoles);
+        }
+
+        public PhaseResult(String phaseName, String instanceLabel, String modelType,
+                           double amount, double[] x, double[] y,
+                           double G, double drivingForce, double totalMoles) {
+            this.phaseName     = phaseName;
+            this.instanceLabel = instanceLabel;
+            this.modelType     = modelType;
+            this.amount        = amount;
+            this.x             = x.clone();
+            this.y             = y.clone();
+            this.G             = G;
+            this.drivingForce  = drivingForce;
+            this.totalMoles    = totalMoles;
         }
 
         /**

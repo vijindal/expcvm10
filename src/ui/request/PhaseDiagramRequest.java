@@ -1,6 +1,6 @@
 package ui.request;
 
-import calc.diagram.AxisConfig;
+import ui.request.AxisConfig;
 
 import java.util.ArrayList;
 import java.util.List;

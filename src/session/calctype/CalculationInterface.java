@@ -1,6 +1,6 @@
 package session.calctype;
 
-import calc.diagram.AxisConfig;
+import ui.request.AxisConfig;
 import session.CalculationSession;
 import system.ports.EquilibriumResult;
 import ui.result.CoarseDiagramResult;

@@ -1,8 +1,8 @@
 package ui.gui;
 
 import ui.request.PhaseDiagramRequest;
-import calc.diagram.AxisConfig;
-import calc.diagram.AxisConfig.Type;
+import ui.request.AxisConfig;
+import ui.request.AxisConfig.Type;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;

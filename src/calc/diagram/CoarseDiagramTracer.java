@@ -1,4 +1,5 @@
 package calc.diagram;
+import ui.request.AxisConfig;
 
 import system.model.GibbsEnergyModel;
 import ui.result.CoarseDiagramResult;

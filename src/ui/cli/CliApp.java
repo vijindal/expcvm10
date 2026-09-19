@@ -6,7 +6,6 @@ import ui.layer.OptimizationUseCase;
 import ui.layer.ModelInspectionService;
 import ui.layer.ModelBrowseService;
 import ui.layer.CompositionUnits;
-import system.database.TdbParser;
 import system.ports.EquilibriumResult;
 import session.CalculationSession;
 import session.calctype.CalculationInterface;
@@ -14,8 +13,8 @@ import session.calctype.CalculationGroup;
 import session.calctype.CalculationKind;
 import session.calctype.CalculationOutcome;
 import session.calctype.ModelSelection;
-import calc.diagram.AxisConfig;
-import calc.diagram.AxisConfig.Type;
+import ui.request.AxisConfig;
+import ui.request.AxisConfig.Type;
 import ui.result.EquilibriumReport;
 
 import java.io.IOException;
@@ -79,8 +78,7 @@ public class CliApp {
 
     public CliApp(OptimizationUseCase optimizationUseCase) {
         this.optimizationUseCase = optimizationUseCase;
-        // Retained only for the legacy `cal` command (ValidateModelUseCase).
-        this.modelInspectionService = new ModelInspectionService(new TdbParser());
+        this.modelInspectionService = new ModelInspectionService(session);
     }
 
     private Prompter prompter(String cwd) {

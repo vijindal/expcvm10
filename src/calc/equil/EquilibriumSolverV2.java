@@ -1643,12 +1643,57 @@ public class EquilibriumSolverV2 {
         if (stablePhases != null
                 && stableSlots != null) {
 
+            /*
+             * Instance labels (OC's own "#1"/"#2" convention, entered
+             * once per miscibility-gap split via OC's own
+             * enter_composition_set and then kept fixed for the rest of
+             * that calculation -- gtp3B.F90). This codebase does not
+             * persist a slot-identity across separate solve() calls the
+             * way OC's composition-set index does, so instead ordinals
+             * are assigned by each duplicate-named slot's own mole
+             * fraction, lexicographically ascending, not by its
+             * position in stableSlots -- stableSlots' own order is not
+             * guaranteed stable between two consecutive walk steps for
+             * what is physically the same branch, but along a
+             * continuous ZPF line the two branches of a gap do not cross
+             * each other's composition, so this keeps "#1"/"#2" attached
+             * to the same physical branch step to step.
+             */
+            java.util.Map<String, java.util.List<Integer>> slotsByName = new java.util.LinkedHashMap<>();
+            for (int k = 0; k < stableSlots.size(); k++) {
+                slotsByName.computeIfAbsent(stableSlots.get(k).model.phaseName(),
+                        n -> new java.util.ArrayList<>()).add(k);
+            }
+            java.util.Map<Integer, String> instanceLabelBySlot = new java.util.HashMap<>();
+            for (java.util.Map.Entry<String, java.util.List<Integer>> e : slotsByName.entrySet()) {
+                java.util.List<Integer> slots = e.getValue();
+                if (slots.size() == 1) {
+                    instanceLabelBySlot.put(slots.get(0), e.getKey());
+                    continue;
+                }
+                slots.sort((k1, k2) -> {
+                    double[] mA1 = stableSlots.get(k1).mA;
+                    double[] mA2 = stableSlots.get(k2).mA;
+                    for (int a = 0; a < Math.min(mA1.length, mA2.length); a++) {
+                        int cmp = Double.compare(mA1[a], mA2[a]);
+                        if (cmp != 0) return cmp;
+                    }
+                    return 0;
+                });
+                for (int ordinal = 0; ordinal < slots.size(); ordinal++) {
+                    instanceLabelBySlot.put(slots.get(ordinal), e.getKey() + "#" + (ordinal + 1));
+                }
+            }
+
             for (int k = 0;
                  k < stablePhases.length;
                  k++) {
 
                 PhaseWork work =
                         stableSlots.get(k);
+
+                String slotPhaseName = work.model.phaseName();
+                String instanceLabel = instanceLabelBySlot.get(k);
 
                 double[] slotMA =
                         work.mA.clone();
@@ -1698,7 +1743,8 @@ public class EquilibriumSolverV2 {
 
                 stableResults.add(
                         new EquilibriumResult.PhaseResult(
-                                work.model.phaseName(),
+                                slotPhaseName,
+                                instanceLabel,
                                 work.model.modelType(),
                                 phaseAmounts[k],
                                 slotX,

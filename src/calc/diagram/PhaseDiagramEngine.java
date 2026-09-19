@@ -1,4 +1,5 @@
 package calc.diagram;
+import ui.request.AxisConfig;
 
 import calc.equil.EquilibriumSolverV2;
 import calc.equil.GridMinimizer;
@@ -35,7 +36,28 @@ public final class PhaseDiagramEngine {
         public final java.util.Map<String, Double> phaseTotalMoles;
         public final double[] chemicalPotentials;
         public final ConditionSet conditions;
+        /**
+         * Every map/set above is keyed by each stable slot's own {@code
+         * instanceLabel} (its bare candidate phase name, or that name
+         * plus OC's own "#<digit>" suffix when a miscibility gap splits
+         * one candidate across two or more slots -- Sundman 2021 S2.3.1:
+         * "A phase with a miscibility gap has a single Gibbs energy
+         * function but can appear as two (or more) separate phases with
+         * different compositions... In OC and TC they are identified
+         * with a suffix #<digit>"), NOT by the bare candidate name --
+         * two slots sharing a bare name would otherwise collapse into
+         * one map entry.
+         */
         public final java.util.Set<String> stablePhases;
+        /**
+         * Each stable slot's own {@code instanceLabel} (as used to key
+         * every map/set above) mapped back to its underlying candidate's
+         * bare {@code phaseName} -- needed wherever a slot must be
+         * re-matched against {@code List<GibbsEnergyModel> candidates}
+         * (e.g. re-seeding {@link EquilibriumSolverV2}), since the model
+         * itself has no notion of the "#<digit>" instance suffix.
+         */
+        public final java.util.Map<String, String> phaseModelNames;
         public final boolean converged;
         public final boolean globallyStable;
 
@@ -49,6 +71,7 @@ public final class PhaseDiagramEngine {
                 double[] chemicalPotentials,
                 ConditionSet conditions,
                 java.util.Set<String> stablePhases,
+                java.util.Map<String, String> phaseModelNames,
                 boolean converged,
                 boolean globallyStable) {
             this.T = T;
@@ -60,6 +83,7 @@ public final class PhaseDiagramEngine {
             this.chemicalPotentials = chemicalPotentials.clone();
             this.conditions = conditions;
             this.stablePhases = java.util.Set.copyOf(stablePhases);
+            this.phaseModelNames = java.util.Map.copyOf(phaseModelNames);
             this.converged = converged;
             this.globallyStable = globallyStable;
         }
@@ -68,7 +92,7 @@ public final class PhaseDiagramEngine {
         public DiagramEquilibrium withPhaseAmounts(java.util.Map<String, Double> newPhaseAmounts) {
             return new DiagramEquilibrium(T, P, newPhaseAmounts, phaseConstitutions,
                     phaseMoleFractions, phaseTotalMoles, chemicalPotentials, conditions,
-                    stablePhases, converged, globallyStable);
+                    stablePhases, phaseModelNames, converged, globallyStable);
         }
     }
 
@@ -256,7 +280,15 @@ public final class PhaseDiagramEngine {
         return comp;
     }
 
-    /** Converts a solver-level {@link EquilibriumResult} into a {@link DiagramEquilibrium}. */
+    /**
+     * Converts a solver-level {@link EquilibriumResult} into a {@link
+     * DiagramEquilibrium}, keyed by each {@code PhaseResult}'s {@code
+     * instanceLabel} rather than its bare {@code phaseName} -- a
+     * miscibility gap that splits one candidate across two stable slots
+     * (Sundman 2021 discusses this; OC/TC distinguish the slots with
+     * "#1"/"#2" suffixes) would otherwise silently collapse into one
+     * map entry, losing a stable phase.
+     */
     private static DiagramEquilibrium toDiagramEquilibrium(
             EquilibriumResult result, ConditionSet conds, List<GibbsEnergyModel> candidates) {
 
@@ -265,12 +297,14 @@ public final class PhaseDiagramEngine {
         java.util.Map<String, double[]> phaseMoleFractions = new java.util.LinkedHashMap<>();
         java.util.Map<String, Double> phaseTotalMoles = new java.util.LinkedHashMap<>();
         java.util.Set<String> stablePhases = new java.util.LinkedHashSet<>();
+        java.util.Map<String, String> phaseModelNames = new java.util.LinkedHashMap<>();
         for (EquilibriumResult.PhaseResult pr : result.getStablePhases()) {
-            phaseAmounts.put(pr.phaseName, pr.amount);
-            phaseConstitutions.put(pr.phaseName, pr.y);
-            phaseMoleFractions.put(pr.phaseName, pr.x);
-            phaseTotalMoles.put(pr.phaseName, pr.totalMoles);
-            stablePhases.add(pr.phaseName);
+            phaseAmounts.put(pr.instanceLabel, pr.amount);
+            phaseConstitutions.put(pr.instanceLabel, pr.y);
+            phaseMoleFractions.put(pr.instanceLabel, pr.x);
+            phaseTotalMoles.put(pr.instanceLabel, pr.totalMoles);
+            stablePhases.add(pr.instanceLabel);
+            phaseModelNames.put(pr.instanceLabel, pr.phaseName);
         }
 
         boolean globallyStable = result.isConverged() && isGloballyStable(result, candidates);
@@ -278,7 +312,7 @@ public final class PhaseDiagramEngine {
         return new DiagramEquilibrium(
                 result.getT(), result.getP(), phaseAmounts, phaseConstitutions,
                 phaseMoleFractions, phaseTotalMoles, result.getMu(), conds, stablePhases,
-                result.isConverged(), globallyStable);
+                phaseModelNames, result.isConverged(), globallyStable);
     }
 
     /**
@@ -520,8 +554,6 @@ public final class PhaseDiagramEngine {
                 return;
             }
 
-            java.util.Set<String> runningStableSet = exit.equilibrium.stablePhases;
-
             DiagramLineResult line = new DiagramLineResult(exit.node, exit.fixedPhase);
             diagram.lines.add(line);
 
@@ -543,6 +575,19 @@ public final class PhaseDiagramEngine {
                 result = callAlgorithmAOrZpf(
                         conds, currentAxisValues, axis, exit.fixedPhase, seed, candidates);
             }
+
+            // Defined from the first valid line point, not exit.equilibrium's
+            // own stable set: for a D-generated exit, exit.equilibrium is the
+            // invariant node's equilibrium and still carries the forbidden
+            // phase at zero amount in its stablePhases (Sundman 2021 S3.3,
+            // Eq. (9) -- withPhaseAmounts only swaps amounts, the stable set
+            // is the invariant's). "phi2 [is] forbidden to become stable at
+            // the first increments... This is tested by algorithm C1... at
+            // the first axis increment" -- so the forbidden phase is expected
+            // to already be gone from result.stablePhases here, and using the
+            // invariant's stale set as the baseline would misread that
+            // expected removal as a spurious phase change below.
+            java.util.Set<String> runningStableSet = result.stablePhases;
 
             int attempts = 0;
             while (true) {
@@ -1189,14 +1234,22 @@ public final class PhaseDiagramEngine {
      * sufficient to seed {@link EquilibriumSolverV2#solveZpf}, which only
      * reads {@code phaseName}/{@code amount}/{@code y} off each seed
      * {@code PhaseResult} and recomputes everything else itself.
+     *
+     * <p>{@code eq.stablePhases} is keyed by instance label (see {@link
+     * DiagramEquilibrium#stablePhases}'s own javadoc), but {@link
+     * EquilibriumSolverV2#seedFromEquilibriumResult} re-matches each seed
+     * {@code PhaseResult} against {@code candidates} by its BARE {@code
+     * phaseName} -- so that field is read back from {@link
+     * DiagramEquilibrium#phaseModelNames} here, not the instance label
+     * itself.
      */
     private static EquilibriumResult toEquilibriumResultForSeeding(DiagramEquilibrium eq) {
         List<EquilibriumResult.PhaseResult> stable = new java.util.ArrayList<>();
-        for (String phaseName : eq.stablePhases) {
+        for (String instanceLabel : eq.stablePhases) {
             stable.add(new EquilibriumResult.PhaseResult(
-                    phaseName, "", eq.phaseAmounts.get(phaseName),
-                    eq.phaseMoleFractions.get(phaseName), eq.phaseConstitutions.get(phaseName),
-                    0.0, 0.0, eq.phaseTotalMoles.get(phaseName)));
+                    eq.phaseModelNames.get(instanceLabel), "", eq.phaseAmounts.get(instanceLabel),
+                    eq.phaseMoleFractions.get(instanceLabel), eq.phaseConstitutions.get(instanceLabel),
+                    0.0, 0.0, eq.phaseTotalMoles.get(instanceLabel)));
         }
         return new EquilibriumResult(eq.T, eq.P, eq.chemicalPotentials,
                 stable, java.util.Collections.emptyList(), eq.converged, 0);

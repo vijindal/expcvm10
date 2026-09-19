@@ -9,7 +9,7 @@ import ui.api.dto.PhaseDiagramRequest;
 import ui.api.dto.PhasesRequest;
 import ui.api.dto.PhasesResponse;
 import ui.api.dto.SetModelRequest;
-import calc.diagram.AxisConfig;
+import ui.request.AxisConfig;
 import com.google.gson.Gson;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
