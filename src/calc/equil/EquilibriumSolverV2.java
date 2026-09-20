@@ -244,11 +244,14 @@ public class EquilibriumSolverV2 {
     private static final int MAX_INTERNAL_ITER = 50;
 
     /**
-     * Working data for one CEF phase.
+     * Working data for one phase (any {@link GibbsEnergyModel}, CEF or
+     * CVM). Generic since Step 5 -- only the CEF-specific candidate-
+     * addition/grid-sampling call sites still require a {@link CefGibbs}
+     * model beyond this class's own fields.
      */
     private static final class PhaseWork {
 
-        final CefGibbs model;
+        final GibbsEnergyModel model;
 
         double[] y;
         double G;
@@ -276,7 +279,7 @@ public class EquilibriumSolverV2 {
          */
         PhaseEquilData equilData;
 
-        PhaseWork(CefGibbs model) {
+        PhaseWork(GibbsEnergyModel model) {
             this.model = model;
         }
     }
@@ -1793,15 +1796,11 @@ public class EquilibriumSolverV2 {
      * gap and select an initial stable-phase set from among the
      * candidates, rather than always starting at candidate 0.
      *
-     * Remaining scope limitation: CEF phases only (GridMinimizer itself is
-     * model-agnostic, but the PhaseWork bookkeeping below still requires
-     * CefGibbs).
-     *
-     * For a KNOWN, already-validated fixed multiphase starting point
-     * (e.g. a controlled two-phase test), use
-     * {@link #setInitialStateForTest} to bypass GridMinimizer entirely.
-     * Phase selection during the iteration itself remains
-     * updateStablePhaseSet()'s responsibility (currently a no-op).
+     * PhaseWork bookkeeping itself is model-agnostic, but {@link
+     * GridMinimizer}'s site-fraction sampling is CEF-specific. A non-CEF
+     * candidate (e.g. CVM) must instead reach {@link #solve} via
+     * {@link #setInitialStateForTest}, which bypasses GridMinimizer
+     * entirely with an explicitly supplied stable set.
      */
     private void initialize() {
 
@@ -1830,20 +1829,8 @@ public class EquilibriumSolverV2 {
             GibbsEnergyModel model =
                     phaseModels.get(p);
 
-            if (!(model instanceof CefGibbs)) {
-
-                throw new UnsupportedOperationException(
-                        "EquilibriumSolverV2 currently requires "
-                        + "CEF candidate phases. Phase "
-                        + p + " (" + model.phaseName()
-                        + ") is not a CefGibbs.");
-            }
-
-            CefGibbs cef =
-                    (CefGibbs) model;
-
             PhaseWork work =
-                    new PhaseWork(cef);
+                    new PhaseWork(model);
 
             /*
              * For initialization only, seed every candidate phase with
@@ -1852,10 +1839,15 @@ public class EquilibriumSolverV2 {
              *
              * Later the grid/global initializer will replace this with
              * proper phase-specific starting constitutions.
+             *
+             * initializeSinglePhaseState() covers every GibbsEnergyModel
+             * generically (getInitialInternalVars()/isValid() are already
+             * part of the model-agnostic contract) -- see that method's
+             * javadoc.
              */
             work.y =
                     initializeSinglePhaseState(
-                            cef,
+                            model,
                             targetComposition());
 
             evaluatePhaseWork(work);
@@ -1895,11 +1887,8 @@ public class EquilibriumSolverV2 {
                 int p =
                         stablePhases[k];
 
-                CefGibbs cef =
-                        (CefGibbs) phaseModels.get(p);
-
                 PhaseWork work =
-                        new PhaseWork(cef);
+                        new PhaseWork(phaseModels.get(p));
 
                 work.y =
                         testInitialState.y[k].clone();
@@ -1982,11 +1971,8 @@ public class EquilibriumSolverV2 {
                  * vertices (a miscibility gap), which needs two
                  * independent constitutions here, not one aliased object.
                  */
-                CefGibbs cef =
-                        (CefGibbs) phaseModels.get(p);
-
                 PhaseWork work =
-                        new PhaseWork(cef);
+                        new PhaseWork(phaseModels.get(p));
 
                 work.y =
                         pr.y.clone();
@@ -2125,42 +2111,41 @@ public class EquilibriumSolverV2 {
     // ================================================================
 
     /**
-     * Initializes the constitution of a single CEF phase for the requested
-     * overall composition.
+     * Initializes the constitution of a single phase for the requested
+     * overall composition, via the model-agnostic {@link
+     * GibbsEnergyModel#getInitialInternalVars}/{@link
+     * GibbsEnergyModel#isValid} contract.
      *
-     * The initialization is delegated to the CEF adapter because it knows
-     * the complete sublattice structure, constituent mapping, vacancies, etc.
-     *
-     * No phase-specific expressions are used here.
+     * The initialization is delegated to the model itself because it knows
+     * its own internal-variable structure -- CEF's sublattice/constituent/
+     * vacancy structure via {@link CefGibbs#getInitialInternalVars}, or a
+     * CVM phase's {@code u2 = [u; x]} vector via {@link
+     * system.model.cvm.CvmGibbsModel#getInitialInternalVars}. No
+     * phase-specific expressions are used here.
      */
     private double[] initializeSinglePhaseState(
-            CefGibbs phase,
+            GibbsEnergyModel phase,
             double[] xOverall) {
 
         if (phase == null)
             throw new IllegalArgumentException(
-                    "CEF phase must not be null.");
+                    "Phase model must not be null.");
 
         if (xOverall == null || xOverall.length == 0)
             throw new IllegalArgumentException(
                     "Overall composition must not be null or empty.");
 
-        /*
-         * CefGibbs.getInitialInternalVars() constructs a strictly
-         * positive constitution satisfying the CEF sublattice-normalization
-         * constraints and matching the requested overall composition as closely
-         * as possible.
-         */
         double[] y =
                 phase.getInitialInternalVars(xOverall);
 
         if (y == null)
             throw new IllegalStateException(
-                    "CEF phase could not generate an initial constitution.");
+                    "Phase model could not generate an initial constitution.");
 
         if (!phase.isValid(y))
             throw new IllegalStateException(
-                    "CEF initial constitution is invalid.");
+                    "Initial constitution is invalid for phase "
+                    + phase.phaseName() + ".");
 
         return y;
     }
@@ -2270,7 +2255,7 @@ public class EquilibriumSolverV2 {
                 || work.model == null) {
 
             throw new IllegalArgumentException(
-                    "PhaseWork must contain a CEF model.");
+                    "PhaseWork must contain a phase model.");
         }
 
         if (work.y == null) {
