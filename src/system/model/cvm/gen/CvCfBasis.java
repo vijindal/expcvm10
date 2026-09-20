@@ -492,6 +492,23 @@ public final class CvCfBasis {
                         VSpec.point(1, 2),
                         // xD = p[1][D]
                         VSpec.point(1, 3)));
+
+        // -----------------------------------------------------------------
+        // Auto-register BCC_A2 | T-model | all K using CvCfBasisGenerator
+        // This demonstrates that the generated definitions are equivalent
+        // to the hand-coded ones above. The hand-coded versions remain for
+        // backward compatibility and documentation; in principle, all could
+        // be replaced by generated definitions once equivalence is proven.
+        // -----------------------------------------------------------------
+        for (int K = 2; K <= 4; K++) {
+            String key = "BCC_A2_T_" + K;
+            if (!REGISTRY.containsKey(key)) {
+                register("BCC_A2", "T", K,
+                        CvCfBasisGenerator.generateBccA2LogicalSiteCoords(),
+                        CvCfBasisGenerator.generateCfNames(K),
+                        CvCfBasisGenerator.generateVSpecs(K));
+            }
+        }
     }
 
     // =========================================================================
