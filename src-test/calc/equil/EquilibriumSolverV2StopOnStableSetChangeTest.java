@@ -50,11 +50,10 @@ public class EquilibriumSolverV2StopOnStableSetChangeTest {
 
         List<String> elements = Arrays.asList("V", "ZR");
 
-        @SuppressWarnings("unchecked")
-        List<CefGibbs> raw =
-                (List<CefGibbs>) parser.buildPhaseModels(elements, Arrays.asList(PHASE_A));
+        List<GibbsEnergyModel> raw =
+                parser.buildPhaseModels(elements, Arrays.asList(PHASE_A));
 
-        CefGibbs v2zr = raw.get(0);
+        CefGibbs v2zr = (CefGibbs) raw.get(0);
         List<GibbsEnergyModel> candidates = Arrays.asList((GibbsEnergyModel) v2zr);
 
         double xZrLow = 0.30;
@@ -115,11 +114,10 @@ public class EquilibriumSolverV2StopOnStableSetChangeTest {
 
         List<String> elements = Arrays.asList("V", "ZR");
 
-        @SuppressWarnings("unchecked")
-        List<CefGibbs> raw =
-                (List<CefGibbs>) parser.buildPhaseModels(elements, Arrays.asList(PHASE_A));
+        List<GibbsEnergyModel> raw =
+                parser.buildPhaseModels(elements, Arrays.asList(PHASE_A));
 
-        CefGibbs v2zr = raw.get(0);
+        CefGibbs v2zr = (CefGibbs) raw.get(0);
         List<GibbsEnergyModel> candidates = Arrays.asList((GibbsEnergyModel) v2zr);
 
         double xZrLow = 0.30;

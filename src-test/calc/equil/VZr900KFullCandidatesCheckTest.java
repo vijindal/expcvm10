@@ -28,10 +28,8 @@ public class VZr900KFullCandidatesCheckTest {
         List<String> elements = Arrays.asList("V", "ZR");
         List<String> phaseNames = Arrays.asList("LIQUID", "BCC_A2", "HCP_A3", "V2ZR");
 
-        @SuppressWarnings("unchecked")
-        List<CefGibbs> raw = (List<CefGibbs>) parser.buildPhaseModels(elements, phaseNames);
-        List<GibbsEnergyModel> candidates = new java.util.ArrayList<>();
-        for (CefGibbs c : raw) candidates.add(c);
+        List<GibbsEnergyModel> raw = parser.buildPhaseModels(elements, phaseNames);
+        List<GibbsEnergyModel> candidates = new java.util.ArrayList<>(raw);
 
         System.out.println("Candidates: " + phaseNames);
 

@@ -2,26 +2,17 @@ package system.model;
 
 import system.database.tdb;
 import system.model.cef.CefGibbs;
+import system.model.cvm.CvmPhaseSpec;
 
 import java.util.List;
 import java.util.Map;
 
 /**
- * Thin compatibility shim for constructing phase Gibbs-energy models from
- * a TDB database.
- *
- * <p>The CEF model now builds itself directly from a database, in the
- * style of pycalphad's {@code Model(dbe, comps, phase_name)} — see
- * {@link CefGibbs#CefGibbs(tdb, List, String)}. This class exists only so
- * existing callers keep compiling; both {@link #build} and
- * {@link #toGibbsModel} just forward to / return a {@link CefGibbs}, which
- * is itself a {@link GibbsEnergyModel}.
- *
- * <p>Every phase is represented with the Compound Energy Formalism,
- * regardless of sublattice count (a one-sublattice substitutional
- * solution is the CEF 1-sublattice special case).
- * {@link PhaseModelKind#CVM} is reserved for a future Cluster Variation
- * Method model and currently throws {@link UnsupportedOperationException}.
+ * Constructs phase {@link GibbsEnergyModel}s: {@link CefGibbs} from a TDB
+ * database via {@link #build}, or a CVM model from an explicit
+ * {@link CvmPhaseSpec} via {@link #buildCvm} (CVM has no TDB grammar yet).
+ * {@link PhaseModelKind#CVM} through the TDB path still throws
+ * {@link UnsupportedOperationException}.
  */
 public final class PhaseModelFactory {
 
@@ -68,5 +59,13 @@ public final class PhaseModelFactory {
      */
     public static GibbsEnergyModel toGibbsModel(CefGibbs model, List<String> elements) {
         return model;
+    }
+
+    /**
+     * Builds a CVM phase model from an explicit {@link CvmPhaseSpec}
+     * (there is no TDB-driven path for CVM yet).
+     */
+    public static GibbsEnergyModel buildCvm(CvmPhaseSpec spec) {
+        return spec.toModel();
     }
 }

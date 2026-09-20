@@ -67,13 +67,8 @@ public final class ThermodynamicSystem {
         String[] elemArray = elements.toArray(new String[0]);
         DatabasePort system = parser.extractSystem(elemArray);
 
-        List<?> modelList = system.buildPhaseModels(elements, phases, kind);
-
-        @SuppressWarnings("unchecked")
-        List<system.model.cef.CefGibbs> rawModels =
-                (List<system.model.cef.CefGibbs>) (List<?>) modelList;
-
-        List<GibbsEnergyModel> models = new ArrayList<>(rawModels);
+        List<GibbsEnergyModel> models = new ArrayList<>(
+                system.buildPhaseModels(elements, phases, kind));
 
         if (models.isEmpty()) {
             throw new IllegalStateException(
@@ -81,6 +76,19 @@ public final class ThermodynamicSystem {
         }
 
         return new ThermodynamicSystem(elements, models);
+    }
+
+    /**
+     * Builds a thermodynamic system from an already-constructed model list
+     * (e.g. a mix of TDB-built {@code CefGibbs} and spec-built
+     * {@code CvmGibbsModel}), for phases with no single shared database
+     * path yet.
+     */
+    public static ThermodynamicSystem of(List<String> elements, List<GibbsEnergyModel> phaseModels) {
+        if (phaseModels.isEmpty()) {
+            throw new IllegalStateException("No phase models supplied.");
+        }
+        return new ThermodynamicSystem(elements, phaseModels);
     }
 
     /** Ordered element symbols this system was built for. */

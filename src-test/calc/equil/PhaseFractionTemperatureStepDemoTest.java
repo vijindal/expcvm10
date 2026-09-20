@@ -45,9 +45,8 @@ public class PhaseFractionTemperatureStepDemoTest {
 
         List<String> elements = Arrays.asList("V", "ZR");
 
-        @SuppressWarnings("unchecked")
-        List<CefGibbs> raw =
-                (List<CefGibbs>) parser.buildPhaseModels(elements, PHASE_NAMES);
+        List<GibbsEnergyModel> raw =
+                parser.buildPhaseModels(elements, PHASE_NAMES);
 
         List<GibbsEnergyModel> candidates = new java.util.ArrayList<>(raw);
 

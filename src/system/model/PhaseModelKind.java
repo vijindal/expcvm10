@@ -3,31 +3,21 @@ package system.model;
 /**
  * Which Gibbs-energy model implementation to use when building a phase.
  *
- * <p>The Compound Energy Formalism ({@code system.model.cef.CefGibbs})
- * is the general model: a one-sublattice substitutional (Redlich-Kister)
- * phase is just its 1-sublattice special case, so CEF covers everything a
- * dedicated RK model did. The Cluster Variation Method
- * ({@code system.model.cvm.CvmGibbs}) is a separate model for phases with
- * short-range order; a standalone {@code CvmGibbs} evaluator exists but
- * is not yet wired into {@code PhaseModelFactory}.
+ * <p>CVM has no TDB grammar yet, so this enum only governs the TDB-driven
+ * factory path; a CVM model is instead built directly via
+ * {@link system.model.cvm.CvmPhaseSpec#toModel()}.
  */
 public enum PhaseModelKind {
 
-    /**
-     * Let the factory choose. Today this always means CEF. When CVM is
-     * implemented, AUTO will consult a TDB model hint (e.g. a
-     * {@code TYPE_DEFINITION} / {@code MODEL} record) to pick CVM for the
-     * phases that declare it, and CEF for the rest.
-     */
+    /** Let the factory choose. Today this always means CEF. */
     AUTO,
 
     /** Force the Compound Energy Formalism model ({@code CefGibbs}). */
     CEF,
 
     /**
-     * Force the Cluster Variation Method model. NOT IMPLEMENTED --
-     * requesting this currently throws
-     * {@link UnsupportedOperationException}.
+     * Force CVM via the TDB-driven factory path. NOT IMPLEMENTED there --
+     * throws {@link UnsupportedOperationException}.
      */
     CVM
 }
