@@ -4103,7 +4103,8 @@ public class EquilibriumSolverV2 {
                     candidate[i] = value;
                 }
 
-                if (!exceededBounds
+                if ((!exceededBounds
+                        && work.model.isValid(candidate))
                         || siteStepSize < 1.0e-20) {
                     break;
                 }
@@ -4999,6 +5000,18 @@ public class EquilibriumSolverV2 {
         for (int p = 0; p < phaseModels.size(); p++) {
 
             if (isStable[p]) {
+                continue;
+            }
+
+            /*
+             * Candidate addition-by-driving-force scans a CEF-specific
+             * sampled grid (candidateSampledGrid()/GridMinimizer's own
+             * sampler) -- CVM candidate discovery is explicitly out of
+             * scope (see EquilibriumSolverV2CefCvmTwoPhaseEndToEndTest's
+             * class javadoc), so a non-CEF candidate is simply never a
+             * contender for automatic addition here, not an error.
+             */
+            if (!(phaseModels.get(p) instanceof CefGibbs)) {
                 continue;
             }
 
