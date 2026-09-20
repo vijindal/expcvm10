@@ -45,7 +45,7 @@ public final class GeneratedCvmGeometry {
     public final int ncf;
     public final int tcf;
 
-    private GeneratedCvmGeometry(
+    GeneratedCvmGeometry(
             String elements, String structure, int numComponents,
             int tcdis, double[] kb, double[] mhdis, double[][] mh, int[] lc, PipelineResult pipelineResult,
             List<List<double[][]>> cmat, int[][] lcv, List<List<int[]>> wcv,
@@ -68,10 +68,29 @@ public final class GeneratedCvmGeometry {
     }
 
     /**
+     * Factory method to create geometry via the consolidated pipeline.
+     * Called by {@link CvmGeometryGenerator} and the convenience builders below.
+     */
+    static GeneratedCvmGeometry create(
+            String elements, String structure, int numComponents,
+            int tcdis, double[] kb, double[] mhdis, double[][] mh, int[] lc, PipelineResult pipelineResult,
+            List<List<double[][]>> cmat, int[][] lcv, List<List<int[]>> wcv,
+            CvCfBasis basis, int ncf, int tcf) {
+        return new GeneratedCvmGeometry(
+                elements, structure, numComponents,
+                tcdis, kb, mhdis, mh, lc, pipelineResult,
+                cmat, lcv, wcv, basis, ncf, tcf);
+    }
+
+    /**
      * Builds the generated geometry for disordered binary BCC_A2, T-model
      * (tetrahedron approximation) -- the immediate validation target of
      * this generation layer.
+     *
+     * @deprecated Use {@link CvmGeometryGenerator#generateBccA2Binary(Consumer)} instead.
+     * This method is retained for compatibility; it delegates to the new unified API.
      */
+    @Deprecated(forRemoval = false)
     public static GeneratedCvmGeometry buildBccA2Binary(Consumer<String> progressSink) {
         return buildBccA2("A-B", 2, progressSink);
     }
@@ -84,23 +103,15 @@ public final class GeneratedCvmGeometry {
      * whose length must equal {@code numComponents}, e.g. {@code
      * "Nb-Ti-V-Zr"} for K=4.
      *
-     * <p>Reads the precomputed {@code inputs/clus/BCC_A2-T.txt}/{@code
-     * inputs/sym/BCC_A2-SG.txt} files via {@link StructureFileLoader}. The
-     * generic, structure-driven equivalent of Stages 1-3 lives in {@code
-     * system.model.cvm.gen.structure} ({@code MaximalClusterGenerator}/
-     * {@code SpaceGroupGenerator}); Stage 4 ({@link CvCfBasis}) still
-     * requires this method's file-based maximal cluster, since {@link
-     * CvCfBasis}'s registered site coordinates are matched by exact
-     * position and a generated cluster's absolute placement is an
-     * arbitrary choice among symmetry-equivalent candidates.</p>
+     * <p>This method now delegates to the unified {@link CvmGeometryGenerator}
+     * API for all structure/approximation combinations. It is retained for
+     * backward compatibility.</p>
+     *
+     * @deprecated Use {@link CvmGeometryGenerator#generateBccA2(String, int, Consumer)} instead.
      */
+    @Deprecated(forRemoval = false)
     public static GeneratedCvmGeometry buildBccA2(String elements, int numComponents, Consumer<String> progressSink) {
-        List<Cluster> maximalClusters = StructureFileLoader.parseClusterFile("clus/BCC_A2-T.txt");
-        maximalClusters.replaceAll(Cluster::sorted);
-        SpaceGroup spaceGroup = StructureFileLoader.parseSpaceGroup("BCC_A2-SG");
-
-        return buildFromClustersAndSymmetry(elements, "BCC_A2", "T", numComponents,
-                maximalClusters, spaceGroup, progressSink);
+        return CvmGeometryGenerator.generateBccA2(elements, numComponents, progressSink);
     }
 
     /**
@@ -126,7 +137,7 @@ public final class GeneratedCvmGeometry {
 
         CvCfBasis basis = CvCfBasis.generate(structure, pr, cmatOrth, model, progressSink);
 
-        return new GeneratedCvmGeometry(
+        return create(
                 elements, structure, numComponents,
                 pr.getTcdis(), pr.getKbdis(), pr.getMhdis(), pr.getMh(), pr.getLc(), pr,
                 basis.cvcfCMatrixData.getCmat(), basis.cvcfCMatrixData.getLcv(), basis.cvcfCMatrixData.getWcv(),

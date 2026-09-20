@@ -543,13 +543,63 @@ public final class CvCfBasis {
 
     private static Map<Integer, Integer> resolveSiteMap(double[][] logicalSiteCoords, List<Position> siteList) {
         Map<Integer, Integer> siteMap = new LinkedHashMap<>();
-        for (int logIdx = 0; logIdx < logicalSiteCoords.length; logIdx++) {
-            double[] coord = logicalSiteCoords[logIdx];
-            Position matched = findMatchingPosition(coord, siteList);
-            int physIdx = indexOf(matched, siteList);
+
+        // Normalize logical coordinates to match generated/loaded cluster frame:
+        // find the lexicographically smallest logical coordinate and translate
+        // all logical coords so that smallest is at origin.
+        double[][] normalizedLogical = normalizeCoordinates(logicalSiteCoords);
+
+        // Normalize site list positions to the same frame.
+        List<Position> normalizedSites = normalizePositions(siteList);
+
+        for (int logIdx = 0; logIdx < normalizedLogical.length; logIdx++) {
+            double[] coord = normalizedLogical[logIdx];
+            Position matched = findMatchingPosition(coord, normalizedSites);
+            int physIdx = indexOf(matched, normalizedSites);
             siteMap.put(logIdx + 1, physIdx);
         }
         return siteMap;
+    }
+
+    private static double[][] normalizeCoordinates(double[][] coords) {
+        if (coords.length == 0) return coords;
+
+        double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE, minZ = Double.MAX_VALUE;
+        for (double[] c : coords) {
+            minX = Math.min(minX, c[0]);
+            minY = Math.min(minY, c[1]);
+            minZ = Math.min(minZ, c[2]);
+        }
+
+        double[][] result = new double[coords.length][];
+        for (int i = 0; i < coords.length; i++) {
+            result[i] = new double[] {
+                    coords[i][0] - minX,
+                    coords[i][1] - minY,
+                    coords[i][2] - minZ
+            };
+        }
+        return result;
+    }
+
+    private static List<Position> normalizePositions(List<Position> positions) {
+        if (positions.isEmpty()) return positions;
+
+        double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE, minZ = Double.MAX_VALUE;
+        for (Position p : positions) {
+            minX = Math.min(minX, p.getX());
+            minY = Math.min(minY, p.getY());
+            minZ = Math.min(minZ, p.getZ());
+        }
+
+        List<Position> result = new ArrayList<>();
+        for (Position p : positions) {
+            result.add(new Position(
+                    p.getX() - minX,
+                    p.getY() - minY,
+                    p.getZ() - minZ));
+        }
+        return result;
     }
 
     private static Position findMatchingPosition(double[] coord, List<Position> positions) {
