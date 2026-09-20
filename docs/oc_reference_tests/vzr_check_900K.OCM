@@ -1,0 +1,10 @@
+new Y
+set echo Y
+r t ./vzr-re2
+
+set cond t=900 p=1e5 n=1 x(zr)=.45
+c e
+l r 2
+
+exit
+y

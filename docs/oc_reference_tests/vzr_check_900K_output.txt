@@ -1,0 +1,82 @@
+STOP Ha en bra dag
+
+3A unfished preparations for XTDB
+
+
+Open Calphad (OC) software version   6.109 , linked 2026-09-13
+with command line monitor version  73
+
+This program is available with a GNU General Public License.
+either version 2 of the License, or any later version.
+It includes the General Thermodynamic Package, version GTP-3.31,
+Hillert's equilibrium calculation algorithm version HMS-3.0 ,
+step/map/plot software version SMP-2.30 using GNUPLOT 5.2 graphics.
+Numerical routines are extracted from LAPACK and BLAS and
+the assessment procedure uses LMDIF from ANL.
+
+Linked with OpenMp for parallel execution
+ Warning, no environment variable OCHOME and no help file
+ Working directory is: /mnt/c/Users/admin/codes/opencalphad/examples/macros
+--->OC6: No step or map results to delete
+ All data removed, reinitiating
+
+3A unfished preparations for XTDB
+
+ Warning, no environment variable OCHOME and no help file
+ Working directory is: /mnt/c/Users/admin/codes/opencalphad/examples/macros
+--->OC6:--->OC6:... echo: r t ./vzr-re2
+ 3E Database file extention is: ".tdb"
+Database has  2 elements: V  ZR
+Give the elements to select, finish with empty line
+Select elements /all/: All elements selected
+3E reading database file: vzr-re2.TDB
+3E *** Warning, ignoring line    24 with " DEFINE_SYSTEM_DEFAULT SPECIE 2 !"
+
+
+Out of    20 model parameters    20 have been entered
+
+
+There are     2 bibliographic references
+REF:1           '*** Not set by database or user'
+REF:0           '*** Not set by database or user'
+
+--->OC6:... echo: set cond t=900 p=1e5 n=1 x(zr)=.45
+--->OC6:... echo: c e
+Gridmin:    1120 points   5.48E-03 s and      10 clockcycles, T=  900.00
+ 3Y leaving global_gridmin
+Equilibrium result:  15 its,  1.0554E-02 s,     53 cc, GS= -4.4345480E+04 J/mol
+--->OC6:... echo: l r 2
+
+Output for equilibrium:   1, DEFAULT_EQUILIBRIUM          2026.09.19
+Conditions .................................................:
+  1:T=900, 2:P=100000, 3:N=1, 4:X(ZR)=0.45
+ Degrees of freedom are   0
+
+Some global data, reference state SER ......................:
+T=    900.00 K (   626.85 C), P=  1.0000E+05 Pa, V=  0.0000E+00 m3
+N=   1.0000E+00 moles, B=   6.9068E+01 g, RT=   7.4831E+03 J/mol
+G= -4.43455E+04 J, G/N=-4.4345E+04 J/mol, H= 1.3614E+04 J, S= 6.440E+01 J/K
+
+Some data for components ...................................:
+Component name    Moles      Mole-fr  Chem.pot/RT  Activities  Ref.state
+V                 5.5000E-01  0.55000 -5.6999E+00  3.3463E-03  SER (default)   
+ZR                4.5000E-01  0.45000 -6.2026E+00  2.0242E-03  SER (default)   
+
+Some data for phases .......................................:
+Name                Status Moles      Volume    Form.Units Cmp/FU dGm/RT  Comp:
+HCP_A3.................. E  1.642E-01  0.00E+00  1.64E-01    1.00  0.00E+00  X:
+ ZR     9.83888E-01  V      1.61119E-02
+Constitution: Sublattice  1 with     2 constituents and     1.000000 sites
+ ZR     9.83888E-01  V      1.61119E-02
+              Sublattice  2 with     1 constituents and     0.500000 sites
+ VA     1.00000E+00
+
+V2ZR.................... E  8.358E-01  0.00E+00  2.79E-01    3.00  0.00E+00  X:
+ V      6.54877E-01  ZR     3.45123E-01
+Constitution: Sublattice  1 with     2 constituents and     2.000000 sites
+ V      9.81375E-01  ZR     1.86251E-02
+              Sublattice  2 with     2 constituents and     1.000000 sites
+ ZR     9.98118E-01  V      1.88238E-03
+
+--->OC6:--->OC6:... echo: exit
+Are you sure? /N/: ... echo: y
