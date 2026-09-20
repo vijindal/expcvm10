@@ -2246,6 +2246,45 @@ public class EquilibriumSolverV2 {
 
 
     /**
+     * True for each y-index that lies within one of {@code model}'s
+     * declared sublattice/constituent blocks ({@link
+     * GibbsEnergyModel#offsets()}/{@link
+     * GibbsEnergyModel#constituentsPerSublattice()}) -- the only indices
+     * whose physical bound is [0, 1], per CEF site fractions (all of y)
+     * or a CVM phase's trailing composition block. Indices outside every
+     * block (e.g. a CVM phase's correlation-function entries) are not
+     * bounded this way.
+     */
+    private static boolean[] boundedSiteFractionIndices(
+            GibbsEnergyModel model,
+            int nip) {
+
+        boolean[] bounded =
+                new boolean[nip];
+
+        int[] offsets =
+                model.offsets();
+
+        int[] nconst =
+                model.constituentsPerSublattice();
+
+        for (int s = 0; s < nconst.length; s++) {
+
+            for (int i = 0; i < nconst[s]; i++) {
+
+                int idx =
+                        offsets[s] + i;
+
+                if (idx >= 0 && idx < nip) {
+                    bounded[idx] = true;
+                }
+            }
+        }
+
+        return bounded;
+    }
+
+    /**
      * Evaluate one PhaseWork object from its current constitution.
      */
     private void evaluatePhaseWork(
@@ -4009,6 +4048,19 @@ public class EquilibriumSolverV2 {
             int nip =
                     work.y.length;
 
+            /*
+             * The [MIN_SITE_FRACTION, 1] clamp below is a physical bound
+             * on CEF site fractions (and, for CvmGibbsModel, its trailing
+             * x-block -- see offsets()/constituentsPerSublattice()'s
+             * "sublattice bridge" javadoc there). It does NOT apply to
+             * indices outside every declared block, e.g. a CVM phase's
+             * leading correlation-function entries, which are legitimately
+             * unbounded/negative -- clamping those corrupts the
+             * constitution and fails the model's own isValid() afterward.
+             */
+            boolean[] boundedIndex =
+                    boundedSiteFractionIndices(work.model, nip);
+
             double siteStepSize =
                     1.0;
 
@@ -4024,6 +4076,12 @@ public class EquilibriumSolverV2 {
 
                     double value =
                             work.y[i] + siteStepSize * dy[i];
+
+                    if (!boundedIndex[i]) {
+
+                        candidate[i] = value;
+                        continue;
+                    }
 
                     if (value > 1.0) {
 
@@ -4704,6 +4762,9 @@ public class EquilibriumSolverV2 {
                 work.model
                         .constituentsPerSublattice();
 
+        boolean[] boundedIndex =
+                boundedSiteFractionIndices(work.model, nip);
+
         double sum2 =
                 0.0;
 
@@ -4723,14 +4784,25 @@ public class EquilibriumSolverV2 {
                         * work.mu[A];
             }
 
-            int s =
-                    sublatticeOf(
-                            i,
-                            offsets,
-                            nconst);
+            /*
+             * The C^T gamma (Lagrange multiplier) term only applies to
+             * indices inside a declared sublattice/constituent block --
+             * see boundedSiteFractionIndices()'s javadoc. An index outside
+             * every block (e.g. a CVM phase's correlation-function
+             * entries) carries no such multiplier: its stationarity
+             * condition is simply G_Y - J_M^T*mu = 0.
+             */
+            if (boundedIndex[i]) {
 
-            r -=
-                    work.gamma[s];
+                int s =
+                        sublatticeOf(
+                                i,
+                                offsets,
+                                nconst);
+
+                r -=
+                        work.gamma[s];
+            }
 
             sum2 +=
                     r * r;
