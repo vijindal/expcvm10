@@ -202,10 +202,11 @@ class CvmSystemConstructionTest {
                 // since the two models have different CEC coefficients by design
                 // (direct uses dummy values; TDB uses real V-Zr values).
                 // The key is that the mapping is correct and does not cause misalignment.
-                System.out.println("T=" + T + "K, x=" + Arrays.toString(x) + ": "
-                        + "G_direct=" + String.format("%.2f", GDirect)
-                        + ", G_tdb=" + String.format("%.2f", GTdb)
-                        + " (both finite, structure valid)");
+                String msg = "T=" + T + "K, x=" + Arrays.toString(x) + ": "
+                        + "G_direct=" + String.format("%.6f", GDirect)
+                        + ", G_tdb=" + String.format("%.6f", GTdb)
+                        + " (both finite, structure valid)";
+                System.out.println(msg);
 
                 // Verify composition round-trip for TDB model
                 double[] xOutTdb = tdbModel.compositionFromInternal(yTdb);
