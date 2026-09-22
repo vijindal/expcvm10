@@ -3,9 +3,13 @@ package system.database;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import system.model.cvm.CecTerm;
+import system.model.cvm.TdbCvmParameterConverter;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -165,6 +169,45 @@ class TdbCvmParameterTest {
             assertEquals(expectedCoeffs[i][1], coeffs[1], tolerance,
                     "Parameter " + i + " linear coeff b: expected " + expectedCoeffs[i][1]
                     + ", got " + coeffs[1]);
+        }
+    }
+
+    @Test
+    void converterCreatesCorrectCecTerms() {
+        ArrayList<String> elementsForConverter = new ArrayList<>(Arrays.asList("V", "ZR"));
+        ArrayList<tdb.Parameter> cvmParamsForConverter = database.getCvmParams(elementsForConverter, "BCC_A2");
+
+        // Convert to CecTerms
+        List<CecTerm> cecTerms = TdbCvmParameterConverter.toCecTerms(database, cvmParamsForConverter);
+
+        // Verify size and order
+        String[] expectedNames = {"e4AB", "e3AB", "e22AB", "e21AB"};
+        double[][] expectedCoefficients = {
+                {0.0, 0.0},
+                {120.0, 0.0},
+                {-1120.0, -0.159},
+                {-746.7, -0.106}
+        };
+
+        assertEquals(expectedNames.length, cecTerms.size(),
+                "Expected " + expectedNames.length + " CecTerms, got " + cecTerms.size());
+
+        double eps = 1e-6;
+        for (int j = 0; j < cecTerms.size(); j++) {
+            CecTerm term = cecTerms.get(j);
+
+            // Verify name
+            assertEquals(expectedNames[j], term.name,
+                    "CecTerm " + j + " name: expected '" + expectedNames[j]
+                    + "', got '" + term.name + "'");
+
+            // Verify coefficients via value(T) = a + b*T
+            double testT = 1000.0;
+            double expected = expectedCoefficients[j][0] + expectedCoefficients[j][1] * testT;
+            double actual = term.value(testT);
+            assertEquals(expected, actual, eps,
+                    "CecTerm '" + expectedNames[j] + "' at T=" + testT
+                    + ": expected " + expected + ", got " + actual);
         }
     }
 }
