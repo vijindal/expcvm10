@@ -1237,6 +1237,7 @@ public class tdb {
         String type;
         String phasename;
         int phaseId;
+        String parameterId;    // For G_CVM parameters: symbolic identifier (e.g., "e4AB")
         ArrayList<ArrayList<String>> constituentList;// 10 sublattices, e in each sublattice is a vector// ele id in Phase constitution£¬eg, constituent :Al,Mg,Zn:Zn,Va:
         ArrayList<Double> tempRange;		//
         ArrayList<Exp> expList;		//
@@ -1280,12 +1281,19 @@ public class tdb {
                 numSubLat = phaseList.get(phaseId).getNumSubLat();//read numSubLat
                 //constituentList = new String[numSubLat][];
                 //Print.f("numSubLat:" + numSubLat, 0);
-                tempList = splitString(templineR, endmark[5]); //split with ";" to get order
+                tempList = splitString(templineR, endmark[5]); //split with ";" to get order/parameterId
                 templineL = tempList[0];//AG,CU:VA
                 if (tempList.length > 1) {
-                    templineR = tempList[1];//0
-                    this.order = Integer.parseInt(templineR);
-                    //Print.f("order: " + order, 0);
+                    templineR = tempList[1].trim();//0 or e4AB or e3AB, etc.
+                    // Try to parse as integer (numeric order for CEF parameters)
+                    try {
+                        this.order = Integer.parseInt(templineR);
+                    } catch (NumberFormatException e) {
+                        // Not a number — must be a symbolic identifier (G_CVM parameter)
+                        this.parameterId = templineR;
+                        // Leave order at default (0)
+                    }
+                    //Print.f("order: " + order + ", parameterId: " + parameterId, 0);
                 }
                 tempList = templineL.split(endmark[1]); //split with ":" 
                 for (int i = 0; i < numSubLat; i++) { // loop sub
@@ -1343,6 +1351,10 @@ public class tdb {
 
         public int getOrder() {
             return order;
+        }
+
+        public String getParameterId() {
+            return parameterId;
         }
 
         public ArrayList<ArrayList<String>> getConstituentList() {

@@ -30,7 +30,7 @@ class TdbCvmParameterTest {
 
     @BeforeAll
     static void loadDatabase() throws IOException {
-        database = new tdb("data/VZR-re2-CVM-model.TDB");
+        database = new tdb("data/VZR-re2-CVM-eName-model.TDB");
     }
 
     @Test
@@ -56,14 +56,18 @@ class TdbCvmParameterTest {
     }
 
     @Test
-    void parametersHaveValidOrders() {
+    void parametersHaveValidSymbolicIdentifiers() {
         ArrayList<String> elements = new ArrayList<>(Arrays.asList("V", "ZR"));
         ArrayList<tdb.Parameter> cvmParams = database.getCvmParams(elements, "BCC_A2");
 
+        String[] expectedIds = {"e4AB", "e3AB", "e22AB", "e21AB"};
+        assertEquals(expectedIds.length, cvmParams.size(),
+                "Expected " + expectedIds.length + " CVM parameters, got " + cvmParams.size());
+
         for (int i = 0; i < cvmParams.size(); i++) {
-            int order = cvmParams.get(i).getOrder();
-            assertTrue(order >= 0,
-                    "Parameter " + i + " has invalid order " + order + ", expected >= 0");
+            String id = cvmParams.get(i).getParameterId();
+            assertEquals(expectedIds[i], id,
+                    "Parameter " + i + " has parameterId '" + id + "', expected '" + expectedIds[i] + "'");
         }
     }
 
