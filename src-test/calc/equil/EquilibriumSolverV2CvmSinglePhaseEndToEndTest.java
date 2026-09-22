@@ -2,15 +2,19 @@ package calc.equil;
 
 import org.junit.jupiter.api.Test;
 
+import system.database.tdb;
 import system.model.GibbsEnergyModel;
 import system.model.PhaseModelFactory;
 import system.model.cvm.CecTerm;
 import system.model.cvm.CvmGibbsModel;
 import system.model.cvm.CvmPhaseData;
 import system.model.cvm.CvmPhaseSpec;
+import system.model.cvm.TdbCvmModelBuilder;
 import system.model.unary.ElementGibbs;
 import system.ports.EquilibriumResult;
 
+import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 
@@ -273,5 +277,108 @@ class EquilibriumSolverV2CvmSinglePhaseEndToEndTest {
         double[] molesDirect = cvm.moles(yConverged);
         assertEquals(molesDirect[0], xDirect[0], 1.0e-12);
         assertEquals(molesDirect[1], xDirect[1], 1.0e-12);
+    }
+
+    /**
+     * TDB-driven CVM single-phase equilibrium test.
+     *
+     * Proves that:
+     * 1. {@link TdbCvmModelBuilder#buildTdbCvmModel} correctly extracts CVM
+     *    parameters from a TDB file
+     * 2. The resulting {@link CvmGibbsModel} is accepted by
+     *    {@link EquilibriumSolverV2} without any CEF-specific cast or handling
+     * 3. The solver produces a converged equilibrium result at T=1000K,
+     *    x(V)=0.6, x(Zr)=0.4
+     *
+     * <p>Uses data/VZR-re2-CVM-eName-model.TDB, which provides CVM parameters
+     * for V-Zr BCC_A2 with temperature-dependent CEC coefficients.</p>
+     */
+    @Test
+    void tdbDrivenCvmSinglePhaseSolvesToEquilibrium() throws IOException {
+
+        // Build the CVM model from TDB
+        tdb database = new tdb("data/VZR-re2-CVM-eName-model.TDB");
+        GibbsEnergyModel model = TdbCvmModelBuilder.buildTdbCvmModel(
+                database, Arrays.asList("V", "ZR"), "BCC_A2");
+
+        assertTrue(model instanceof CvmGibbsModel,
+                "TDB-built model should be a CvmGibbsModel");
+
+        CvmGibbsModel cvm = (CvmGibbsModel) model;
+
+        // Verify model identity
+        assertEquals("BCC_A2", cvm.phaseName());
+        assertEquals("CVM", cvm.modelType());
+        assertEquals(2, cvm.numComponents());
+        assertEquals(6, cvm.numSiteVars());
+
+        // Test composition and initial state
+        double[] x = {0.6, 0.4};  // V=0.6, Zr=0.4
+        double[] y0 = cvm.getInitialInternalVars(x);
+        assertTrue(cvm.isValid(y0), "CVM initial state must be valid");
+
+        // Prepare solver
+        EquilibriumSolverV2 solver = new EquilibriumSolverV2();
+        solver.setTolerance(1.0e-8);
+
+        // Single stable slot: the TDB-built CVM phase
+        solver.setInitialStateForTest(
+                new int[]{0},
+                new double[][]{y0},
+                new double[]{1.0});
+
+        // Run solver
+        double T = 1000.0;
+        double P = 101325.0;
+        EquilibriumResult result = solver.solve(T, P, x, List.of(cvm));
+
+        // Verify convergence
+        assertNotNull(result, "Solver should return a result");
+        assertTrue(result.isConverged(),
+                "TDB-driven CVM single-phase should converge");
+
+        // Verify phase result
+        assertEquals(1, result.getStablePhases().size());
+        EquilibriumResult.PhaseResult stable = result.getStablePhases().get(0);
+
+        assertEquals("BCC_A2", stable.phaseName);
+        assertEquals("CVM", stable.modelType);
+
+        // Verify composition (single phase → equilibrium composition = overall)
+        assertEquals(x[0], stable.x[0], 1.0e-6);
+        assertEquals(x[1], stable.x[1], 1.0e-6);
+
+        // Verify mass balance
+        for (int a = 0; a < x.length; a++) {
+            assertEquals(x[a], stable.amount * stable.x[a], 1.0e-6);
+        }
+
+        // Verify finite thermodynamic values
+        assertTrue(Double.isFinite(stable.G),
+                "Converged G must be finite: " + stable.G);
+
+        double[] mu = result.getMu();
+        for (double m : mu) {
+            assertTrue(Double.isFinite(m),
+                    "Chemical potentials must be finite: " + Arrays.toString(mu));
+        }
+
+        // Verify phase amount is positive
+        assertTrue(stable.amount > 0.0 && Double.isFinite(stable.amount),
+                "Phase amount must be positive: " + stable.amount);
+
+        // Cross-check: directly evaluate the converged state
+        double[] yConverged = stable.y;
+        assertNotNull(yConverged);
+        assertTrue(cvm.isValid(yConverged),
+                "Converged CVM state must remain valid");
+
+        double gDirect = cvm.G(T, P, yConverged);
+        assertEquals(gDirect, stable.G, 1.0e-6 * Math.max(1.0, Math.abs(gDirect)),
+                "Directly evaluated G must match solver result");
+
+        double[] xDirect = cvm.compositionFromInternal(yConverged);
+        assertEquals(xDirect[0], stable.x[0], 1.0e-9);
+        assertEquals(xDirect[1], stable.x[1], 1.0e-9);
     }
 }
