@@ -246,6 +246,46 @@ public class tdb {
     }
 
     /**
+     * Returns CVM parameters for a given phase and element set.
+     *
+     * <p>Filters parameters by:
+     * <ol>
+     *   <li>Phase name match</li>
+     *   <li>Element/constituent overlap with the requested element set</li>
+     *   <li>Parameter type = "G_CVM"</li>
+     * </ol>
+     *
+     * <p>Reuses the existing constituent filtering logic from {@link Phase#getParam(ArrayList)},
+     * then applies type filtering.
+     *
+     * @param inputElementList  the system element set (e.g., ["V", "ZR"])
+     * @param inputPhaseName    the phase name (e.g., "BCC_A2")
+     * @return                  CVM parameters in original order, or empty list if none exist
+     */
+    public ArrayList<Parameter> getCvmParams(ArrayList<String> inputElementList, String inputPhaseName) {
+        ArrayList<Parameter> cvmParamList = new ArrayList<>();
+
+        // Find the requested phase
+        for (Phase p : phaseList) {
+            if (p.getPhaseName() == null ? inputPhaseName == null : p.getPhaseName().equals(inputPhaseName)) {
+                // Get all parameters for this phase/element set (applies constituent filtering)
+                ArrayList<Parameter> allParams = p.getParam(inputElementList);
+
+                // Filter by parameter type: keep only G_CVM
+                for (Parameter param : allParams) {
+                    String type = param.getType();
+                    if (type != null && type.trim().equalsIgnoreCase("G_CVM")) {
+                        cvmParamList.add(param);
+                    }
+                }
+                break;
+            }
+        }
+
+        return cvmParamList;
+    }
+
+    /**
      * This method read tdb file, process it and store various keywords in the
      * respective arrays.
      *
