@@ -3,8 +3,10 @@ package system.database;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import system.model.GibbsEnergyModel;
 import system.model.cvm.CecTerm;
 import system.model.cvm.TdbCvmParameterConverter;
+import system.model.cvm.TdbCvmModelBuilder;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -209,5 +211,53 @@ class TdbCvmParameterTest {
                     "CecTerm '" + expectedNames[j] + "' at T=" + testT
                     + ": expected " + expected + ", got " + actual);
         }
+    }
+
+    @Test
+    void tdbCvmModelBuilderConstructsWorkingCvmGibbsModel() {
+        List<String> elements = Arrays.asList("V", "ZR");
+
+        // Build a CVM model from TDB
+        GibbsEnergyModel model;
+        try {
+            model = TdbCvmModelBuilder.buildTdbCvmModel(database, elements, "BCC_A2");
+        } catch (Exception e) {
+            System.err.println("ERROR building CVM model: " + e.getClass().getName() + ": " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
+
+        // Verify it is a CvmGibbsModel
+        assertTrue(model instanceof system.model.cvm.CvmGibbsModel,
+                "Expected CvmGibbsModel, got " + model.getClass().getName());
+
+        // Verify phase name
+        assertEquals("BCC_A2", model.phaseName(),
+                "Expected phase name 'BCC_A2', got '" + model.phaseName() + "'");
+
+        // Verify number of components
+        assertEquals(2, model.numComponents(),
+                "Expected 2 components, got " + model.numComponents());
+
+        // Verify number of site variables (4 CFCs + 2 compositions = 6)
+        assertEquals(6, model.numSiteVars(),
+                "Expected 6 site variables (4 CFCs + 2 compositions), got " + model.numSiteVars());
+
+        // Verify the model is operational: evaluate G at a valid state
+        double T = 1000.0, P = 101325.0;
+        double[] x = {0.6, 0.4};
+        double[] y = model.getInitialInternalVars(x);
+
+        double G = model.G(T, P, y);
+        assertTrue(Double.isFinite(G),
+                "G must be finite at T=" + T + " K, x=" + Arrays.toString(x) + "; got " + G);
+
+        // Verify composition round-trip
+        double[] compositionOut = model.compositionFromInternal(y);
+        assertArrayEquals(x, compositionOut, 1e-12,
+                "Composition round-trip failed");
+
+        System.out.println("TDB→CVM model construction: BCC_A2(V,ZR) "
+                + "G(T=" + T + "K, x=" + Arrays.toString(x) + ") = " + G + " J/mol");
     }
 }
