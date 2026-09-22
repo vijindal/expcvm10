@@ -286,6 +286,57 @@ public class tdb {
     }
 
     /**
+     * Extracts linear-in-T CVM CEC coefficients from a G_CVM parameter.
+     *
+     * <p>Assumes the CVM parameter expression is linear in T: {@code a + b*T}.
+     * Extracts the constant and linear coefficients from the parameter's expression list.
+     *
+     * @param param  a G_CVM Parameter (should have {@code parameterId != null})
+     * @return       [a, b] coefficients for J(T) = a + b*T, or null if extraction fails
+     * @throws IllegalArgumentException if the expression is non-linear or malformed
+     */
+    public double[] extractCvmLinearCoefficients(Parameter param) {
+        if (param == null || param.getExpList() == null || param.getExpList().isEmpty()) {
+            return null;
+        }
+
+        // For CVM, assume single temperature range
+        Exp exp = param.getExpList().get(0);
+        if (exp == null) return null;
+
+        // Use subCoeffList (post-substitution), fall back to coeffList
+        ArrayList<Double> coeffs = exp.getSubCoeffList();
+        if (coeffs == null || coeffs.isEmpty())
+            coeffs = exp.getCoeffList();
+
+        if (coeffs == null || coeffs.isEmpty()) return null;
+
+        // For linear-in-T: expect at least 2 coefficients [a, b]
+        if (coeffs.size() < 2) {
+            throw new IllegalArgumentException(
+                    "G_CVM parameter " + param.getParameterId()
+                    + " has only " + coeffs.size() + " coefficient(s), expected at least 2 for a + b*T");
+        }
+
+        double a = coeffs.get(0) != null ? coeffs.get(0) : 0.0;
+        double b = coeffs.get(1) != null ? coeffs.get(1) : 0.0;
+
+        // Verify no higher-order terms (warn if they exist but use linear terms only)
+        if (coeffs.size() > 2) {
+            for (int i = 2; i < coeffs.size(); i++) {
+                if (coeffs.get(i) != null && Math.abs(coeffs.get(i)) > 1e-14) {
+                    throw new IllegalArgumentException(
+                            "G_CVM parameter " + param.getParameterId()
+                            + " has non-zero higher-order term at index " + i
+                            + ": " + coeffs.get(i) + " (expected linear-in-T only)");
+                }
+            }
+        }
+
+        return new double[]{a, b};
+    }
+
+    /**
      * This method read tdb file, process it and store various keywords in the
      * respective arrays.
      *

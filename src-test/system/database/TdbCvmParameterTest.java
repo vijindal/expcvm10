@@ -133,4 +133,38 @@ class TdbCvmParameterTest {
         assertEquals(0, cvmParams.size(),
                 "Expected empty list for incompatible elements, got " + cvmParams.size());
     }
+
+    @Test
+    void parametersExtractLinearCvmCoefficients() {
+        ArrayList<String> elements = new ArrayList<>(Arrays.asList("V", "ZR"));
+        ArrayList<tdb.Parameter> cvmParams = database.getCvmParams(elements, "BCC_A2");
+
+        // Expected coefficients [a, b] for J(T) = a + b*T
+        double[][] expectedCoeffs = {
+                {0.0, 0.0},        // e4AB
+                {120.0, 0.0},      // e3AB
+                {-1120.0, -0.159}, // e22AB
+                {-746.7, -0.106}   // e21AB
+        };
+
+        assertEquals(expectedCoeffs.length, cvmParams.size(),
+                "Expected " + expectedCoeffs.length + " CVM parameters, got " + cvmParams.size());
+
+        double tolerance = 1e-6;
+        for (int i = 0; i < cvmParams.size(); i++) {
+            double[] coeffs = database.extractCvmLinearCoefficients(cvmParams.get(i));
+            assertNotNull(coeffs,
+                    "Parameter " + i + " (" + cvmParams.get(i).getParameterId()
+                    + ") returned null coefficients");
+            assertEquals(2, coeffs.length,
+                    "Parameter " + i + " expected 2 coefficients, got " + coeffs.length);
+
+            assertEquals(expectedCoeffs[i][0], coeffs[0], tolerance,
+                    "Parameter " + i + " constant coeff a: expected " + expectedCoeffs[i][0]
+                    + ", got " + coeffs[0]);
+            assertEquals(expectedCoeffs[i][1], coeffs[1], tolerance,
+                    "Parameter " + i + " linear coeff b: expected " + expectedCoeffs[i][1]
+                    + ", got " + coeffs[1]);
+        }
+    }
 }
