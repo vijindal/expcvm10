@@ -9,7 +9,6 @@ import java.util.Map;
 
 import system.model.GibbsEnergyModel;
 import system.model.PhaseEquilData;
-import system.model.cef.CefGibbs;
 import system.ports.EquilibriumResult;
 import util.Matrix;
 import util.SingularValueDecomposition;
@@ -246,9 +245,9 @@ public class EquilibriumSolverV2 {
     /**
      * Working data for one CEF phase.
      */
-    private static final class PhaseWork {
+        private static final class PhaseWork {
 
-        final CefGibbs model;
+        final GibbsEnergyModel model;
 
         double[] y;
         double G;
@@ -276,7 +275,7 @@ public class EquilibriumSolverV2 {
          */
         PhaseEquilData equilData;
 
-        PhaseWork(CefGibbs model) {
+        PhaseWork(GibbsEnergyModel model) {
             this.model = model;
         }
     }
@@ -1158,14 +1157,9 @@ public class EquilibriumSolverV2 {
                     + "given candidate phases.");
         }
 
-        if (!(candidates.get(candidateIndex) instanceof CefGibbs)) {
-            throw new UnsupportedOperationException(
-                    "EquilibriumSolverV2 currently requires CEF candidate phases.");
-        }
-
-        CefGibbs cef = (CefGibbs) candidates.get(candidateIndex);
-        PhaseWork newWork = new PhaseWork(cef);
-        newWork.y = bestSeedConstitution(cef);
+        GibbsEnergyModel model = candidates.get(candidateIndex);
+        PhaseWork newWork = new PhaseWork(model);
+        newWork.y = bestSeedConstitution(model);
         evaluatePhaseWork(newWork);
 
         int newSlotCount = stablePhases.length + 1;
@@ -1190,20 +1184,20 @@ public class EquilibriumSolverV2 {
      * is not yet available (should not happen once {@link
      * #seedFromEquilibriumResult} has run) or no sample is finite.
      */
-    private double[] bestSeedConstitution(CefGibbs cef) {
+    private double[] bestSeedConstitution(GibbsEnergyModel model) {
 
         if (mu == null) {
-            return initializeSinglePhaseState(cef, targetComposition());
+            return initializeSinglePhaseState(model, targetComposition());
         }
 
-        double[][] samples = new GridMinimizer().sampleSiteFractions(cef);
+        double[][] samples = new GridMinimizer().sampleSiteFractions(model);
 
         double bestDrivingForce = Double.NEGATIVE_INFINITY;
         double[] bestY = null;
 
         for (double[] y : samples) {
 
-            PhaseWork trial = new PhaseWork(cef);
+            PhaseWork trial = new PhaseWork(model);
             trial.y = y;
 
             try {
@@ -1221,7 +1215,7 @@ public class EquilibriumSolverV2 {
 
         return (bestY != null)
                 ? bestY
-                : initializeSinglePhaseState(cef, targetComposition());
+                : initializeSinglePhaseState(model, targetComposition());
     }
 
     /**
@@ -1246,15 +1240,8 @@ public class EquilibriumSolverV2 {
         phaseWorks = new ArrayList<>(nph);
         for (int p = 0; p < nph; p++) {
             GibbsEnergyModel model = candidates.get(p);
-            if (!(model instanceof CefGibbs)) {
-                throw new UnsupportedOperationException(
-                        "EquilibriumSolverV2 currently requires CEF candidate "
-                        + "phases. Phase " + p + " (" + model.phaseName()
-                        + ") is not a CefGibbs.");
-            }
-            CefGibbs cef = (CefGibbs) model;
-            PhaseWork work = new PhaseWork(cef);
-            work.y = initializeSinglePhaseState(cef, targetComposition());
+            PhaseWork work = new PhaseWork(model);
+            work.y = initializeSinglePhaseState(model, targetComposition());
             evaluatePhaseWork(work);
             phaseWorks.add(work);
         }
@@ -1283,8 +1270,8 @@ public class EquilibriumSolverV2 {
             stablePhases[k] = p;
             phaseAmounts[k] = pr.amount;
 
-            CefGibbs cef = (CefGibbs) candidates.get(p);
-            PhaseWork work = new PhaseWork(cef);
+            GibbsEnergyModel model = candidates.get(p);
+            PhaseWork work = new PhaseWork(model);
             work.y = pr.y.clone();
             evaluatePhaseWork(work);
             stableSlots.add(work);
@@ -1747,9 +1734,8 @@ public class EquilibriumSolverV2 {
      * gap and select an initial stable-phase set from among the
      * candidates, rather than always starting at candidate 0.
      *
-     * Remaining scope limitation: CEF phases only (GridMinimizer itself is
-     * model-agnostic, but the PhaseWork bookkeeping below still requires
-     * CefGibbs).
+     * The solver is model-agnostic: it accepts any GibbsEnergyModel
+     * implementation via the PhaseWork bookkeeping mechanism.
      *
      * For a KNOWN, already-validated fixed multiphase starting point
      * (e.g. a controlled two-phase test), use
@@ -1784,20 +1770,8 @@ public class EquilibriumSolverV2 {
             GibbsEnergyModel model =
                     phaseModels.get(p);
 
-            if (!(model instanceof CefGibbs)) {
-
-                throw new UnsupportedOperationException(
-                        "EquilibriumSolverV2 currently requires "
-                        + "CEF candidate phases. Phase "
-                        + p + " (" + model.phaseName()
-                        + ") is not a CefGibbs.");
-            }
-
-            CefGibbs cef =
-                    (CefGibbs) model;
-
             PhaseWork work =
-                    new PhaseWork(cef);
+                    new PhaseWork(model);
 
             /*
              * For initialization only, seed every candidate phase with
@@ -1809,7 +1783,7 @@ public class EquilibriumSolverV2 {
              */
             work.y =
                     initializeSinglePhaseState(
-                            cef,
+                            model,
                             targetComposition());
 
             evaluatePhaseWork(work);
@@ -1849,11 +1823,11 @@ public class EquilibriumSolverV2 {
                 int p =
                         stablePhases[k];
 
-                CefGibbs cef =
-                        (CefGibbs) phaseModels.get(p);
+                GibbsEnergyModel model =
+                        phaseModels.get(p);
 
                 PhaseWork work =
-                        new PhaseWork(cef);
+                        new PhaseWork(model);
 
                 work.y =
                         testInitialState.y[k].clone();
@@ -1936,11 +1910,11 @@ public class EquilibriumSolverV2 {
                  * vertices (a miscibility gap), which needs two
                  * independent constitutions here, not one aliased object.
                  */
-                CefGibbs cef =
-                        (CefGibbs) phaseModels.get(p);
+                GibbsEnergyModel model =
+                        phaseModels.get(p);
 
                 PhaseWork work =
-                        new PhaseWork(cef);
+                        new PhaseWork(model);
 
                 work.y =
                         pr.y.clone();
@@ -2079,16 +2053,16 @@ public class EquilibriumSolverV2 {
     // ================================================================
 
     /**
-     * Initializes the constitution of a single CEF phase for the requested
+     * Initializes the constitution of a single phase model for the requested
      * overall composition.
      *
-     * The initialization is delegated to the CEF adapter because it knows
+     * The initialization is delegated to the phase model because it knows
      * the complete sublattice structure, constituent mapping, vacancies, etc.
      *
      * No phase-specific expressions are used here.
      */
     private double[] initializeSinglePhaseState(
-            CefGibbs phase,
+            GibbsEnergyModel phase,
             double[] xOverall) {
 
         if (phase == null)
@@ -2100,8 +2074,8 @@ public class EquilibriumSolverV2 {
                     "Overall composition must not be null or empty.");
 
         /*
-         * CefGibbs.getInitialInternalVars() constructs a strictly
-         * positive constitution satisfying the CEF sublattice-normalization
+         * The model's getInitialInternalVars() method constructs a strictly
+         * positive constitution satisfying the sublattice-normalization
          * constraints and matching the requested overall composition as closely
          * as possible.
          */
@@ -4899,8 +4873,8 @@ public class EquilibriumSolverV2 {
                 continue;
             }
 
-            CefGibbs model =
-                    (CefGibbs) phaseModels.get(p);
+            GibbsEnergyModel model =
+                    phaseModels.get(p);
 
             double[][] grid =
                     candidateSampledGrid(p, model);
@@ -5186,11 +5160,11 @@ public class EquilibriumSolverV2 {
         newStablePhases[n] = p;
         newPhaseAmounts[n] = NEW_PHASE_SEED_AMOUNT;
 
-        CefGibbs cef =
-                (CefGibbs) phaseModels.get(p);
+        GibbsEnergyModel model =
+                phaseModels.get(p);
 
         PhaseWork work =
-                new PhaseWork(cef);
+                new PhaseWork(model);
 
         work.y =
                 seedY.clone();
