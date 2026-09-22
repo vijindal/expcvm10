@@ -1,0 +1,620 @@
+============================================================
+CefContractTest -- full GibbsEnergyModel abstract-contract
+  surface vs. pycalphad 0.11.1, fully gated (R-corrected),
+  plus structural invariants
+============================================================
+
+--- BCC_A2 (data/VZR-re2.TDB)  T=1200.0  P=101325.0  y=[0.8, 0.2, 1.0] ---
+
+--- BCC_A2 (data/VZR-re2.TDB)  T=800.0  P=101325.0  y=[0.3, 0.7, 1.0] ---
+
+--- BCC_A2 (data/VZR-re2.TDB)  T=1500.0  P=101325.0  y=[0.999999, 1.0E-6, 1.0] ---
+
+--- V2ZR (data/VZR-re2.TDB)  T=1200.0  P=101325.0  y=[0.6, 0.4, 0.6, 0.4] ---
+
+--- V2ZR (data/VZR-re2.TDB)  T=900.0  P=101325.0  y=[0.3, 0.7, 0.8, 0.2] ---
+
+--- LIQUID (data/VZR-re2.TDB)  T=1500.0  P=101325.0  y=[0.45, 0.55] ---
+
+--- LIQUID (data/VZR-re2.TDB)  T=2500.0  P=101325.0  y=[0.01, 0.99] ---
+
+--- CEMENTITE (data/steel1.TDB)  T=1000.0  P=101325.0  y=[0.2, 0.5, 0.1, 0.2, 1.0]  [knownPResidual] ---
+
+--- CEMENTITE (data/steel1.TDB)  T=1400.0  P=101325.0  y=[0.5, 0.3, 0.1, 0.1, 1.0]  [knownPResidual] ---
+
+--- FCC_A1 (data/AlCoCrNi-volume.TDB)  T=1000.0  P=101325.0  y=[0.4, 0.3, 0.2, 0.1, 1.0]  [knownPResidual] ---
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+
+--- FCC_A1 (data/AlCoCrNi-volume.TDB)  T=1600.0  P=101325.0  y=[0.1, 0.6, 0.2, 0.1, 1.0]  [knownPResidual] ---
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+Sep 22, 2026 2:31:35 PM util.Print write
+SEVERE: No keyword match found !
+No keyword match found !
+
+============================================================
+812 / 812 gated checks passed
+
+ALL GATED CEF CONTRACT CHECKS PASSED

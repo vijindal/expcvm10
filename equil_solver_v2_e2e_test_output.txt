@@ -1,0 +1,1056 @@
+Initialized native services in: C:\Users\admin\.gradle\native
+Initialized jansi services in: C:\Users\admin\.gradle\native
+Found daemon DaemonInfo{pid=34356, address=[07dca040-3318-4a77-8edd-15b1a66bb867 port:57902, addresses:[/127.0.0.1]], state=Idle, lastBusy=1790065978007, context=DefaultDaemonContext[uid=56bff353-e42d-4e5d-be3c-9ad26e1bf526,javaHome=C:\Users\admin\.vscode\extensions\redhat.java-1.56.0-win32-x64\jre\21.0.12.1-win32-x86_64,javaVersion=21,javaVendor=Eclipse Adoptium,daemonRegistryDir=C:\Users\admin\.gradle\daemon,pid=34356,idleTimeout=10800000,priority=NORMAL,applyInstrumentationAgent=true,nativeServicesMode=ENABLED,daemonOpts=-XX:+IgnoreUnrecognizedVMOptions,--add-opens,java.base/java.lang=ALL-UNNAMED,-XX:+UseG1GC,-Xmx2g,-Dfile.encoding=UTF-8,-Duser.country=US,-Duser.language=en,-Duser.variant]} however its context does not match the desired criteria.
+JVM is incompatible.
+Wanted: DaemonRequestContext{jvmCriteria=C:\Program Files\Apache NetBeans\jdk (no Daemon JVM specified, using current Java home), daemonOpts=[-XX:+IgnoreUnrecognizedVMOptions, --add-opens, java.base/java.lang=ALL-UNNAMED, -XX:+UseG1GC, -Xmx2g, -Dfile.encoding=UTF-8, -Duser.country=US, -Duser.language=en, -Duser.variant], applyInstrumentationAgent=true, nativeServicesMode=ENABLED, priority=NORMAL}
+Actual: DefaultDaemonContext[uid=56bff353-e42d-4e5d-be3c-9ad26e1bf526,javaHome=C:\Users\admin\.vscode\extensions\redhat.java-1.56.0-win32-x64\jre\21.0.12.1-win32-x86_64,javaVersion=21,javaVendor=Eclipse Adoptium,daemonRegistryDir=C:\Users\admin\.gradle\daemon,pid=34356,idleTimeout=10800000,priority=NORMAL,applyInstrumentationAgent=true,nativeServicesMode=ENABLED,daemonOpts=-XX:+IgnoreUnrecognizedVMOptions,--add-opens,java.base/java.lang=ALL-UNNAMED,-XX:+UseG1GC,-Xmx2g,-Dfile.encoding=UTF-8,-Duser.country=US,-Duser.language=en,-Duser.variant]
+
+  Looking for a different daemon...
+Removing 0 daemon stop events from registry
+Previous Daemon (40564) stopped at Tue Sep 22 13:56:30 IST 2026 other compatible daemons were started and after being idle for 0 minutes and not recently used
+Previous Daemon (39496) stopped at Tue Sep 22 13:59:28 IST 2026 by user or operating system
+Previous Daemon (40252) stopped at Tue Sep 22 14:02:28 IST 2026 by user or operating system
+Starting a Gradle Daemon, 1 incompatible and 3 stopped Daemons could not be reused, use --status for details
+Starting process 'Gradle build daemon'. Working directory: C:\Users\admin\.gradle\daemon\9.3.1 Command: C:\Program Files\Apache NetBeans\jdk\bin\java.exe --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.prefs/java.util.prefs=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.prefs/java.util.prefs=ALL-UNNAMED --add-opens=java.base/java.nio.charset=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens=java.xml/javax.xml.namespace=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -XX:+IgnoreUnrecognizedVMOptions --add-opens java.base/java.lang=ALL-UNNAMED -XX:+UseG1GC -Xmx2g -Dfile.encoding=UTF-8 -Duser.country=US -Duser.language=en -Duser.variant -cp C:\Gradle\gradle-9.3.1\lib\gradle-daemon-main-9.3.1.jar -javaagent:C:\Gradle\gradle-9.3.1\lib\agents\gradle-instrumentation-agent-9.3.1.jar org.gradle.launcher.daemon.bootstrap.GradleDaemon 9.3.1
+Successfully started process 'Gradle build daemon'
+An attempt to start the daemon took 12.454 secs.
+The client will now receive all logging from the daemon (pid: 37596). The daemon log file: C:\Users\admin\.gradle\daemon\9.3.1\daemon-37596.out.log
+Starting build in new daemon [memory: 2 GiB]
+Using 12 worker leases.
+Operational build model parameters: {requiresToolingModels=false, parallelProjectExecution=true, configureOnDemand=false, configurationCache=true, configurationCacheParallelStore=true, configurationCacheParallelLoad=true, isolatedProjects=true, parallelProjectConfiguration=true, intermediateModelCache=false, parallelToolingApiActions=true, invalidateCoupledProjects=true, modelAsProjectDependency=true, resilientModelBuilding=false}
+Isolated projects is an incubating feature.
+Received JVM installation metadata from 'C:\Program Files\Apache NetBeans\jdk': {JAVA_HOME=C:\Program Files\Apache NetBeans\jdk, JAVA_VERSION=25.0.1, JAVA_VENDOR=Eclipse Adoptium, RUNTIME_NAME=OpenJDK Runtime Environment, RUNTIME_VERSION=25.0.1+8-LTS, VM_NAME=OpenJDK 64-Bit Server VM, VM_VERSION=25.0.1+8-LTS, VM_VENDOR=Eclipse Adoptium, OS_ARCH=amd64}
+Encryption key source: default Gradle keystore (pkcs12)
+Invalidating in-memory cache of C:\Users\admin\.gradle\caches\journal-1\file-access.bin
+Calculating task graph as no cached configuration is available for tasks: test --tests calc.equil.EquilibriumSolverV2TwoPhaseEndToEndTest
+Watching the file system is configured to be enabled if available
+Now considering [D:\codes\expcvm10] as hierarchies to watch
+File system watching is active
+Invalidating in-memory cache of D:\codes\expcvm10\.gradle\9.3.1\fileHashes\fileHashes.bin
+Invalidating in-memory cache of D:\codes\expcvm10\.gradle\9.3.1\fileHashes\resourceHashesCache.bin
+Starting Build
+Invalidating in-memory cache of C:\Users\admin\.gradle\caches\journal-1\file-access.bin
+Invalidating in-memory cache of C:\Users\admin\.gradle\caches\9.3.1\fileHashes\fileHashes.bin
+Invalidating in-memory cache of C:\Users\admin\.gradle\caches\9.3.1\fileHashes\resourceHashesCache.bin
+Settings evaluated using settings file 'D:\codes\expcvm10\settings.gradle'.
+Invalidating in-memory cache of D:\codes\expcvm10\.gradle\9.3.1\fileHashes\fileHashes.bin
+Invalidating in-memory cache of D:\codes\expcvm10\.gradle\9.3.1\fileHashes\resourceHashesCache.bin
+Projects loaded. Root project using build file 'D:\codes\expcvm10\build.gradle'.
+Included projects: [root project 'expcvm10']
+
+> Configure project :
+Evaluating root project 'expcvm10' using build file 'D:\codes\expcvm10\build.gradle'.
+Invalidating in-memory cache of C:\Users\admin\.gradle\caches\journal-1\file-access.bin
+Invalidating in-memory cache of C:\Users\admin\.gradle\caches\9.3.1\fileHashes\fileHashes.bin
+Invalidating in-memory cache of C:\Users\admin\.gradle\caches\9.3.1\fileHashes\resourceHashesCache.bin
+Resolved plugin [id: 'java']
+Resolved plugin [id: 'application']
+Invalidating in-memory cache of C:\Users\admin\.gradle\caches\journal-1\file-access.bin
+Invalidating in-memory cache of C:\Users\admin\.gradle\caches\9.3.1\fileHashes\fileHashes.bin
+Invalidating in-memory cache of C:\Users\admin\.gradle\caches\9.3.1\fileHashes\resourceHashesCache.bin
+All projects evaluated.
+Task name matched 'test'
+Selected primary task 'test' from project :
+Tasks to be executed: [task ':compileJava', task ':processResources', task ':classes', task ':compileTestJava', task ':processTestResources', task ':testClasses', task ':test']
+Tasks that were excluded: []
+Invalidating in-memory cache of C:\Users\admin\.gradle\caches\journal-1\file-access.bin
+Invalidating in-memory cache of C:\Users\admin\.gradle\caches\journal-1\file-access.bin
+Invalidating in-memory cache of C:\Users\admin\.gradle\caches\journal-1\file-access.bin
+Invalidating in-memory cache of C:\Users\admin\.gradle\caches\journal-1\file-access.bin
+Ignoring listeners of task graph ready event, as this build (:) has already executed work.
+Resolve mutations for :compileJava (Thread[#86,Execution worker Thread 3,5,main]) started.
+Resolve mutations for :processResources (Thread[#84,Execution worker,5,main]) started.
+Resolve mutations for :processTestResources (Thread[#85,Execution worker Thread 2,5,main]) started.
+:compileJava (Thread[#86,Execution worker Thread 3,5,main]) started.
+:processResources (Thread[#84,Execution worker,5,main]) started.
+:processTestResources (Thread[#85,Execution worker Thread 2,5,main]) started.
+
+> Task :processResources NO-SOURCE
+Skipping task ':processResources' as it has no source files and no previous output files.
+
+> Task :processTestResources NO-SOURCE
+Skipping task ':processTestResources' as it has no source files and no previous output files.
+
+> Task :compileJava
+Caching disabled for task ':compileJava' because:
+  Build cache is disabled
+Task ':compileJava' is not up-to-date because:
+  Input property 'stableSources' file D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java has changed.
+Compilation mode: in-process compilation
+Created classpath snapshot for incremental compilation in 0.014 secs.
+file or directory 'D:\codes\expcvm10\legacy-archive', not found
+Compiling with toolchain 'C:\Program Files\Apache NetBeans\jdk'.
+file or directory 'D:\codes\expcvm10\legacy-archive', not found
+Compiling with JDK Java compiler API.
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:3: error: package system.model does not exist
+import system.model.GibbsEnergyModel;
+                   ^
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:4: error: package ui.result does not exist
+import ui.result.CoarseDiagramResult;
+                ^
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:5: error: package ui.result.CoarseDiagramResult does not exist
+import ui.result.CoarseDiagramResult.GridPoint;
+                                    ^
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:68: error: cannot find symbol
+            AxisConfig axisX,
+            ^
+  symbol:   class AxisConfig
+  location: class CoarseDiagramTracer
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:69: error: cannot find symbol
+            AxisConfig axisY,
+            ^
+  symbol:   class AxisConfig
+  location: class CoarseDiagramTracer
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:73: error: cannot find symbol
+            List<GibbsEnergyModel> candidates) {
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class CoarseDiagramTracer
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:67: error: cannot find symbol
+    public CoarseDiagramResult traceBinary(
+           ^
+  symbol:   class CoarseDiagramResult
+  location: class CoarseDiagramTracer
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:87: error: cannot find symbol
+            AxisConfig axisX,
+            ^
+  symbol:   class AxisConfig
+  location: class CoarseDiagramTracer
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:88: error: cannot find symbol
+            AxisConfig axisY,
+            ^
+  symbol:   class AxisConfig
+  location: class CoarseDiagramTracer
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:92: error: cannot find symbol
+            List<GibbsEnergyModel> candidates,
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class CoarseDiagramTracer
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:86: error: cannot find symbol
+    public CoarseDiagramResult traceBinary(
+           ^
+  symbol:   class CoarseDiagramResult
+  location: class CoarseDiagramTracer
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:177: error: cannot find symbol
+            AxisConfig axisCompI,
+            ^
+  symbol:   class AxisConfig
+  location: class CoarseDiagramTracer
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:178: error: cannot find symbol
+            AxisConfig axisCompJ,
+            ^
+  symbol:   class AxisConfig
+  location: class CoarseDiagramTracer
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:182: error: cannot find symbol
+            List<GibbsEnergyModel> candidates) {
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class CoarseDiagramTracer
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:176: error: cannot find symbol
+    public CoarseDiagramResult traceTernary(
+           ^
+  symbol:   class CoarseDiagramResult
+  location: class CoarseDiagramTracer
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:193: error: cannot find symbol
+            AxisConfig axisCompI,
+            ^
+  symbol:   class AxisConfig
+  location: class CoarseDiagramTracer
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:194: error: cannot find symbol
+            AxisConfig axisCompJ,
+            ^
+  symbol:   class AxisConfig
+  location: class CoarseDiagramTracer
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:198: error: cannot find symbol
+            List<GibbsEnergyModel> candidates,
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class CoarseDiagramTracer
+D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:192: error: cannot find symbol
+    public CoarseDiagramResult traceTernary(
+           ^
+  symbol:   class CoarseDiagramResult
+  location: class CoarseDiagramTracer
+D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:4: error: cannot find symbol
+import calc.equil.EquilibriumState;
+                 ^
+  symbol:   class EquilibriumState
+  location: package calc.equil
+D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:5: error: cannot find symbol
+import calc.equil.GridMinimizer;
+                 ^
+  symbol:   class GridMinimizer
+  location: package calc.equil
+D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:6: error: cannot find symbol
+import calc.equil.PhaseRecord;
+                 ^
+  symbol:   class PhaseRecord
+  location: package calc.equil
+D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:7: error: package system.model does not exist
+import system.model.GibbsEnergyModel;
+                   ^
+D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:8: error: package system.ports does not exist
+import system.ports.EquilibriumResult;
+                   ^
+D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:48: error: cannot find symbol
+            List<GibbsEnergyModel> candidates) {
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolveHelper
+D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:44: error: cannot find symbol
+    static EquilibriumResult solveOrSentinel(
+           ^
+  symbol:   class EquilibriumResult
+  location: class EquilibriumSolveHelper
+D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:103: error: cannot find symbol
+            List<GibbsEnergyModel> candidates) {
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolveHelper
+D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:132: error: cannot find symbol
+            EquilibriumResult result) {
+            ^
+  symbol:   class EquilibriumResult
+  location: class EquilibriumSolveHelper
+D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:156: error: cannot find symbol
+            List<GibbsEnergyModel> candidates,
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolveHelper
+D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:157: error: cannot find symbol
+            EquilibriumResult seed,
+            ^
+  symbol:   class EquilibriumResult
+  location: class EquilibriumSolveHelper
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:10: error: package system.model does not exist
+import system.model.GibbsEnergyModel;
+                   ^
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:11: error: package system.model does not exist
+import system.model.PhaseEquilData;
+                   ^
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:12: error: package system.ports does not exist
+import system.ports.EquilibriumResult;
+                   ^
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:13: error: package util does not exist
+import util.Matrix;
+           ^
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:14: error: package util does not exist
+import util.SingularValueDecomposition;
+           ^
+D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:187: error: cannot find symbol
+            List<GibbsEnergyModel> candidates,
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolveHelper
+D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:188: error: cannot find symbol
+            EquilibriumResult seed,
+            ^
+  symbol:   class EquilibriumResult
+  location: class EquilibriumSolveHelper
+D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:212: error: cannot find symbol
+            List<GibbsEnergyModel> candidates,
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolveHelper
+D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:213: error: cannot find symbol
+            EquilibriumResult seed,
+            ^
+  symbol:   class EquilibriumResult
+  location: class EquilibriumSolveHelper
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:766: error: cannot find symbol
+        public final EquilibriumResult equilibrium;
+                     ^
+  symbol:   class EquilibriumResult
+  location: class BoundarySolveResult
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:771: error: cannot find symbol
+        public BoundarySolveResult(EquilibriumResult equilibrium, double releasedComponentValue) {
+                                   ^
+  symbol:   class EquilibriumResult
+  location: class BoundarySolveResult
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:65: error: cannot find symbol
+    private List<GibbsEnergyModel> phaseModels;
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:396: error: cannot find symbol
+                      List<GibbsEnergyModel> candidates) {
+                           ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:393: error: cannot find symbol
+    public EquilibriumResult solve(double T,
+           ^
+  symbol:   class EquilibriumResult
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:432: error: cannot find symbol
+                      List<GibbsEnergyModel> candidates,
+                           ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:429: error: cannot find symbol
+    public EquilibriumResult solve(double T,
+           ^
+  symbol:   class EquilibriumResult
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:840: error: cannot find symbol
+            List<GibbsEnergyModel> candidates,
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:841: error: cannot find symbol
+            EquilibriumResult seed,
+            ^
+  symbol:   class EquilibriumResult
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:873: error: cannot find symbol
+            List<GibbsEnergyModel> candidates,
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:874: error: cannot find symbol
+            EquilibriumResult seed,
+            ^
+  symbol:   class EquilibriumResult
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:995: error: cannot find symbol
+            List<GibbsEnergyModel> candidates,
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:996: error: cannot find symbol
+            EquilibriumResult seed,
+            ^
+  symbol:   class EquilibriumResult
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1035: error: cannot find symbol
+            List<GibbsEnergyModel> candidates,
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1036: error: cannot find symbol
+            EquilibriumResult seed,
+            ^
+  symbol:   class EquilibriumResult
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1070: error: cannot find symbol
+            List<GibbsEnergyModel> candidates,
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1071: error: cannot find symbol
+            EquilibriumResult seed,
+            ^
+  symbol:   class EquilibriumResult
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1142: error: cannot find symbol
+            List<GibbsEnergyModel> candidates,
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1187: error: cannot find symbol
+    private double[] bestSeedConstitution(GibbsEnergyModel model) {
+                                          ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1232: error: cannot find symbol
+            EquilibriumResult seed,
+            ^
+  symbol:   class EquilibriumResult
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1233: error: cannot find symbol
+            List<GibbsEnergyModel> candidates) {
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1491: error: cannot find symbol
+    private EquilibriumResult buildEquilibriumResult(
+            ^
+  symbol:   class EquilibriumResult
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1507: error: package EquilibriumResult does not exist
+            EquilibriumResult.StableSetChange stableSetChange) {
+                             ^
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1504: error: cannot find symbol
+    private EquilibriumResult buildEquilibriumResult(
+            ^
+  symbol:   class EquilibriumResult
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:2065: error: cannot find symbol
+            GibbsEnergyModel phase,
+            ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:4763: error: package EquilibriumResult does not exist
+    private EquilibriumResult.StableSetChange updateStablePhaseSet() {
+                             ^
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:5024: error: cannot find symbol
+            GibbsEnergyModel model) {
+            ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:5054: error: cannot find symbol
+            GibbsEnergyModel candidateModel,
+            ^
+  symbol:   class GibbsEnergyModel
+  location: class EquilibriumSolverV2
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:250: error: cannot find symbol
+        final GibbsEnergyModel model;
+              ^
+  symbol:   class GibbsEnergyModel
+  location: class PhaseWork
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:276: error: cannot find symbol
+        PhaseEquilData equilData;
+        ^
+  symbol:   class PhaseEquilData
+  location: class PhaseWork
+D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:278: error: cannot find symbol
+        PhaseWork(GibbsEnergyModel model) {
+                  ^
+  symbol:   class GibbsEnergyModel
+  location: class PhaseWork
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:3: error: package system.model does not exist
+import system.model.GibbsEnergyModel;
+                   ^
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:4: error: package system.ports does not exist
+import system.ports.EquilibriumResult;
+                   ^
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:35: error: cannot find symbol
+    record Setup(NodeRegistry registry, SegmentWalker walker) {
+                 ^
+  symbol:   class NodeRegistry
+  location: class Setup
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:38: error: cannot find symbol
+    static void drain(Setup setup, List<GibbsEnergyModel> candidates) {
+                                        ^
+  symbol:   class GibbsEnergyModel
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:54: error: cannot find symbol
+    private static boolean phaseChanged(Line line, EquilibriumResult result) {
+                                        ^
+  symbol:   class Line
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:54: error: cannot find symbol
+    private static boolean phaseChanged(Line line, EquilibriumResult result) {
+                                                   ^
+  symbol:   class EquilibriumResult
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:98: error: cannot find symbol
+            List<GibbsEnergyModel> candidates) {
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:140: error: cannot find symbol
+    private static boolean forbiddenPhaseAppeared(Line line, EquilibriumResult firstStepResult) {
+                                                  ^
+  symbol:   class Line
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:140: error: cannot find symbol
+    private static boolean forbiddenPhaseAppeared(Line line, EquilibriumResult firstStepResult) {
+                                                             ^
+  symbol:   class EquilibriumResult
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:158: error: cannot find symbol
+            Line line,
+            ^
+  symbol:   class Line
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:162: error: cannot find symbol
+            List<GibbsEnergyModel> candidates) {
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:157: error: cannot find symbol
+    private static EquilibriumResult retryOnNonConvergence(
+                   ^
+  symbol:   class EquilibriumResult
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:183: error: cannot find symbol
+            Line line, int currentAxisIndex, EquilibriumResult previous, EquilibriumResult current) {
+            ^
+  symbol:   class Line
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:183: error: cannot find symbol
+            Line line, int currentAxisIndex, EquilibriumResult previous, EquilibriumResult current) {
+                                             ^
+  symbol:   class EquilibriumResult
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:183: error: cannot find symbol
+            Line line, int currentAxisIndex, EquilibriumResult previous, EquilibriumResult current) {
+                                                                         ^
+  symbol:   class EquilibriumResult
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:204: error: cannot find symbol
+            Line line,
+            ^
+  symbol:   class Line
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:205: error: cannot find symbol
+            AxisConfig axis,
+            ^
+  symbol:   class AxisConfig
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:207: error: cannot find symbol
+            java.util.function.BiConsumer<Line, EquilibriumResult> onCrossing,
+                                          ^
+  symbol:   class Line
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:207: error: cannot find symbol
+            java.util.function.BiConsumer<Line, EquilibriumResult> onCrossing,
+                                                ^
+  symbol:   class EquilibriumResult
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:208: error: cannot find symbol
+            List<GibbsEnergyModel> candidates) {
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:227: error: cannot find symbol
+            Line line,
+            ^
+  symbol:   class Line
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:228: error: cannot find symbol
+            AxisConfig axis,
+            ^
+  symbol:   class AxisConfig
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:230: error: cannot find symbol
+            java.util.function.BiConsumer<Line, EquilibriumResult> onCrossing,
+                                          ^
+  symbol:   class Line
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:230: error: cannot find symbol
+            java.util.function.BiConsumer<Line, EquilibriumResult> onCrossing,
+                                                ^
+  symbol:   class EquilibriumResult
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:231: error: cannot find symbol
+            List<GibbsEnergyModel> candidates,
+                 ^
+  symbol:   class GibbsEnergyModel
+  location: class LineFollower
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:122: error: cannot find symbol
+        final EquilibriumResult result;
+              ^
+  symbol:   class EquilibriumResult
+  location: class RetriedCrossing
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:125: error: cannot find symbol
+        RetriedCrossing(double axisValue, EquilibriumResult result, String changedPhase) {
+                                          ^
+  symbol:   class EquilibriumResult
+  location: class RetriedCrossing
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:50: error: cannot find symbol
+        EquilibriumResult solveAt(double axisValue, List<GibbsEnergyModel> candidates);
+                                                         ^
+  symbol:   class GibbsEnergyModel
+  location: interface EquilibriumStepper
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:50: error: cannot find symbol
+        EquilibriumResult solveAt(double axisValue, List<GibbsEnergyModel> candidates);
+        ^
+  symbol:   class EquilibriumResult
+  location: interface EquilibriumStepper
+D:\codes\expcvm10\src\calc\diagram\LineFollower.java:25: error: cannot find symbol
+        void walkAndResolve(Line line, List<GibbsEnergyModel> candidates);
+                            ^
+  symbol:   class Line
+  location: interface SegmentWalker
+100 errors
+Incremental compilation of 46 classes completed in 6.511 secs.
+Invalidating in-memory cache of D:\codes\expcvm10\.gradle\9.3.1\fileHashes\fileHashes.bin
+Invalidating in-memory cache of D:\codes\expcvm10\.gradle\9.3.1\fileHashes\resourceHashesCache.bin
+Invalidating in-memory cache of D:\codes\expcvm10\.gradle\9.3.1\executionHistory\executionHistory.bin
+Invalidating in-memory cache of D:\codes\expcvm10\.gradle\buildOutputCleanup\outputFiles.bin
+
+> Task :compileJava FAILED
+
+See the complete report at file:///D:/codes/expcvm10/build/reports/configuration-cache/bb10ar69iprw160j7rc3k3pcg/6mprke4hu65u9gjt8u2ojp3yg/configuration-cache-report.html
+
+[Incubating] Problems report is available at: file:///D:/codes/expcvm10/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':compileJava'.
+> Compilation failed; see the compiler output below.
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:68: error: cannot find symbol
+              AxisConfig axisX,
+              ^
+    symbol:   class AxisConfig
+    location: class CoarseDiagramTracer
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:69: error: cannot find symbol
+              AxisConfig axisY,
+              ^
+    symbol:   class AxisConfig
+    location: class CoarseDiagramTracer
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:73: error: cannot find symbol
+              List<GibbsEnergyModel> candidates) {
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class CoarseDiagramTracer
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:67: error: cannot find symbol
+      public CoarseDiagramResult traceBinary(
+             ^
+    symbol:   class CoarseDiagramResult
+    location: class CoarseDiagramTracer
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:87: error: cannot find symbol
+              AxisConfig axisX,
+              ^
+    symbol:   class AxisConfig
+    location: class CoarseDiagramTracer
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:88: error: cannot find symbol
+              AxisConfig axisY,
+              ^
+    symbol:   class AxisConfig
+    location: class CoarseDiagramTracer
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:92: error: cannot find symbol
+              List<GibbsEnergyModel> candidates,
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class CoarseDiagramTracer
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:86: error: cannot find symbol
+      public CoarseDiagramResult traceBinary(
+             ^
+    symbol:   class CoarseDiagramResult
+    location: class CoarseDiagramTracer
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:177: error: cannot find symbol
+              AxisConfig axisCompI,
+              ^
+    symbol:   class AxisConfig
+    location: class CoarseDiagramTracer
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:178: error: cannot find symbol
+              AxisConfig axisCompJ,
+              ^
+    symbol:   class AxisConfig
+    location: class CoarseDiagramTracer
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:182: error: cannot find symbol
+              List<GibbsEnergyModel> candidates) {
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class CoarseDiagramTracer
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:176: error: cannot find symbol
+      public CoarseDiagramResult traceTernary(
+             ^
+    symbol:   class CoarseDiagramResult
+    location: class CoarseDiagramTracer
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:193: error: cannot find symbol
+              AxisConfig axisCompI,
+              ^
+    symbol:   class AxisConfig
+    location: class CoarseDiagramTracer
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:194: error: cannot find symbol
+              AxisConfig axisCompJ,
+              ^
+    symbol:   class AxisConfig
+    location: class CoarseDiagramTracer
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:198: error: cannot find symbol
+              List<GibbsEnergyModel> candidates,
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class CoarseDiagramTracer
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:192: error: cannot find symbol
+      public CoarseDiagramResult traceTernary(
+             ^
+    symbol:   class CoarseDiagramResult
+    location: class CoarseDiagramTracer
+  D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:4: error: cannot find symbol
+  import calc.equil.EquilibriumState;
+                   ^
+    symbol:   class EquilibriumState
+    location: package calc.equil
+  D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:5: error: cannot find symbol
+  import calc.equil.GridMinimizer;
+                   ^
+    symbol:   class GridMinimizer
+    location: package calc.equil
+  D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:6: error: cannot find symbol
+  import calc.equil.PhaseRecord;
+                   ^
+    symbol:   class PhaseRecord
+    location: package calc.equil
+  D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:48: error: cannot find symbol
+              List<GibbsEnergyModel> candidates) {
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolveHelper
+  D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:44: error: cannot find symbol
+      static EquilibriumResult solveOrSentinel(
+             ^
+    symbol:   class EquilibriumResult
+    location: class EquilibriumSolveHelper
+  D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:103: error: cannot find symbol
+              List<GibbsEnergyModel> candidates) {
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolveHelper
+  D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:132: error: cannot find symbol
+              EquilibriumResult result) {
+              ^
+    symbol:   class EquilibriumResult
+    location: class EquilibriumSolveHelper
+  D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:156: error: cannot find symbol
+              List<GibbsEnergyModel> candidates,
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolveHelper
+  D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:157: error: cannot find symbol
+              EquilibriumResult seed,
+              ^
+    symbol:   class EquilibriumResult
+    location: class EquilibriumSolveHelper
+  D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:187: error: cannot find symbol
+              List<GibbsEnergyModel> candidates,
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolveHelper
+  D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:188: error: cannot find symbol
+              EquilibriumResult seed,
+              ^
+    symbol:   class EquilibriumResult
+    location: class EquilibriumSolveHelper
+  D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:212: error: cannot find symbol
+              List<GibbsEnergyModel> candidates,
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolveHelper
+  D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:213: error: cannot find symbol
+              EquilibriumResult seed,
+              ^
+    symbol:   class EquilibriumResult
+    location: class EquilibriumSolveHelper
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:766: error: cannot find symbol
+          public final EquilibriumResult equilibrium;
+                       ^
+    symbol:   class EquilibriumResult
+    location: class BoundarySolveResult
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:771: error: cannot find symbol
+          public BoundarySolveResult(EquilibriumResult equilibrium, double releasedComponentValue) {
+                                     ^
+    symbol:   class EquilibriumResult
+    location: class BoundarySolveResult
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:65: error: cannot find symbol
+      private List<GibbsEnergyModel> phaseModels;
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:396: error: cannot find symbol
+                        List<GibbsEnergyModel> candidates) {
+                             ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:393: error: cannot find symbol
+      public EquilibriumResult solve(double T,
+             ^
+    symbol:   class EquilibriumResult
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:432: error: cannot find symbol
+                        List<GibbsEnergyModel> candidates,
+                             ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:429: error: cannot find symbol
+      public EquilibriumResult solve(double T,
+             ^
+    symbol:   class EquilibriumResult
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:840: error: cannot find symbol
+              List<GibbsEnergyModel> candidates,
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:841: error: cannot find symbol
+              EquilibriumResult seed,
+              ^
+    symbol:   class EquilibriumResult
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:873: error: cannot find symbol
+              List<GibbsEnergyModel> candidates,
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:874: error: cannot find symbol
+              EquilibriumResult seed,
+              ^
+    symbol:   class EquilibriumResult
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:995: error: cannot find symbol
+              List<GibbsEnergyModel> candidates,
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:996: error: cannot find symbol
+              EquilibriumResult seed,
+              ^
+    symbol:   class EquilibriumResult
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1035: error: cannot find symbol
+              List<GibbsEnergyModel> candidates,
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1036: error: cannot find symbol
+              EquilibriumResult seed,
+              ^
+    symbol:   class EquilibriumResult
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1070: error: cannot find symbol
+              List<GibbsEnergyModel> candidates,
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1071: error: cannot find symbol
+              EquilibriumResult seed,
+              ^
+    symbol:   class EquilibriumResult
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1142: error: cannot find symbol
+              List<GibbsEnergyModel> candidates,
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1187: error: cannot find symbol
+      private double[] bestSeedConstitution(GibbsEnergyModel model) {
+                                            ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1232: error: cannot find symbol
+              EquilibriumResult seed,
+              ^
+    symbol:   class EquilibriumResult
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1233: error: cannot find symbol
+              List<GibbsEnergyModel> candidates) {
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1491: error: cannot find symbol
+      private EquilibriumResult buildEquilibriumResult(
+              ^
+    symbol:   class EquilibriumResult
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1504: error: cannot find symbol
+      private EquilibriumResult buildEquilibriumResult(
+              ^
+    symbol:   class EquilibriumResult
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:2065: error: cannot find symbol
+              GibbsEnergyModel phase,
+              ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:5024: error: cannot find symbol
+              GibbsEnergyModel model) {
+              ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:5054: error: cannot find symbol
+              GibbsEnergyModel candidateModel,
+              ^
+    symbol:   class GibbsEnergyModel
+    location: class EquilibriumSolverV2
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:250: error: cannot find symbol
+          final GibbsEnergyModel model;
+                ^
+    symbol:   class GibbsEnergyModel
+    location: class PhaseWork
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:276: error: cannot find symbol
+          PhaseEquilData equilData;
+          ^
+    symbol:   class PhaseEquilData
+    location: class PhaseWork
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:278: error: cannot find symbol
+          PhaseWork(GibbsEnergyModel model) {
+                    ^
+    symbol:   class GibbsEnergyModel
+    location: class PhaseWork
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:35: error: cannot find symbol
+      record Setup(NodeRegistry registry, SegmentWalker walker) {
+                   ^
+    symbol:   class NodeRegistry
+    location: class Setup
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:38: error: cannot find symbol
+      static void drain(Setup setup, List<GibbsEnergyModel> candidates) {
+                                          ^
+    symbol:   class GibbsEnergyModel
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:54: error: cannot find symbol
+      private static boolean phaseChanged(Line line, EquilibriumResult result) {
+                                          ^
+    symbol:   class Line
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:54: error: cannot find symbol
+      private static boolean phaseChanged(Line line, EquilibriumResult result) {
+                                                     ^
+    symbol:   class EquilibriumResult
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:98: error: cannot find symbol
+              List<GibbsEnergyModel> candidates) {
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:140: error: cannot find symbol
+      private static boolean forbiddenPhaseAppeared(Line line, EquilibriumResult firstStepResult) {
+                                                    ^
+    symbol:   class Line
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:140: error: cannot find symbol
+      private static boolean forbiddenPhaseAppeared(Line line, EquilibriumResult firstStepResult) {
+                                                               ^
+    symbol:   class EquilibriumResult
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:158: error: cannot find symbol
+              Line line,
+              ^
+    symbol:   class Line
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:162: error: cannot find symbol
+              List<GibbsEnergyModel> candidates) {
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:157: error: cannot find symbol
+      private static EquilibriumResult retryOnNonConvergence(
+                     ^
+    symbol:   class EquilibriumResult
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:183: error: cannot find symbol
+              Line line, int currentAxisIndex, EquilibriumResult previous, EquilibriumResult current) {
+              ^
+    symbol:   class Line
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:183: error: cannot find symbol
+              Line line, int currentAxisIndex, EquilibriumResult previous, EquilibriumResult current) {
+                                               ^
+    symbol:   class EquilibriumResult
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:183: error: cannot find symbol
+              Line line, int currentAxisIndex, EquilibriumResult previous, EquilibriumResult current) {
+                                                                           ^
+    symbol:   class EquilibriumResult
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:204: error: cannot find symbol
+              Line line,
+              ^
+    symbol:   class Line
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:205: error: cannot find symbol
+              AxisConfig axis,
+              ^
+    symbol:   class AxisConfig
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:207: error: cannot find symbol
+              java.util.function.BiConsumer<Line, EquilibriumResult> onCrossing,
+                                            ^
+    symbol:   class Line
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:207: error: cannot find symbol
+              java.util.function.BiConsumer<Line, EquilibriumResult> onCrossing,
+                                                  ^
+    symbol:   class EquilibriumResult
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:208: error: cannot find symbol
+              List<GibbsEnergyModel> candidates) {
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:227: error: cannot find symbol
+              Line line,
+              ^
+    symbol:   class Line
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:228: error: cannot find symbol
+              AxisConfig axis,
+              ^
+    symbol:   class AxisConfig
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:230: error: cannot find symbol
+              java.util.function.BiConsumer<Line, EquilibriumResult> onCrossing,
+                                            ^
+    symbol:   class Line
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:230: error: cannot find symbol
+              java.util.function.BiConsumer<Line, EquilibriumResult> onCrossing,
+                                                  ^
+    symbol:   class EquilibriumResult
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:231: error: cannot find symbol
+              List<GibbsEnergyModel> candidates,
+                   ^
+    symbol:   class GibbsEnergyModel
+    location: class LineFollower
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:122: error: cannot find symbol
+          final EquilibriumResult result;
+                ^
+    symbol:   class EquilibriumResult
+    location: class RetriedCrossing
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:125: error: cannot find symbol
+          RetriedCrossing(double axisValue, EquilibriumResult result, String changedPhase) {
+                                            ^
+    symbol:   class EquilibriumResult
+    location: class RetriedCrossing
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:50: error: cannot find symbol
+          EquilibriumResult solveAt(double axisValue, List<GibbsEnergyModel> candidates);
+                                                           ^
+    symbol:   class GibbsEnergyModel
+    location: interface EquilibriumStepper
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:50: error: cannot find symbol
+          EquilibriumResult solveAt(double axisValue, List<GibbsEnergyModel> candidates);
+          ^
+    symbol:   class EquilibriumResult
+    location: interface EquilibriumStepper
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:25: error: cannot find symbol
+          void walkAndResolve(Line line, List<GibbsEnergyModel> candidates);
+                              ^
+    symbol:   class Line
+    location: interface SegmentWalker
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:3: error: package system.model does not exist
+  import system.model.GibbsEnergyModel;
+                     ^
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:4: error: package ui.result does not exist
+  import ui.result.CoarseDiagramResult;
+                  ^
+  D:\codes\expcvm10\src\calc\diagram\CoarseDiagramTracer.java:5: error: package ui.result.CoarseDiagramResult does not exist
+  import ui.result.CoarseDiagramResult.GridPoint;
+                                      ^
+  D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:7: error: package system.model does not exist
+  import system.model.GibbsEnergyModel;
+                     ^
+  D:\codes\expcvm10\src\calc\diagram\EquilibriumSolveHelper.java:8: error: package system.ports does not exist
+  import system.ports.EquilibriumResult;
+                     ^
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:10: error: package system.model does not exist
+  import system.model.GibbsEnergyModel;
+                     ^
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:11: error: package system.model does not exist
+  import system.model.PhaseEquilData;
+                     ^
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:12: error: package system.ports does not exist
+  import system.ports.EquilibriumResult;
+                     ^
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:13: error: package util does not exist
+  import util.Matrix;
+             ^
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:14: error: package util does not exist
+  import util.SingularValueDecomposition;
+             ^
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:1507: error: package EquilibriumResult does not exist
+              EquilibriumResult.StableSetChange stableSetChange) {
+                               ^
+  D:\codes\expcvm10\src\calc\equil\EquilibriumSolverV2.java:4763: error: package EquilibriumResult does not exist
+      private EquilibriumResult.StableSetChange updateStablePhaseSet() {
+                               ^
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:3: error: package system.model does not exist
+  import system.model.GibbsEnergyModel;
+                     ^
+  D:\codes\expcvm10\src\calc\diagram\LineFollower.java:4: error: package system.ports does not exist
+  import system.ports.EquilibriumResult;
+                     ^
+  100 errors
+
+* Try:
+> Check your code and dependencies to fix the compilation error(s)
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+
+BUILD FAILED in 47s
+1 actionable task: 1 executed
+Watched directory hierarchies: [D:\codes\expcvm10]
+Configuration cache entry stored.

@@ -22,7 +22,8 @@
       "Bash(CLASSPATH=\"lib/*\" javac -source 8 -target 8 -d build/classes/java/main -sourcepath src src/ui/gui/MainFrame.java)",
       "Bash(git pull:*)",
       "Bash(java -cp build/classes/java/main test.CefBuildTest)",
-      "Bash(./gradlew clean:*)"
+      "Bash(./gradlew clean:*)",
+      "Bash(gradle test *)"
     ]
   }
 }
