@@ -38,34 +38,8 @@ public class Print {
             }
         }
 
-        // Legacy console/file output (unchanged behaviour)
-        if (loglevel <= DataPrinter.logLevel) {
-            switch (DataPrinter.pr2F) {
-                case 0:// Prints Nothing
-                    break;
-                case 1:// Prints to Console Only
-                    if (str.startsWith("*****")) {
-                        System.out.println();
-                    }
-                    System.out.print(str);
-                    break;
-                case 2:// Prints to File Only
-                    //if (str.startsWith("*****")) {
-                    //}
-                    break;
-                case 3:// Prints to Both Console & File
-                    if (str.startsWith("*****")) {
-                        System.out.println();
-                        //DataPrinter.printLog(str+DataPrinter.nl);
-                    }
-                    System.out.print(str);
-                    //DataPrinter.printLog(str);
-                    break;
-                default:
-                    System.out.println("Didn't match any predefined printing Criteria !");
-                    break;
-            }
-        }
+        // Legacy console output only (DataPrinter deprecated after legacy code removal)
+        System.out.print(str);
     }// closed Method
 
     public static void f(String str, int loglevel) {

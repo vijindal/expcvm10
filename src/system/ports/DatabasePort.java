@@ -1,5 +1,7 @@
 package system.ports;
 
+import system.model.GibbsEnergyModel;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -37,7 +39,7 @@ public interface DatabasePort {
      * @return list of GibbsEnergyModel objects ready for equilibrium solving
      * @throws IOException if database load fails
      */
-    List<?> buildPhaseModels(List<String> phases, List<String> phaseNames) throws IOException;
+    List<GibbsEnergyModel> buildPhaseModels(List<String> phases, List<String> phaseNames) throws IOException;
 
     /**
      * As {@link #buildPhaseModels(List, List)}, but selecting which
@@ -48,7 +50,7 @@ public interface DatabasePort {
      * <p>The default implementation ignores {@code kind} (delegates to
      * the two-argument form); {@code TdbParser} overrides it.
      */
-    default List<?> buildPhaseModels(List<String> phases, List<String> phaseNames,
+    default List<GibbsEnergyModel> buildPhaseModels(List<String> phases, List<String> phaseNames,
                                      system.model.PhaseModelKind kind) throws IOException {
         return buildPhaseModels(phases, phaseNames);
     }

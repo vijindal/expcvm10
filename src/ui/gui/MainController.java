@@ -8,11 +8,11 @@ import ui.request.PropertyScanRequest;
 import ui.result.PropertyScanResult;
 import ui.request.PhaseDiagramRequest;
 import calc.diagram.PhaseDiagramResult;
-import session.CalculationSession;
-import session.calctype.CalculationInterface;
-import session.calctype.CalculationKind;
-import session.calctype.CalculationOutcome;
-import session.calctype.ModelSelection;
+import application.ApplicationLayer;
+import application.calctype.CalculationInterface;
+import application.calctype.CalculationKind;
+import application.calctype.CalculationOutcome;
+import application.calctype.ModelSelection;
 import util.AppLevel;
 import util.Trace;
 
@@ -24,28 +24,28 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Bridges GUI views to {@link CalculationSession}.
+ * Bridges GUI views to {@link ApplicationLayer}.
  *
  * <p>Per the target data flow (README "Structure" / {@code
  * docs/dataflow_target.png}), the GUI's only point of contact with the
- * System and Calculation layers is {@link session.calctype.CalculationInterface}:
+ * System and Calculation layers is {@link application.calctype.CalculationInterface}:
  * browsing (pre-calculation) still goes directly through the held {@link
- * CalculationSession} (via {@link ModelBrowseService}, unchanged), but every
- * calculation builds a {@link session.calctype.ModelSelection} and a
+ * ApplicationLayer} (via {@link ModelBrowseService}, unchanged), but every
+ * calculation builds a {@link application.calctype.ModelSelection} and a
  * calculation type's own typed params, then calls {@link
  * CalculationInterface#runCalculating}/{@link CalculationInterface#runAssessing}
  * rather than {@code calculationSession.calculate*}/{@code setModel}
  * directly. Paths that still reached around it -- phase diagram via
  * {@code PhaseDiagramUseCase}, property scan, the parameter-dump inspector
  * via {@code ModelInspectionService} -- have been reduced to explicit
- * "not yet wired through CalculationSession" stubs rather than left
+ * "not yet wired through ApplicationLayer" stubs rather than left
  * bypassing the coordinator. See the TODO markers below.
  */
 public class MainController {
 
     private static final Logger LOG = Logger.getLogger(MainController.class.getName());
     private final OptimizationUseCase optimizationUseCase;
-    private final CalculationSession calculationSession = new CalculationSession();
+    private final ApplicationLayer calculationSession = new ApplicationLayer();
     private final ModelBrowseService modelBrowseService = new ModelBrowseService(calculationSession);
 
     public MainController(OptimizationUseCase optimizationUseCase) {
@@ -55,9 +55,9 @@ public class MainController {
     /**
      * Run a single-point calculation with the given parameters.
      *
-     * <p>Routed through {@link CalculationSession} -- the same coordinator
+     * <p>Routed through {@link ApplicationLayer} -- the same coordinator
      * the REST API and the CLI's {@code equilibrium} command use. One
-     * {@code CalculationSession} is held for the lifetime of this
+     * {@code ApplicationLayer} is held for the lifetime of this
      * controller, so repeated single-point runs against the same
      * TDB/elements/phases reuse the built {@code ThermodynamicSystem}
      * instead of re-parsing the database every time.
@@ -108,7 +108,7 @@ public class MainController {
 
     /**
      * Run an automated phase-diagram calculation with the given request
-     * -- {@link CalculationSession#calculatePhaseDiagram} (Sundman
+     * -- {@link ApplicationLayer#calculatePhaseDiagram} (Sundman
      * Algorithms B/C1/C2/D, whole connected diagram from one starting
      * point), not the old {@code PhaseDiagramUseCase} path (which did
      * {@code ThermodynamicSystem.build(...)} on its own, bypassing the
@@ -116,7 +116,7 @@ public class MainController {
      *
      * <p>{@link PhaseDiagramRequest#axisArray()}/{@link
      * PhaseDiagramRequest#startAxisValues()} already have exactly the
-     * shape {@link CalculationSession#calculatePhaseDiagram} needs --
+     * shape {@link ApplicationLayer#calculatePhaseDiagram} needs --
      * this method is a thin adapter, the same shape as {@link
      * #runCoarseDiagram}. {@link PhaseDiagramRequest.DiagramType#COARSE}
      * is not handled here -- callers wanting a coarse grid should call
@@ -149,8 +149,8 @@ public class MainController {
      * conditions and calls the full equilibrium solver independently at
      * each point, coloring the result by stable-phase-set for scatter/
      * dot rendering. Unlike {@link #runPhaseDiagram}, this is fully
-     * wired through {@link CalculationSession} -- see {@code
-     * CalculationSession#calculateCoarseBinaryDiagram}/
+     * wired through {@link ApplicationLayer} -- see {@code
+     * ApplicationLayer#calculateCoarseBinaryDiagram}/
      * {@code calculateCoarseTernaryDiagram}.
      */
     public ui.result.CoarseDiagramResult runCoarseDiagram(PhaseDiagramRequest request) {
@@ -159,9 +159,9 @@ public class MainController {
             ModelSelection model = new ModelSelection(request.getTdbFilePath(),
                     request.getElements(), request.getPhases());
 
-            List<calc.diagram.AxisConfig> axes = request.getAxes();
-            calc.diagram.AxisConfig axisX = axes.get(0);
-            calc.diagram.AxisConfig axisY = axes.get(1);
+            List<ui.request.AxisConfig> axes = request.getAxes();
+            ui.request.AxisConfig axisX = axes.get(0);
+            ui.request.AxisConfig axisY = axes.get(1);
             double[] comp = request.getStartComposition();
 
             ui.result.CoarseDiagramResult r;
@@ -220,7 +220,7 @@ public class MainController {
     }
 
     /**
-     * The {@link session.calctype.CalculationGroup#ASSESS} ("opt") landing
+     * The {@link application.calctype.CalculationGroup#ASSESS} ("opt") landing
      * choice: thermodynamic assessment / database creation. Not implemented
      * yet -- routed through {@link CalculationInterface#runAssessing} so the
      * GUI surfaces the same message the CLI and API do, rather than its own
@@ -239,7 +239,7 @@ public class MainController {
 
     /**
      * Lists the {@code .tdb} database files available to choose from.
-     * Routed through {@link CalculationSession#availableDatabases}, per
+     * Routed through {@link ApplicationLayer#availableDatabases}, per
      * {@code docs/plan-gui-calculationsession-wiring.md} Fix 3 -- the GUI
      * must not scan the filesystem itself, so this capability is shared
      * with the CLI and API via the same session method.
@@ -251,7 +251,7 @@ public class MainController {
     /**
      * Inspect TDB and return model metadata.
      *
-     * <p>Routed through {@link CalculationSession#availableElements}
+     * <p>Routed through {@link ApplicationLayer#availableElements}
      * (browsing, not calculating -- see
      * {@code docs/plan-gui-calculationsession-wiring.md}) rather than
      * {@link ModelInspectionService} directly, so the GUI's
@@ -311,35 +311,35 @@ public class MainController {
     /**
      * Detailed per-phase parameter dump for the model inspector panel.
      *
-     * <p>TODO: not yet wired through {@link CalculationSession}. The old
+     * <p>TODO: not yet wired through {@link ApplicationLayer}. The old
      * path called {@code ModelInspectionService.getPhaseParameters(...)}
-     * directly (raw {@code TdbParser}), reaching around the session. The
+     * directly (raw {@code TdbParser}), reaching around the application. The
      * compliant shape is a browse-style query method on
-     * {@code CalculationSession} (e.g. {@code phaseParameters(tdbPath,
+     * {@code ApplicationLayer} (e.g. {@code phaseParameters(tdbPath,
      * elements, phaseName)}) backed by the session's own browse
      * {@code DatabasePort}. Returns an empty list until then.
      */
     public List<?> getPhaseParameters(String tdbPath, List<String> elements, String phaseName) {
-        LOG.warning("getPhaseParameters: not yet wired through CalculationSession");
+        LOG.warning("getPhaseParameters: not yet wired through ApplicationLayer");
         return new ArrayList<>();
     }
 
     /**
      * Property scan (STEP / MAP).
      *
-     * <p>TODO: not yet wired through {@link CalculationSession}. The
+     * <p>TODO: not yet wired through {@link ApplicationLayer}. The
      * compliant shape is {@code calculationSession.setModel(...)} then
      * {@code calculationSession.calculateStep(...)} /
      * {@code calculateMap(...)} -- both of which are themselves
      * unimplemented stubs today (no plain property-sampling engine
-     * exists; see {@code CalculationSession}). Returns a "not
+     * exists; see {@code ApplicationLayer}). Returns a "not
      * implemented" result until an engine and the wiring both exist.
      */
     public PropertyScanResult runPropertyScan(PropertyScanRequest request) {
-        LOG.warning("runPropertyScan: not yet wired through CalculationSession");
+        LOG.warning("runPropertyScan: not yet wired through ApplicationLayer");
         PropertyScanResult err = new PropertyScanResult();
         err.setSuccess(false);
-        err.setMessage("Property scan is not yet wired through CalculationSession "
+        err.setMessage("Property scan is not yet wired through ApplicationLayer "
                 + "(see MainController.runPropertyScan TODO)");
         return err;
     }

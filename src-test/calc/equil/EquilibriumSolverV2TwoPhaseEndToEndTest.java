@@ -94,10 +94,8 @@ public class EquilibriumSolverV2TwoPhaseEndToEndTest {
         List<String> phaseNames =
                 Arrays.asList(PHASE_A, PHASE_B);
 
-        @SuppressWarnings("unchecked")
-        List<CefGibbs> raw =
-                (List<CefGibbs>)
-                        parser.buildPhaseModels(elements, phaseNames);
+        List<GibbsEnergyModel> raw =
+                parser.buildPhaseModels(elements, phaseNames);
 
         assertEquals(
                 2,
@@ -105,8 +103,8 @@ public class EquilibriumSolverV2TwoPhaseEndToEndTest {
                 "Expected exactly two candidate phases.");
 
         // buildPhaseModels already returns fully-built CefGibbs models.
-        CefGibbs v2zr = raw.get(0);
-        CefGibbs bcc  = raw.get(1);
+        CefGibbs v2zr = (CefGibbs) raw.get(0);
+        CefGibbs bcc  = (CefGibbs) raw.get(1);
 
         List<GibbsEnergyModel> candidates =
                 Arrays.asList(v2zr, bcc);
@@ -240,17 +238,15 @@ public class EquilibriumSolverV2TwoPhaseEndToEndTest {
         List<String> elements =
                 Arrays.asList("V", "ZR");
 
-        @SuppressWarnings("unchecked")
-        List<CefGibbs> raw =
-                (List<CefGibbs>)
-                        parser.buildPhaseModels(elements, Arrays.asList(PHASE_A));
+        List<GibbsEnergyModel> raw =
+                parser.buildPhaseModels(elements, Arrays.asList(PHASE_A));
 
         assertEquals(
                 1,
                 raw.size(),
                 "Expected exactly one candidate phase.");
 
-        CefGibbs v2zr = raw.get(0);
+        CefGibbs v2zr = (CefGibbs) raw.get(0);
 
         List<GibbsEnergyModel> candidates =
                 Arrays.asList((GibbsEnergyModel) v2zr);
@@ -423,12 +419,10 @@ public class EquilibriumSolverV2TwoPhaseEndToEndTest {
         List<String> elements =
                 Arrays.asList("V", "ZR");
 
-        @SuppressWarnings("unchecked")
-        List<CefGibbs> raw =
-                (List<CefGibbs>)
-                        parser.buildPhaseModels(elements, Arrays.asList(PHASE_A));
+        List<GibbsEnergyModel> raw =
+                parser.buildPhaseModels(elements, Arrays.asList(PHASE_A));
 
-        CefGibbs v2zr = raw.get(0);
+        CefGibbs v2zr = (CefGibbs) raw.get(0);
 
         List<GibbsEnergyModel> candidates =
                 Arrays.asList((GibbsEnergyModel) v2zr);
@@ -542,13 +536,11 @@ public class EquilibriumSolverV2TwoPhaseEndToEndTest {
         List<String> phaseNames =
                 Arrays.asList(PHASE_A, PHASE_B);
 
-        @SuppressWarnings("unchecked")
-        List<CefGibbs> raw =
-                (List<CefGibbs>)
-                        parser.buildPhaseModels(elements, phaseNames);
+        List<GibbsEnergyModel> raw =
+                parser.buildPhaseModels(elements, phaseNames);
 
-        CefGibbs v2zr = raw.get(0);
-        CefGibbs bcc  = raw.get(1);
+        CefGibbs v2zr = (CefGibbs) raw.get(0);
+        CefGibbs bcc  = (CefGibbs) raw.get(1);
 
         List<GibbsEnergyModel> candidates =
                 Arrays.asList(v2zr, bcc);

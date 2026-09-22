@@ -9,6 +9,7 @@ import java.util.Map;
 
 import system.model.GibbsEnergyModel;
 import system.model.PhaseEquilData;
+import system.model.cef.CefGibbs;
 import system.ports.EquilibriumResult;
 import util.Matrix;
 import util.SingularValueDecomposition;
@@ -243,9 +244,12 @@ public class EquilibriumSolverV2 {
     private static final int MAX_INTERNAL_ITER = 50;
 
     /**
-     * Working data for one CEF phase.
+     * Working data for one phase (any {@link GibbsEnergyModel}, CEF or
+     * CVM). Generic since Step 5 -- only the CEF-specific candidate-
+     * addition/grid-sampling call sites still require a {@link CefGibbs}
+     * model beyond this class's own fields.
      */
-        private static final class PhaseWork {
+    private static final class PhaseWork {
 
         final GibbsEnergyModel model;
 
@@ -418,7 +422,7 @@ public class EquilibriumSolverV2 {
      * existing caller is unaffected. This overload exists so a future
      * step/map diagram tracer can opt into the paper's finer-grained,
      * mid-Newton crossing detection (see {@code
-     * docs/sundman2021_zpf_line_notes.md} Section 9) without disturbing
+     * docs/sundman2021_reference_notes.md} Section 9) without disturbing
      * any current caller; no tracer in this codebase uses {@code true}
      * yet.
      *
@@ -711,7 +715,7 @@ public class EquilibriumSolverV2 {
                 // stable set just changed -- bail out NOW, before even
                 // checking convergence, with the state as it stands
                 // (NOT reconverged with the corrected stable set). See
-                // this method's own javadoc and docs/sundman2021_zpf_line_notes.md
+                // this method's own javadoc and docs/sundman2021_reference_notes.md
                 // Section 9.
                 return buildEquilibriumResult(false, iteration, stableSetChange);
             }
@@ -965,12 +969,12 @@ public class EquilibriumSolverV2 {
      * as a node-solve FAILURE and {@code map_halfstep} retries from the
      * last converged point with a much smaller walk-axis sub-step (10%
      * of the normal increment, up to 3 attempts) until the jump narrows
-     * to a single resolvable phase change -- see {@link
-     * calc.diagram.MapTracer#retryWithHalvedSteps}, which implements
-     * that retry and is the paper/OpenCalphad-faithful mechanism for
-     * locating a genuine invariant, calling this single-fix method (or
-     * {@link #solveBoundary}) only once the jump has been narrowed to
-     * one phase.
+     * to a single resolvable phase change. {@code
+     * calc.diagram.PhaseDiagramEngine}'s own C1 walk does not yet
+     * implement this narrowing retry (only a plain smaller-increment
+     * retry on non-convergence); a genuine two-phases-change-together
+     * crossing can still defeat this single-fix method (or {@link
+     * #solveBoundary}) today.
      *
      * @param T                temperature to seed the search from (the walk's
      *                         current point, at/near the overshoot)
@@ -1157,9 +1161,14 @@ public class EquilibriumSolverV2 {
                     + "given candidate phases.");
         }
 
-        GibbsEnergyModel model = candidates.get(candidateIndex);
-        PhaseWork newWork = new PhaseWork(model);
-        newWork.y = bestSeedConstitution(model);
+        if (!(candidates.get(candidateIndex) instanceof CefGibbs)) {
+            throw new UnsupportedOperationException(
+                    "EquilibriumSolverV2 currently requires CEF candidate phases.");
+        }
+
+        CefGibbs cef = (CefGibbs) candidates.get(candidateIndex);
+        PhaseWork newWork = new PhaseWork(cef);
+        newWork.y = bestSeedConstitution(cef);
         evaluatePhaseWork(newWork);
 
         int newSlotCount = stablePhases.length + 1;
@@ -1184,20 +1193,20 @@ public class EquilibriumSolverV2 {
      * is not yet available (should not happen once {@link
      * #seedFromEquilibriumResult} has run) or no sample is finite.
      */
-    private double[] bestSeedConstitution(GibbsEnergyModel model) {
+    private double[] bestSeedConstitution(CefGibbs cef) {
 
         if (mu == null) {
-            return initializeSinglePhaseState(model, targetComposition());
+            return initializeSinglePhaseState(cef, targetComposition());
         }
 
-        double[][] samples = new GridMinimizer().sampleSiteFractions(model);
+        double[][] samples = new GridMinimizer().sampleSiteFractions(cef);
 
         double bestDrivingForce = Double.NEGATIVE_INFINITY;
         double[] bestY = null;
 
         for (double[] y : samples) {
 
-            PhaseWork trial = new PhaseWork(model);
+            PhaseWork trial = new PhaseWork(cef);
             trial.y = y;
 
             try {
@@ -1215,7 +1224,7 @@ public class EquilibriumSolverV2 {
 
         return (bestY != null)
                 ? bestY
-                : initializeSinglePhaseState(model, targetComposition());
+                : initializeSinglePhaseState(cef, targetComposition());
     }
 
     /**
@@ -1240,8 +1249,15 @@ public class EquilibriumSolverV2 {
         phaseWorks = new ArrayList<>(nph);
         for (int p = 0; p < nph; p++) {
             GibbsEnergyModel model = candidates.get(p);
-            PhaseWork work = new PhaseWork(model);
-            work.y = initializeSinglePhaseState(model, targetComposition());
+            if (!(model instanceof CefGibbs)) {
+                throw new UnsupportedOperationException(
+                        "EquilibriumSolverV2 currently requires CEF candidate "
+                        + "phases. Phase " + p + " (" + model.phaseName()
+                        + ") is not a CefGibbs.");
+            }
+            CefGibbs cef = (CefGibbs) model;
+            PhaseWork work = new PhaseWork(cef);
+            work.y = initializeSinglePhaseState(cef, targetComposition());
             evaluatePhaseWork(work);
             phaseWorks.add(work);
         }
@@ -1270,8 +1286,8 @@ public class EquilibriumSolverV2 {
             stablePhases[k] = p;
             phaseAmounts[k] = pr.amount;
 
-            GibbsEnergyModel model = candidates.get(p);
-            PhaseWork work = new PhaseWork(model);
+            CefGibbs cef = (CefGibbs) candidates.get(p);
+            PhaseWork work = new PhaseWork(cef);
             work.y = pr.y.clone();
             evaluatePhaseWork(work);
             stableSlots.add(work);
@@ -1630,12 +1646,57 @@ public class EquilibriumSolverV2 {
         if (stablePhases != null
                 && stableSlots != null) {
 
+            /*
+             * Instance labels (OC's own "#1"/"#2" convention, entered
+             * once per miscibility-gap split via OC's own
+             * enter_composition_set and then kept fixed for the rest of
+             * that calculation -- gtp3B.F90). This codebase does not
+             * persist a slot-identity across separate solve() calls the
+             * way OC's composition-set index does, so instead ordinals
+             * are assigned by each duplicate-named slot's own mole
+             * fraction, lexicographically ascending, not by its
+             * position in stableSlots -- stableSlots' own order is not
+             * guaranteed stable between two consecutive walk steps for
+             * what is physically the same branch, but along a
+             * continuous ZPF line the two branches of a gap do not cross
+             * each other's composition, so this keeps "#1"/"#2" attached
+             * to the same physical branch step to step.
+             */
+            java.util.Map<String, java.util.List<Integer>> slotsByName = new java.util.LinkedHashMap<>();
+            for (int k = 0; k < stableSlots.size(); k++) {
+                slotsByName.computeIfAbsent(stableSlots.get(k).model.phaseName(),
+                        n -> new java.util.ArrayList<>()).add(k);
+            }
+            java.util.Map<Integer, String> instanceLabelBySlot = new java.util.HashMap<>();
+            for (java.util.Map.Entry<String, java.util.List<Integer>> e : slotsByName.entrySet()) {
+                java.util.List<Integer> slots = e.getValue();
+                if (slots.size() == 1) {
+                    instanceLabelBySlot.put(slots.get(0), e.getKey());
+                    continue;
+                }
+                slots.sort((k1, k2) -> {
+                    double[] mA1 = stableSlots.get(k1).mA;
+                    double[] mA2 = stableSlots.get(k2).mA;
+                    for (int a = 0; a < Math.min(mA1.length, mA2.length); a++) {
+                        int cmp = Double.compare(mA1[a], mA2[a]);
+                        if (cmp != 0) return cmp;
+                    }
+                    return 0;
+                });
+                for (int ordinal = 0; ordinal < slots.size(); ordinal++) {
+                    instanceLabelBySlot.put(slots.get(ordinal), e.getKey() + "#" + (ordinal + 1));
+                }
+            }
+
             for (int k = 0;
                  k < stablePhases.length;
                  k++) {
 
                 PhaseWork work =
                         stableSlots.get(k);
+
+                String slotPhaseName = work.model.phaseName();
+                String instanceLabel = instanceLabelBySlot.get(k);
 
                 double[] slotMA =
                         work.mA.clone();
@@ -1685,7 +1746,8 @@ public class EquilibriumSolverV2 {
 
                 stableResults.add(
                         new EquilibriumResult.PhaseResult(
-                                work.model.phaseName(),
+                                slotPhaseName,
+                                instanceLabel,
                                 work.model.modelType(),
                                 phaseAmounts[k],
                                 slotX,
@@ -1734,14 +1796,11 @@ public class EquilibriumSolverV2 {
      * gap and select an initial stable-phase set from among the
      * candidates, rather than always starting at candidate 0.
      *
-     * The solver is model-agnostic: it accepts any GibbsEnergyModel
-     * implementation via the PhaseWork bookkeeping mechanism.
-     *
-     * For a KNOWN, already-validated fixed multiphase starting point
-     * (e.g. a controlled two-phase test), use
-     * {@link #setInitialStateForTest} to bypass GridMinimizer entirely.
-     * Phase selection during the iteration itself remains
-     * updateStablePhaseSet()'s responsibility (currently a no-op).
+     * PhaseWork bookkeeping itself is model-agnostic, but {@link
+     * GridMinimizer}'s site-fraction sampling is CEF-specific. A non-CEF
+     * candidate (e.g. CVM) must instead reach {@link #solve} via
+     * {@link #setInitialStateForTest}, which bypasses GridMinimizer
+     * entirely with an explicitly supplied stable set.
      */
     private void initialize() {
 
@@ -1780,6 +1839,11 @@ public class EquilibriumSolverV2 {
              *
              * Later the grid/global initializer will replace this with
              * proper phase-specific starting constitutions.
+             *
+             * initializeSinglePhaseState() covers every GibbsEnergyModel
+             * generically (getInitialInternalVars()/isValid() are already
+             * part of the model-agnostic contract) -- see that method's
+             * javadoc.
              */
             work.y =
                     initializeSinglePhaseState(
@@ -1823,11 +1887,8 @@ public class EquilibriumSolverV2 {
                 int p =
                         stablePhases[k];
 
-                GibbsEnergyModel model =
-                        phaseModels.get(p);
-
                 PhaseWork work =
-                        new PhaseWork(model);
+                        new PhaseWork(phaseModels.get(p));
 
                 work.y =
                         testInitialState.y[k].clone();
@@ -1910,11 +1971,8 @@ public class EquilibriumSolverV2 {
                  * vertices (a miscibility gap), which needs two
                  * independent constitutions here, not one aliased object.
                  */
-                GibbsEnergyModel model =
-                        phaseModels.get(p);
-
                 PhaseWork work =
-                        new PhaseWork(model);
+                        new PhaseWork(phaseModels.get(p));
 
                 work.y =
                         pr.y.clone();
@@ -2053,13 +2111,17 @@ public class EquilibriumSolverV2 {
     // ================================================================
 
     /**
-     * Initializes the constitution of a single phase model for the requested
-     * overall composition.
+     * Initializes the constitution of a single phase for the requested
+     * overall composition, via the model-agnostic {@link
+     * GibbsEnergyModel#getInitialInternalVars}/{@link
+     * GibbsEnergyModel#isValid} contract.
      *
-     * The initialization is delegated to the phase model because it knows
-     * the complete sublattice structure, constituent mapping, vacancies, etc.
-     *
-     * No phase-specific expressions are used here.
+     * The initialization is delegated to the model itself because it knows
+     * its own internal-variable structure -- CEF's sublattice/constituent/
+     * vacancy structure via {@link CefGibbs#getInitialInternalVars}, or a
+     * CVM phase's {@code u2 = [u; x]} vector via {@link
+     * system.model.cvm.CvmGibbsModel#getInitialInternalVars}. No
+     * phase-specific expressions are used here.
      */
     private double[] initializeSinglePhaseState(
             GibbsEnergyModel phase,
@@ -2067,28 +2129,23 @@ public class EquilibriumSolverV2 {
 
         if (phase == null)
             throw new IllegalArgumentException(
-                    "CEF phase must not be null.");
+                    "Phase model must not be null.");
 
         if (xOverall == null || xOverall.length == 0)
             throw new IllegalArgumentException(
                     "Overall composition must not be null or empty.");
 
-        /*
-         * The model's getInitialInternalVars() method constructs a strictly
-         * positive constitution satisfying the sublattice-normalization
-         * constraints and matching the requested overall composition as closely
-         * as possible.
-         */
         double[] y =
                 phase.getInitialInternalVars(xOverall);
 
         if (y == null)
             throw new IllegalStateException(
-                    "CEF phase could not generate an initial constitution.");
+                    "Phase model could not generate an initial constitution.");
 
         if (!phase.isValid(y))
             throw new IllegalStateException(
-                    "CEF initial constitution is invalid.");
+                    "Initial constitution is invalid for phase "
+                    + phase.phaseName() + ".");
 
         return y;
     }
@@ -2189,6 +2246,45 @@ public class EquilibriumSolverV2 {
 
 
     /**
+     * True for each y-index that lies within one of {@code model}'s
+     * declared sublattice/constituent blocks ({@link
+     * GibbsEnergyModel#offsets()}/{@link
+     * GibbsEnergyModel#constituentsPerSublattice()}) -- the only indices
+     * whose physical bound is [0, 1], per CEF site fractions (all of y)
+     * or a CVM phase's trailing composition block. Indices outside every
+     * block (e.g. a CVM phase's correlation-function entries) are not
+     * bounded this way.
+     */
+    private static boolean[] boundedSiteFractionIndices(
+            GibbsEnergyModel model,
+            int nip) {
+
+        boolean[] bounded =
+                new boolean[nip];
+
+        int[] offsets =
+                model.offsets();
+
+        int[] nconst =
+                model.constituentsPerSublattice();
+
+        for (int s = 0; s < nconst.length; s++) {
+
+            for (int i = 0; i < nconst[s]; i++) {
+
+                int idx =
+                        offsets[s] + i;
+
+                if (idx >= 0 && idx < nip) {
+                    bounded[idx] = true;
+                }
+            }
+        }
+
+        return bounded;
+    }
+
+    /**
      * Evaluate one PhaseWork object from its current constitution.
      */
     private void evaluatePhaseWork(
@@ -2198,7 +2294,7 @@ public class EquilibriumSolverV2 {
                 || work.model == null) {
 
             throw new IllegalArgumentException(
-                    "PhaseWork must contain a CEF model.");
+                    "PhaseWork must contain a phase model.");
         }
 
         if (work.y == null) {
@@ -3952,6 +4048,19 @@ public class EquilibriumSolverV2 {
             int nip =
                     work.y.length;
 
+            /*
+             * The [MIN_SITE_FRACTION, 1] clamp below is a physical bound
+             * on CEF site fractions (and, for CvmGibbsModel, its trailing
+             * x-block -- see offsets()/constituentsPerSublattice()'s
+             * "sublattice bridge" javadoc there). It does NOT apply to
+             * indices outside every declared block, e.g. a CVM phase's
+             * leading correlation-function entries, which are legitimately
+             * unbounded/negative -- clamping those corrupts the
+             * constitution and fails the model's own isValid() afterward.
+             */
+            boolean[] boundedIndex =
+                    boundedSiteFractionIndices(work.model, nip);
+
             double siteStepSize =
                     1.0;
 
@@ -3967,6 +4076,12 @@ public class EquilibriumSolverV2 {
 
                     double value =
                             work.y[i] + siteStepSize * dy[i];
+
+                    if (!boundedIndex[i]) {
+
+                        candidate[i] = value;
+                        continue;
+                    }
 
                     if (value > 1.0) {
 
@@ -3988,7 +4103,8 @@ public class EquilibriumSolverV2 {
                     candidate[i] = value;
                 }
 
-                if (!exceededBounds
+                if ((!exceededBounds
+                        && work.model.isValid(candidate))
                         || siteStepSize < 1.0e-20) {
                     break;
                 }
@@ -4647,6 +4763,9 @@ public class EquilibriumSolverV2 {
                 work.model
                         .constituentsPerSublattice();
 
+        boolean[] boundedIndex =
+                boundedSiteFractionIndices(work.model, nip);
+
         double sum2 =
                 0.0;
 
@@ -4666,14 +4785,25 @@ public class EquilibriumSolverV2 {
                         * work.mu[A];
             }
 
-            int s =
-                    sublatticeOf(
-                            i,
-                            offsets,
-                            nconst);
+            /*
+             * The C^T gamma (Lagrange multiplier) term only applies to
+             * indices inside a declared sublattice/constituent block --
+             * see boundedSiteFractionIndices()'s javadoc. An index outside
+             * every block (e.g. a CVM phase's correlation-function
+             * entries) carries no such multiplier: its stationarity
+             * condition is simply G_Y - J_M^T*mu = 0.
+             */
+            if (boundedIndex[i]) {
 
-            r -=
-                    work.gamma[s];
+                int s =
+                        sublatticeOf(
+                                i,
+                                offsets,
+                                nconst);
+
+                r -=
+                        work.gamma[s];
+            }
 
             sum2 +=
                     r * r;
@@ -4873,42 +5003,120 @@ public class EquilibriumSolverV2 {
                 continue;
             }
 
-            GibbsEnergyModel model =
+            GibbsEnergyModel candidate =
                     phaseModels.get(p);
 
-            double[][] grid =
-                    candidateSampledGrid(p, model);
+            if (candidate instanceof CefGibbs) {
 
-            for (double[] y : grid) {
+                /*
+                 * CEF candidate addition-by-driving-force: unchanged from
+                 * before Step 8. Scans a CEF-specific sampled grid
+                 * (candidateSampledGrid()/GridMinimizer's own sampler) --
+                 * this candidate discovery mechanism is CEF-only because
+                 * only CEF's internal DOF are direct site fractions that a
+                 * generic Halton/endmember sampler can cover.
+                 */
+                CefGibbs model =
+                        (CefGibbs) candidate;
 
-                double[] mA =
-                        model.moles(y);
+                double[][] grid =
+                        candidateSampledGrid(p, model);
 
-                double g =
-                        model.G(T, P, y);
+                for (double[] y : grid) {
+
+                    double[] mA =
+                            model.moles(y);
+
+                    double g =
+                            model.G(T, P, y);
+
+                    double d =
+                            -g;
+
+                    int n =
+                            Math.min(nc, mA.length);
+
+                    for (int A = 0; A < n; A++) {
+                        d += mu[A] * mA[A];
+                    }
+
+                    if (!(d > bestDrivingForce)) {
+                        continue;
+                    }
+
+                    if (isCompositionDuplicate(model, mA, nc)) {
+                        continue;
+                    }
+
+                    bestDrivingForce = d;
+                    bestCandidate = p;
+                    bestY = y;
+                }
+
+            } else if (candidate instanceof system.model.cvm.CvmGibbsModel) {
+
+                /*
+                 * CVM candidate addition-by-driving-force (Step 8).
+                 *
+                 * A CVM candidate's internal variables y = [u; x] are CVCF
+                 * correlation functions, not site fractions -- there is no
+                 * analogue of GridMinimizer.sampleSiteFractions() for them
+                 * (sampling a "grid" of u would sample points with no
+                 * guaranteed relation to a stationary/equilibrium cluster
+                 * state, and most such points are far from the true
+                 * candidate minimum). Evaluating the frozen, never-relaxed
+                 * phaseWorks.get(p).y directly (as buildEquilibriumResult()
+                 * still does for its own metastable-phase reporting) is
+                 * exactly the failure mode this class already documents
+                 * for CEF (see the candidateGridCache javadoc): a
+                 * disordered/off-optimum y can show a small or even
+                 * negative driving force even when the candidate's true
+                 * best-case driving force is strongly positive.
+                 *
+                 * Instead, relax the CVM candidate's OWN internal
+                 * variables to their stationary point using the existing
+                 * EquilibriumSolverV2 Newton machinery itself (see
+                 * relaxCvmCandidate()'s javadoc for exactly how and why),
+                 * then evaluate Sundman Eq. 62 driving force at that
+                 * relaxed state against the CURRENT outer chemical
+                 * potentials mu -- the identical formula drivingForce()
+                 * uses everywhere else in this class.
+                 */
+                CvmCandidateRelaxation relaxed =
+                        relaxCvmCandidate(
+                                (system.model.cvm.CvmGibbsModel) candidate);
+
+                if (relaxed == null) {
+                    continue;
+                }
 
                 double d =
-                        -g;
+                        -relaxed.G;
 
                 int n =
-                        Math.min(nc, mA.length);
+                        Math.min(nc, relaxed.mA.length);
 
                 for (int A = 0; A < n; A++) {
-                    d += mu[A] * mA[A];
+                    d += mu[A] * relaxed.mA[A];
                 }
 
                 if (!(d > bestDrivingForce)) {
                     continue;
                 }
 
-                if (isCompositionDuplicate(model, mA, nc)) {
+                if (isCompositionDuplicate(candidate, relaxed.mA, nc)) {
                     continue;
                 }
 
                 bestDrivingForce = d;
                 bestCandidate = p;
-                bestY = y;
+                bestY = relaxed.y;
+
             }
+            // Any other GibbsEnergyModel subtype is simply never a
+            // contender for automatic addition here (not an error) --
+            // matches this method's pre-Step-8 behavior for non-CEF
+            // candidates in general.
         }
 
         if (bestCandidate >= 0) {
@@ -5011,6 +5219,155 @@ public class EquilibriumSolverV2 {
         for (int k : toRemove) {
             removeStableSlot(k);
         }
+    }
+
+    /**
+     * Result of relaxing one CVM candidate's internal variables to a
+     * stationary point -- see {@link #relaxCvmCandidate}.
+     */
+    private static final class CvmCandidateRelaxation {
+
+        final double[] y;
+        final double G;
+        final double[] mA;
+
+        CvmCandidateRelaxation(double[] y, double G, double[] mA) {
+            this.y = y;
+            this.G = G;
+            this.mA = mA;
+        }
+    }
+
+    /**
+     * Relaxes a not-currently-stable CVM candidate's internal variables
+     * {@code y = [u; x]} to a stationary point, so that its Sundman Eq. 62
+     * driving force (computed by the caller against the CURRENT outer
+     * chemical potentials {@link #mu}) reflects the candidate's actual
+     * best-case state rather than a frozen, arbitrary starting guess.
+     *
+     * <h2>Why this is the correct candidate representation</h2>
+     * A CEF candidate's driving force is evaluated over a whole SAMPLED
+     * GRID of site-fraction points (candidateSampledGrid()) because CEF's
+     * internal DOF ARE directly interpretable composition/constitution
+     * points that a Halton/endmember sampler can cover meaningfully. A
+     * CVM candidate's internal DOF u are CVCF correlation functions with
+     * no such direct sampling interpretation (see this method's caller
+     * for the full rationale) -- the model-appropriate candidate
+     * representation is instead the phase's OWN equilibrium/stationary
+     * state, {@code dG/du = 0} at fixed T, P, x, exactly the quantity
+     * Step 7 (EquilibriumSolverV2CvmHillertCrossCheckTest) independently
+     * validated this class's existing Newton machinery can produce.
+     *
+     * <h2>Composition choice: overall x, not a free variable</h2>
+     * The candidate is relaxed at the OUTER solve's overall target
+     * composition (this.targetComposition()), not left free. This
+     * matches how every other single-candidate fixed-composition CVM
+     * solve in this codebase is set up (Step 7's cross-check test) and is
+     * the only composition available without inventing a second
+     * candidate-selection heuristic: Sundman Eq. 62's driving force is by
+     * construction a fixed-mu, fixed-candidate-state quantity (grand-
+     * potential difference at THIS candidate's (G, M_A) against the
+     * CURRENT global mu), not a search over composition -- the global
+     * Newton mass-balance equations are what will move a genuinely
+     * favorable candidate's amount/composition once it is added to the
+     * stable set on a subsequent outer iteration. Relaxing at any other
+     * composition would answer a different question (whether the
+     * candidate is favorable at SOME OTHER x, not at the composition the
+     * rest of the system is actually converging toward).
+     *
+     * <h2>How relaxation reuses EquilibriumSolverV2's own Newton machinery</h2>
+     * This method does NOT implement a second CVM solver: it constructs a
+     * fresh {@link EquilibriumSolverV2} instance and calls the SAME public
+     * {@link #solve} entry point every other caller uses, with exactly one
+     * candidate (this CVM model) and mass balance pinned to the overall
+     * composition -- identically to
+     * EquilibriumSolverV2CvmHillertCrossCheckTest's already-validated
+     * fixed-composition single-CVM-phase pattern. With one candidate and
+     * one stable slot, the global Sundman mass-balance equations force
+     * that slot's composition to exactly the target x, so this performs
+     * precisely the {@code dG/du|_{T,P,x}=0} relaxation described above --
+     * the nested solve's internal-variable Newton step, phase matrix
+     * assembly, and convergence handling are 100% the shared
+     * {@link PhaseMatrixAssembler}/{@link GlobalEquilibriumMatrixAssembler}
+     * code path, not a reimplementation.
+     *
+     * <p>Seeded from {@link
+     * system.model.cvm.CvmGibbsModel#getInitialInternalVars}, which
+     * itself uses {@link system.model.cvm.CvmPhaseData#evalRandApprox}
+     * (already validated in Step 7 to match CEWorkbench's disordered-state
+     * ordering to full double precision) -- not an arbitrary or random u.
+     *
+     * @return the relaxed state, or {@code null} if the nested solve does
+     *         not converge or the candidate's initial state is invalid
+     *         (an invalid/non-convergent candidate cannot be favorably
+     *         added -- treated the same as "not a contender" rather than
+     *         propagating an exception into the outer solve)
+     */
+    private CvmCandidateRelaxation relaxCvmCandidate(
+            system.model.cvm.CvmGibbsModel candidate) {
+
+        double[] xOverall =
+                targetComposition();
+
+        double[] y0;
+        try {
+            y0 = candidate.getInitialInternalVars(xOverall);
+        } catch (RuntimeException e) {
+            return null;
+        }
+
+        if (y0 == null || !candidate.isValid(y0)) {
+            return null;
+        }
+
+        List<GibbsEnergyModel> singleCandidateList =
+                Collections.singletonList(
+                        (GibbsEnergyModel) candidate);
+
+        EquilibriumSolverV2 nestedSolver =
+                new EquilibriumSolverV2();
+
+        nestedSolver.setTolerance(tolerance);
+        nestedSolver.setInitialStateForTest(
+                new int[]{0},
+                new double[][]{y0},
+                new double[]{1.0});
+
+        EquilibriumResult nestedResult;
+        try {
+            nestedResult =
+                    nestedSolver.solve(
+                            T, P, xOverall, singleCandidateList);
+        } catch (RuntimeException e) {
+            return null;
+        }
+
+        if (nestedResult == null || !nestedResult.isConverged()) {
+            return null;
+        }
+
+        List<EquilibriumResult.PhaseResult> nestedStable =
+                nestedResult.getStablePhases();
+
+        if (nestedStable.size() != 1) {
+            return null;
+        }
+
+        double[] yRelaxed =
+                nestedStable.get(0).y;
+
+        if (yRelaxed == null || !candidate.isValid(yRelaxed)) {
+            return null;
+        }
+
+        double gRelaxed =
+                candidate.G(T, P, yRelaxed);
+
+        double[] mARelaxed =
+                candidate.moles(yRelaxed);
+
+        return new CvmCandidateRelaxation(
+                yRelaxed, gRelaxed, mARelaxed);
     }
 
     /**
@@ -5160,11 +5517,11 @@ public class EquilibriumSolverV2 {
         newStablePhases[n] = p;
         newPhaseAmounts[n] = NEW_PHASE_SEED_AMOUNT;
 
-        GibbsEnergyModel model =
+        GibbsEnergyModel candidateModel =
                 phaseModels.get(p);
 
         PhaseWork work =
-                new PhaseWork(model);
+                new PhaseWork(candidateModel);
 
         work.y =
                 seedY.clone();

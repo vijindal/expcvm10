@@ -76,17 +76,17 @@ public class TdbParser implements DatabasePort {
     }
 
     @Override
-    public List<?> buildPhaseModels(List<String> elements,
+    public List<GibbsEnergyModel> buildPhaseModels(List<String> elements,
                                     List<String> phaseNames) throws IOException {
         return buildPhaseModels(elements, phaseNames, PhaseModelKind.AUTO);
     }
 
     @Override
-    public List<?> buildPhaseModels(List<String> elements,
+    public List<GibbsEnergyModel> buildPhaseModels(List<String> elements,
                                     List<String> phaseNames,
                                     PhaseModelKind kind) throws IOException {
 
-        List<system.model.cef.CefGibbs> models = new ArrayList<>();
+        List<GibbsEnergyModel> models = new ArrayList<>();
 
         // Step 1: extract affMap and pMap from TYPE_DEFINITION records
         // These contain MAGNETIC parameters: aff (value1) and p (value2)

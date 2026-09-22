@@ -1,4 +1,5 @@
 package calc.diagram;
+import ui.request.AxisConfig;
 
 import calc.equil.EquilibriumSolverV2;
 import calc.equil.GridMinimizer;
@@ -7,15 +8,15 @@ import calc.diagram.PhaseDiagramResult.NodePoint;
 import system.ThermodynamicSystem;
 import system.model.GibbsEnergyModel;
 import system.ports.EquilibriumResult;
+import util.Matrix;
 
 import java.io.IOException;
 import java.util.List;
 
 /**
- * Top-level orchestration for phase-diagram tracing, implementing Sundman 2021
- * Algorithms A/B/C1/C2/D. Provides one method per flowchart stage (see
- * {@code docs/phase_diagram_engine_flowchart.md}). Supported diagram types:
- * binary T-x, ternary isothermal, ternary isopleth, and property/step diagrams.
+ * Top-level orchestration for phase-diagram tracing, implementing Sundman
+ * 2021 Algorithms A/B/C1/C2/D. Supports 1-axis STEP and 2-axis binary MAP
+ * diagrams via {@link #calculatePhaseDiagram}.
  */
 public final class PhaseDiagramEngine {
 
@@ -35,7 +36,28 @@ public final class PhaseDiagramEngine {
         public final java.util.Map<String, Double> phaseTotalMoles;
         public final double[] chemicalPotentials;
         public final ConditionSet conditions;
+        /**
+         * Every map/set above is keyed by each stable slot's own {@code
+         * instanceLabel} (its bare candidate phase name, or that name
+         * plus OC's own "#<digit>" suffix when a miscibility gap splits
+         * one candidate across two or more slots -- Sundman 2021 S2.3.1:
+         * "A phase with a miscibility gap has a single Gibbs energy
+         * function but can appear as two (or more) separate phases with
+         * different compositions... In OC and TC they are identified
+         * with a suffix #<digit>"), NOT by the bare candidate name --
+         * two slots sharing a bare name would otherwise collapse into
+         * one map entry.
+         */
         public final java.util.Set<String> stablePhases;
+        /**
+         * Each stable slot's own {@code instanceLabel} (as used to key
+         * every map/set above) mapped back to its underlying candidate's
+         * bare {@code phaseName} -- needed wherever a slot must be
+         * re-matched against {@code List<GibbsEnergyModel> candidates}
+         * (e.g. re-seeding {@link EquilibriumSolverV2}), since the model
+         * itself has no notion of the "#<digit>" instance suffix.
+         */
+        public final java.util.Map<String, String> phaseModelNames;
         public final boolean converged;
         public final boolean globallyStable;
 
@@ -49,6 +71,7 @@ public final class PhaseDiagramEngine {
                 double[] chemicalPotentials,
                 ConditionSet conditions,
                 java.util.Set<String> stablePhases,
+                java.util.Map<String, String> phaseModelNames,
                 boolean converged,
                 boolean globallyStable) {
             this.T = T;
@@ -60,6 +83,7 @@ public final class PhaseDiagramEngine {
             this.chemicalPotentials = chemicalPotentials.clone();
             this.conditions = conditions;
             this.stablePhases = java.util.Set.copyOf(stablePhases);
+            this.phaseModelNames = java.util.Map.copyOf(phaseModelNames);
             this.converged = converged;
             this.globallyStable = globallyStable;
         }
@@ -68,7 +92,7 @@ public final class PhaseDiagramEngine {
         public DiagramEquilibrium withPhaseAmounts(java.util.Map<String, Double> newPhaseAmounts) {
             return new DiagramEquilibrium(T, P, newPhaseAmounts, phaseConstitutions,
                     phaseMoleFractions, phaseTotalMoles, chemicalPotentials, conditions,
-                    stablePhases, converged, globallyStable);
+                    stablePhases, phaseModelNames, converged, globallyStable);
         }
     }
 
@@ -128,11 +152,22 @@ public final class PhaseDiagramEngine {
         public final List<DiagramEquilibrium> equilibria;
         public String terminatedReason;
 
-        public DiagramLineResult(DiagramNode startNode) {
+        /**
+         * The phase held at zero amount along this line (the originating
+         * {@link DiagramExit#fixedPhase}), or {@code null} for a STEP
+         * line -- retained here (not recoverable from {@link #startNode}
+         * alone, which may have multiple exits with different fixed
+         * phases) for {@link #buildResultFromDiagram}'s own {@link
+         * LineSegment#fixedPhase}.
+         */
+        public final String fixedPhase;
+
+        public DiagramLineResult(DiagramNode startNode, String fixedPhase) {
             this.startNode = startNode;
             this.endNode = null;
             this.equilibria = new java.util.ArrayList<>();
             this.terminatedReason = null;
+            this.fixedPhase = fixedPhase;
         }
     }
 
@@ -245,7 +280,15 @@ public final class PhaseDiagramEngine {
         return comp;
     }
 
-    /** Converts a solver-level {@link EquilibriumResult} into a {@link DiagramEquilibrium}. */
+    /**
+     * Converts a solver-level {@link EquilibriumResult} into a {@link
+     * DiagramEquilibrium}, keyed by each {@code PhaseResult}'s {@code
+     * instanceLabel} rather than its bare {@code phaseName} -- a
+     * miscibility gap that splits one candidate across two stable slots
+     * (Sundman 2021 discusses this; OC/TC distinguish the slots with
+     * "#1"/"#2" suffixes) would otherwise silently collapse into one
+     * map entry, losing a stable phase.
+     */
     private static DiagramEquilibrium toDiagramEquilibrium(
             EquilibriumResult result, ConditionSet conds, List<GibbsEnergyModel> candidates) {
 
@@ -254,12 +297,14 @@ public final class PhaseDiagramEngine {
         java.util.Map<String, double[]> phaseMoleFractions = new java.util.LinkedHashMap<>();
         java.util.Map<String, Double> phaseTotalMoles = new java.util.LinkedHashMap<>();
         java.util.Set<String> stablePhases = new java.util.LinkedHashSet<>();
+        java.util.Map<String, String> phaseModelNames = new java.util.LinkedHashMap<>();
         for (EquilibriumResult.PhaseResult pr : result.getStablePhases()) {
-            phaseAmounts.put(pr.phaseName, pr.amount);
-            phaseConstitutions.put(pr.phaseName, pr.y);
-            phaseMoleFractions.put(pr.phaseName, pr.x);
-            phaseTotalMoles.put(pr.phaseName, pr.totalMoles);
-            stablePhases.add(pr.phaseName);
+            phaseAmounts.put(pr.instanceLabel, pr.amount);
+            phaseConstitutions.put(pr.instanceLabel, pr.y);
+            phaseMoleFractions.put(pr.instanceLabel, pr.x);
+            phaseTotalMoles.put(pr.instanceLabel, pr.totalMoles);
+            stablePhases.add(pr.instanceLabel);
+            phaseModelNames.put(pr.instanceLabel, pr.phaseName);
         }
 
         boolean globallyStable = result.isConverged() && isGloballyStable(result, candidates);
@@ -267,7 +312,7 @@ public final class PhaseDiagramEngine {
         return new DiagramEquilibrium(
                 result.getT(), result.getP(), phaseAmounts, phaseConstitutions,
                 phaseMoleFractions, phaseTotalMoles, result.getMu(), conds, stablePhases,
-                result.isConverged(), globallyStable);
+                phaseModelNames, result.isConverged(), globallyStable);
     }
 
     /**
@@ -287,7 +332,7 @@ public final class PhaseDiagramEngine {
      * @return the complete traced diagram: nodes, lines, and equilibria
      * @throws IllegalArgumentException if {@code conds} has other than 1 or 2 axis conditions
      */
-    public static DiagramResult traceAlgorithmB(
+    public static DiagramResult callAlgorithmB(
             ConditionSet conds, double[] startAxisValues, List<GibbsEnergyModel> candidates) {
 
         List<Condition> axes = conds.axisConditions();
@@ -306,7 +351,7 @@ public final class PhaseDiagramEngine {
             node0.exits.add(new DiagramExit(node0, equilibrium0, false, null, 0, +1, null));
             node0.exits.add(new DiagramExit(node0, equilibrium0, false, null, 0, -1, null));
             diagram.nodes.add(node0);
-            callAlgorithmC1(node0.exits, diagram, conds, candidates);
+            callAlgorithmC1(diagram, conds, candidates);
 
         } else {
             int axis = walkedAxisIndex(axes);
@@ -314,11 +359,18 @@ public final class PhaseDiagramEngine {
 
             double[] currentAxisValues = extractAxisValues(equilibrium0, conds);
             DiagramEquilibrium current = equilibrium0;
+            AxisConfig walkAxisConfig = axes.get(axis).toAxisConfig();
             while (true) {
                 currentAxisValues[axis] += axes.get(axis).step;
+                if (!walkAxisConfig.inBounds(currentAxisValues[axis])) {
+                    throw new IllegalStateException(
+                            "No stable-set change found searching " + axes.get(axis).name + " in ["
+                            + walkAxisConfig.min + ", " + walkAxisConfig.max + "] from the starting "
+                            + "condition -- nothing for Algorithm C1 to start from.");
+                }
                 current = callAlgorithmA(conds, currentAxisValues, candidates);
-                if (current.stablePhases.equals(equilibrium0.stablePhases)) {
-                    continue; // no phase change
+                if (!current.converged || current.stablePhases.equals(equilibrium0.stablePhases)) {
+                    continue; // not converged, or no phase change
                 } else {
                     break; // phases changed
                 }
@@ -330,10 +382,104 @@ public final class PhaseDiagramEngine {
             node0.exits.add(new DiagramExit(node0, current, false, alpha, otherAxis, +1, null));
             node0.exits.add(new DiagramExit(node0, current, false, alpha, otherAxis, -1, null));
             diagram.nodes.add(node0);
-            callAlgorithmC1(node0.exits, diagram, conds, candidates);
+            callAlgorithmC1(diagram, conds, candidates);
         }
 
         return diagram;
+    }
+
+    /**
+     * Converts a {@link DiagramResult} (Algorithm B/C1/C2/D's own object
+     * graph) into the rendering-ready {@link PhaseDiagramResult} DTO.
+     * Applies Sundman 2021 §4.1: a proper composition-axis diagram plots
+     * each stable phase's OWN mole fraction, not the walked run's
+     * overall composition, so a 2-axis line with a released composition
+     * axis is split into one {@link LineSegment} per phase name actually
+     * present throughout that line.
+     *
+     * @param diagram                  traced diagram (nodes + lines)
+     * @param conds                    the full condition set the diagram was traced with
+     * @param axisNames                per-axis display names, {@code conds.axisConditions()} order
+     * @param compositionAxisIndex     index into {@code conds.axisConditions()} of the
+     *                                 released composition axis to split per-phase, or
+     *                                 -1 if no axis should be split this way (e.g. STEP)
+     * @return the classified, rendering-ready result
+     */
+    public static PhaseDiagramResult buildResultFromDiagram(
+            DiagramResult diagram,
+            ConditionSet conds,
+            String[] axisNames,
+            int compositionAxisIndex) {
+
+        List<Condition> axes = conds.axisConditions();
+        int numAxes = axes.size();
+        double[] axisMin = new double[numAxes];
+        double[] axisMax = new double[numAxes];
+        for (int i = 0; i < numAxes; i++) {
+            AxisConfig cfg = axes.get(i).toAxisConfig();
+            axisMin[i] = cfg.min;
+            axisMax[i] = cfg.max;
+        }
+        int compositionComponentIndex = compositionAxisIndex >= 0
+                ? axes.get(compositionAxisIndex).componentIndex : -1;
+
+        PhaseDiagramResult result = new PhaseDiagramResult(axisNames, axisMin, axisMax);
+
+        for (DiagramLineResult line : diagram.lines) {
+            if (line.equilibria.isEmpty()) {
+                continue;
+            }
+            String fixedPhase = line.fixedPhase;
+
+            List<double[]> walkCoords = new java.util.ArrayList<>(line.equilibria.size());
+            for (DiagramEquilibrium eq : line.equilibria) {
+                walkCoords.add(extractAxisValues(eq, conds));
+            }
+
+            if (compositionAxisIndex < 0) {
+                result.addLine(new LineSegment(walkCoords, fixedPhase,
+                        new java.util.ArrayList<>(line.equilibria.get(0).stablePhases)));
+                continue;
+            }
+
+            // Sundman 2021 §4.1: split into one LineSegment per stable
+            // phase, substituting that phase's own mole fraction in at
+            // compositionAxisIndex.
+            java.util.Set<String> phaseNames = new java.util.LinkedHashSet<>();
+            for (DiagramEquilibrium eq : line.equilibria) {
+                phaseNames.addAll(eq.stablePhases);
+            }
+            for (String phaseName : phaseNames) {
+                List<double[]> perPhaseCoords = new java.util.ArrayList<>(line.equilibria.size());
+                boolean phasePresentThroughout = true;
+                for (int i = 0; i < line.equilibria.size(); i++) {
+                    double[] x = line.equilibria.get(i).phaseMoleFractions.get(phaseName);
+                    if (x == null) {
+                        phasePresentThroughout = false;
+                        break;
+                    }
+                    double[] coord = walkCoords.get(i).clone();
+                    coord[compositionAxisIndex] = x[compositionComponentIndex];
+                    perPhaseCoords.add(coord);
+                }
+                if (phasePresentThroughout && !perPhaseCoords.isEmpty()) {
+                    result.addLine(new LineSegment(perPhaseCoords, fixedPhase, List.of(phaseName)));
+                }
+            }
+        }
+
+        for (DiagramNode node : diagram.nodes) {
+            NodeClass nodeClass = classifyNode(conds, node.equilibrium.stablePhases.size());
+            NodePoint.Type type = nodeClass == NodeClass.INVARIANT
+                    ? NodePoint.Type.INVARIANT
+                    : NodePoint.Type.CROSSING;
+            result.addNode(new NodePoint(
+                    extractAxisValues(node.equilibrium, conds),
+                    new java.util.ArrayList<>(node.equilibrium.stablePhases),
+                    type));
+        }
+
+        return result;
     }
 
     /**
@@ -376,22 +522,26 @@ public final class PhaseDiagramEngine {
     private static final int GLOBAL_CHECK_INTERVAL = 10;
 
     /**
-     * Algorithm C1: searches {@code pendingExits} for an unresolved exit
-     * and walks it, one small axis increment at a time, until the walked
-     * axis runs out of bounds, convergence repeatedly fails, or the
-     * stable phase set changes. A plain (STEP) exit walks via {@link
-     * #callAlgorithmA}; a ZPF exit ({@code exit.fixedPhase != null},
-     * Sundman 2021 S3.3) walks via {@link EquilibriumSolverV2#solveZpf},
-     * releasing the diagram's other axis to hold the fixed phase at zero
-     * amount along the line.
+     * Algorithm C1 (Sundman 2021 Fig. 5): "will begin searching the list
+     * of nodes to find exits to generate lines. If there are none the
+     * mapping is finished" (S3.3). Searches {@code diagram.nodes} --
+     * not just the node that started the diagram -- so exits later
+     * pushed onto that list by C2/D are found too, then walks the found
+     * exit one small axis increment at a time until the walked axis runs
+     * out of bounds, convergence repeatedly fails, or the stable phase
+     * set changes. A plain (STEP) exit walks via {@link #callAlgorithmA};
+     * a ZPF exit ({@code exit.fixedPhase != null}, Sundman 2021 S3.3)
+     * walks via {@link EquilibriumSolverV2#solveZpf}, releasing the
+     * diagram's other axis to hold the fixed phase at zero amount along
+     * the line.
      *
-     * @param pendingExits exits to search, typically one node's {@code exits}
-     * @param diagram      diagram being built; lines are appended here
-     * @param conds        full condition set for the diagram
-     * @param candidates   candidate phase models
+     * @param diagram    diagram being built; its {@code nodes} list is
+     *                   searched for exits and its {@code lines} are
+     *                   appended to here
+     * @param conds      full condition set for the diagram
+     * @param candidates candidate phase models
      */
     static void callAlgorithmC1(
-            List<DiagramExit> pendingExits,
             DiagramResult diagram,
             ConditionSet conds,
             List<GibbsEnergyModel> candidates) {
@@ -399,14 +549,12 @@ public final class PhaseDiagramEngine {
         List<Condition> axes = conds.axisConditions();
 
         while (true) {
-            DiagramExit exit = searchPendingExit(pendingExits);
+            DiagramExit exit = searchPendingExit(diagram.nodes);
             if (exit == null) {
                 return;
             }
 
-            java.util.Set<String> runningStableSet = exit.equilibrium.stablePhases;
-
-            DiagramLineResult line = new DiagramLineResult(exit.node);
+            DiagramLineResult line = new DiagramLineResult(exit.node, exit.fixedPhase);
             diagram.lines.add(line);
 
             int axis = exit.initialAxis;
@@ -427,6 +575,19 @@ public final class PhaseDiagramEngine {
                 result = callAlgorithmAOrZpf(
                         conds, currentAxisValues, axis, exit.fixedPhase, seed, candidates);
             }
+
+            // Defined from the first valid line point, not exit.equilibrium's
+            // own stable set: for a D-generated exit, exit.equilibrium is the
+            // invariant node's equilibrium and still carries the forbidden
+            // phase at zero amount in its stablePhases (Sundman 2021 S3.3,
+            // Eq. (9) -- withPhaseAmounts only swaps amounts, the stable set
+            // is the invariant's). "phi2 [is] forbidden to become stable at
+            // the first increments... This is tested by algorithm C1... at
+            // the first axis increment" -- so the forbidden phase is expected
+            // to already be gone from result.stablePhases here, and using the
+            // invariant's stale set as the baseline would misread that
+            // expected removal as a spurious phase change below.
+            java.util.Set<String> runningStableSet = result.stablePhases;
 
             int attempts = 0;
             while (true) {
@@ -454,7 +615,7 @@ public final class PhaseDiagramEngine {
                 if (!result.stablePhases.equals(runningStableSet)) {
                     line.terminatedReason = "phase change";
                     exit.done = true;
-                    // C2(exit, result, axis, currentAxisValues, diagram, line) -- deferred: not yet wired.
+                    callAlgorithmC2(exit, result, axis, runningStableSet, conds, diagram, line, candidates);
                     break;
                 }
 
@@ -468,16 +629,491 @@ public final class PhaseDiagramEngine {
                     break;
                 }
 
+                // A ZPF step (exit.fixedPhase != null) only sets the walked
+                // axis directly; the diagram's other axis is released and
+                // solved for (Sundman 2021 S3.3), so `result`'s actual
+                // converged state -- not the `currentAxisValues` fed into
+                // callAlgorithmAOrZpf -- is the true position of both axes.
+                double[] solvedAxisValues = extractAxisValues(result, conds);
+
+                int newAxis = selectAxisWithLargestVariation(axes, anchorAxisValues, solvedAxisValues);
+                if (newAxis != axis) {
+                    // exit.direction is a sign defined relative to the axis it
+                    // was walking; reusing it unchanged after switching axes
+                    // is meaningless (it could just as well continue OR
+                    // reverse the new axis). Re-derive it from the new axis's
+                    // own observed trend over the step just accepted, per OC's
+                    // map_step2 (smp2A.F90 ~3780-3797: "mapline%axandir=-nyax"
+                    // / "=nyax" chosen from the sign of dax1(nyax)/dax2(nyax),
+                    // never carried over from the old axis).
+                    double newAxisDelta = solvedAxisValues[newAxis] - anchorAxisValues[newAxis];
+                    exit.direction = newAxisDelta < 0 ? -1 : 1;
+                }
+                axis = newAxis;
+                axisCondition = axes.get(axis);
+
                 attempts = 0;
                 stepSize = axisCondition.step;
                 seed = result;
-                anchorAxisValues = currentAxisValues.clone();
+                anchorAxisValues = solvedAxisValues;
                 currentAxisValues = anchorAxisValues.clone();
                 currentAxisValues[axis] += stepSize * exit.direction;
                 result = callAlgorithmAOrZpf(
                         conds, currentAxisValues, axis, exit.fixedPhase, seed, candidates);
             }
         }
+    }
+
+    /** OC's own T/P node-matching relative tolerance ({@code vz}, {@code map_newnode}, smp2A.F90). */
+    private static final double NODE_TP_RELATIVE_TOLERANCE = 1.0e-8;
+
+    /** OC's own chemical-potential node-matching relative tolerance ({@code 20*vz}, {@code map_newnode}). */
+    private static final double NODE_MU_RELATIVE_TOLERANCE = 2.0e-7;
+
+    /**
+     * Algorithm C2 (Sundman 2021 Fig. 6): resolves a stable-phase-set
+     * change detected by C1 into a boundary equilibrium and, from it, a
+     * matched-or-new {@link DiagramNode} with its own exits, so C1's own
+     * {@code searchPendingExit} can pick them up on a later loop
+     * iteration. Every branch below terminates {@code line} and leaves
+     * {@code exit.done = true} (already set by the caller) before
+     * returning -- there is no explicit "back to C1" call, since
+     * returning here puts control back at {@code callAlgorithmC1}'s own
+     * {@code searchPendingExit} loop directly.
+     *
+     * @param exit              the exit whose line just detected a crossing
+     * @param crossingResult    the (not-yet-saved) equilibrium at/after the crossing
+     * @param axis              the axis {@code exit}'s line was walking at
+     *                          the moment of crossing (may differ from
+     *                          {@code exit.initialAxis} after an axis switch)
+     * @param runningStableSet  the line's own stable-phase set before the crossing
+     * @param conds             full condition set for the diagram
+     * @param diagram           diagram being built; a matched-or-new node
+     *                          may be appended to its {@code nodes} list
+     * @param line              the line that detected the crossing
+     * @param candidates        candidate phase models
+     */
+    private static void callAlgorithmC2(
+            DiagramExit exit,
+            DiagramEquilibrium crossingResult,
+            int axis,
+            java.util.Set<String> runningStableSet,
+            ConditionSet conds,
+            DiagramResult diagram,
+            DiagramLineResult line,
+            List<GibbsEnergyModel> candidates) {
+
+        String alpha = changedPhase(runningStableSet, crossingResult.stablePhases);
+
+        List<Condition> axes = conds.axisConditions();
+        Condition axisCondition = axes.get(axis);
+
+        double t = conds.fixedTemperature();
+        double p = conds.fixedPressure();
+        double[] comp = overallComposition(crossingResult);
+        EquilibriumSolverV2.ReleasedVariable released;
+        int releasedComponentIndex = -1;
+        switch (axisCondition.variable) {
+            case TEMPERATURE:
+                released = EquilibriumSolverV2.ReleasedVariable.TEMPERATURE;
+                break;
+            case PRESSURE:
+                released = EquilibriumSolverV2.ReleasedVariable.PRESSURE;
+                break;
+            case COMPOSITION:
+                released = EquilibriumSolverV2.ReleasedVariable.COMPOSITION;
+                releasedComponentIndex = axisCondition.componentIndex;
+                break;
+            default:
+                throw new IllegalStateException("Unhandled axis variable: " + axisCondition.variable);
+        }
+        // Every non-walked, non-released condition stays at its own fixed
+        // value; T/P above already default to conds' fixed values and are
+        // only overwritten below when the walked axis is TEMPERATURE/PRESSURE
+        // (a released T/P is instead seeded from the crossing result and
+        // solved for by solveZpf itself).
+        if (axisCondition.variable == Condition.Variable.TEMPERATURE) {
+            t = crossingResult.T;
+        } else if (axisCondition.variable == Condition.Variable.PRESSURE) {
+            p = crossingResult.P;
+        }
+
+        EquilibriumResult seedResult = toEquilibriumResultForSeeding(crossingResult);
+
+        EquilibriumSolverV2.BoundarySolveResult boundary;
+        try {
+            boundary = new EquilibriumSolverV2().solveZpf(
+                    t, p, comp, candidates, seedResult, alpha, 0.0, released, releasedComponentIndex);
+        } catch (RuntimeException e) {
+            boundary = null;
+        }
+
+        if (boundary == null || !boundary.equilibrium.isConverged()) {
+            line.terminatedReason = "boundary solve failed";
+            return;
+        }
+
+        DiagramEquilibrium boundaryEquilibrium = toDiagramEquilibrium(boundary.equilibrium, conds, candidates);
+
+        if (!isGloballyStable(boundary.equilibrium, candidates)) {
+            line.terminatedReason = "excluded";
+            return;
+        }
+
+        DiagramNode matched = findMatchingNode(diagram.nodes, boundaryEquilibrium);
+        if (matched != null) {
+            exit.done = true;
+            line.endNode = matched;
+            return;
+        }
+
+        DiagramNode node = new DiagramNode(boundaryEquilibrium, new java.util.ArrayList<>());
+        diagram.nodes.add(node);
+        line.endNode = node;
+
+        NodeClass nodeClass = classifyNode(conds, boundaryEquilibrium.stablePhases.size());
+
+        if (exit.fixedPhase == null) {
+            // STEP line (Sundman 2021 S3.2): single continuation exit, same
+            // axis/direction, no fixed phase -- a 1-axis STEP diagram has no
+            // released axis to hold anything at zero along the next line.
+            node.exits.add(new DiagramExit(node, boundaryEquilibrium, false, null, axis, exit.direction, null));
+            return;
+        }
+
+        if (nodeClass == NodeClass.TIE_LINE_IN_PLANE) {
+            node.exits.add(new DiagramExit(node, boundaryEquilibrium, false, alpha, axis, +1, exit.fixedPhase));
+            node.exits.add(new DiagramExit(node, boundaryEquilibrium, false, alpha, axis, -1, exit.fixedPhase));
+            return;
+        }
+
+        if (nodeClass == NodeClass.INVARIANT) {
+            callAlgorithmD(node, boundaryEquilibrium, axis, alpha, exit.fixedPhase, conds);
+            return;
+        }
+
+        // ISOPLETH_CROSSING: exit.fixedPhase's own line continues one more
+        // step in the same direction (forbidding alpha), plus alpha's own
+        // ZPF line in both directions (forbidding exit.fixedPhase).
+        node.exits.add(new DiagramExit(
+                node, boundaryEquilibrium, false, exit.fixedPhase, axis, exit.direction, alpha));
+        node.exits.add(new DiagramExit(node, boundaryEquilibrium, false, alpha, axis, +1, exit.fixedPhase));
+        node.exits.add(new DiagramExit(node, boundaryEquilibrium, false, alpha, axis, -1, exit.fixedPhase));
+    }
+
+    /**
+     * One candidate exit pair from Algorithm D: the two phases that go to
+     * zero amount together at the node, with all other stable phases at
+     * the strictly positive amounts Eq. (9) solved for -- S3.3: "the
+     * amounts N^phi will be different and must be stored together with
+     * the phases phi1 and phi2."
+     */
+    private static final class ExitPair {
+
+        final String beta1;
+        final String beta2;
+        final java.util.Map<String, Double> phaseAmounts;
+
+        ExitPair(String beta1, String beta2, java.util.Map<String, Double> phaseAmounts) {
+            this.beta1 = beta1;
+            this.beta2 = beta2;
+            this.phaseAmounts = phaseAmounts;
+        }
+    }
+
+    /**
+     * The calculated plane's own conditions on extensive or normalized
+     * properties -- S3.3: "we have 2 axes and c-1 additional conditions
+     * on extensive or normalized variables"; "all conditions on
+     * extensive or normalized properties in the plane of the
+     * calculation, not just mole fractions, must be included in Eq.
+     * (9)." T/P (potentials, already fixed by the invariant itself) are
+     * excluded; TOTAL_MOLES is excluded too since it is not one of the
+     * "c-1 additional" conditions -- {@link #solveRemainingAmounts} adds
+     * its own closing total-amount equation instead. Today the only
+     * other {@link Condition.Variable} is COMPOSITION, but this is
+     * written as an exclusion so a future extensive/normalized condition
+     * type is picked up automatically.
+     */
+    private static List<Condition> eq9PlaneConditions(ConditionSet conds) {
+        List<Condition> planeConditions = new java.util.ArrayList<>();
+        for (Condition c : conds.all()) {
+            if (c.variable == Condition.Variable.TEMPERATURE
+                    || c.variable == Condition.Variable.PRESSURE
+                    || c.variable == Condition.Variable.TOTAL_MOLES) {
+                continue;
+            }
+            planeConditions.add(c);
+        }
+        return planeConditions;
+    }
+
+    /**
+     * Algorithm D (Fig. 7, Eq. 9): finds every valid exit-phase pair at an
+     * invariant node (all other stable phases at strictly positive
+     * amount) and attaches 2 exits per pair, excluding the pair already
+     * on the arriving line.
+     */
+    private static void callAlgorithmD(
+            DiagramNode node,
+            DiagramEquilibrium boundaryEquilibrium,
+            int axis,
+            String alpha,
+            String arrivingLineFixedPhase,
+            ConditionSet conds) {
+
+        List<String> phaseNames = new java.util.ArrayList<>(boundaryEquilibrium.stablePhases);
+        double[][] compositions = new double[phaseNames.size()][];
+        for (int i = 0; i < phaseNames.size(); i++) {
+            compositions[i] = boundaryEquilibrium.phaseMoleFractions.get(phaseNames.get(i));
+        }
+
+        List<Condition> planeConditions = eq9PlaneConditions(conds);
+
+        ExitPair arrivalPair = new ExitPair(alpha, arrivingLineFixedPhase, null);
+        List<ExitPair> exitPairs = findExitPairs(
+                phaseNames, compositions, planeConditions, boundaryEquilibrium, arrivalPair);
+
+        // Sundman 2021 S3.3: exactly 2 exits per pair; C1's own sign-flip
+        // (Fig. 5) corrects direction, so it isn't enumerated here. Each
+        // exit stores the Eq. (9) amounts for ITS pair, not the invariant
+        // node's own amounts.
+        for (ExitPair pair : exitPairs) {
+            DiagramEquilibrium exitEquilibrium = boundaryEquilibrium.withPhaseAmounts(pair.phaseAmounts);
+            node.exits.add(new DiagramExit(node, exitEquilibrium, false, pair.beta2, axis, +1, pair.beta1));
+            node.exits.add(new DiagramExit(node, exitEquilibrium, false, pair.beta1, axis, +1, pair.beta2));
+        }
+    }
+
+    /**
+     * Finds every valid Algorithm D exit pair from an invariant node.
+     *
+     * @param stablePhaseNames    names of every phase present at the node
+     * @param stableCompositions  each phase's mole fractions,
+     *                            {@code [phase][component]}, same
+     *                            order/length as {@code stablePhaseNames}
+     * @param planeConditions     the diagram's own COMPOSITION conditions
+     *                            (Eq. 9's "c-1 additional conditions");
+     *                            {@link #solveRemainingAmounts} adds the
+     *                            closing total-amount equation itself
+     * @param boundaryEquilibrium the invariant node's own equilibrium,
+     *                            read for each plane condition's overall
+     *                            target value
+     * @param arrivalPair         the pair of phases already known to have
+     *                            zero amount together on the line the
+     *                            algorithm arrived by, excluded from the
+     *                            result since that exit already exists;
+     *                            {@code null} if not applicable
+     * @return every other valid exit pair
+     */
+    private static List<ExitPair> findExitPairs(
+            List<String> stablePhaseNames,
+            double[][] stableCompositions,
+            List<Condition> planeConditions,
+            DiagramEquilibrium boundaryEquilibrium,
+            ExitPair arrivalPair) {
+
+        int p = stablePhaseNames.size();
+        List<ExitPair> pairs = new java.util.ArrayList<>();
+
+        for (int i = 0; i < p - 1; i++) {
+            for (int j = i + 1; j < p; j++) {
+
+                double[] remainingAmounts = solveRemainingAmounts(
+                        i, j, stableCompositions, planeConditions, boundaryEquilibrium);
+
+                if (remainingAmounts == null) {
+                    continue;
+                }
+
+                boolean allPositive = true;
+                for (double amount : remainingAmounts) {
+                    if (!(amount > 0.0)) {
+                        allPositive = false;
+                        break;
+                    }
+                }
+                if (!allPositive) {
+                    continue;
+                }
+
+                String beta1 = stablePhaseNames.get(i);
+                String beta2 = stablePhaseNames.get(j);
+
+                if (arrivalPair != null && isSamePair(arrivalPair, beta1, beta2)) {
+                    continue;
+                }
+
+                // S3.3: phi1/phi2 (this pair) get zero amount; every other
+                // stable phase gets its Eq. (9)-solved amount.
+                java.util.Map<String, Double> phaseAmounts = new java.util.HashMap<>();
+                int k = 0;
+                for (int idx = 0; idx < p; idx++) {
+                    if (idx == i || idx == j) continue;
+                    phaseAmounts.put(stablePhaseNames.get(idx), remainingAmounts[k++]);
+                }
+                phaseAmounts.put(beta1, 0.0);
+                phaseAmounts.put(beta2, 0.0);
+
+                pairs.add(new ExitPair(beta1, beta2, phaseAmounts));
+            }
+        }
+
+        return pairs;
+    }
+
+    private static boolean isSamePair(ExitPair pair, String beta1, String beta2) {
+        return (pair.beta1.equals(beta1) && pair.beta2.equals(beta2))
+                || (pair.beta1.equals(beta2) && pair.beta2.equals(beta1));
+    }
+
+    /**
+     * Solves for the amounts of every stable phase excluding the pair at
+     * indices {@code excludeI}/{@code excludeJ}, via Eq. (9): one linear
+     * equation per condition in {@code planeConditions} ("2 axes and c-1
+     * additional conditions on extensive or normalized variables",
+     * S3.3), summing each phase's own contribution ({@code A_C^phi})
+     * times its unknown amount {@code N^phi}, plus one closing equation
+     * fixing the total system amount -- not a hardcoded mole-fractions-
+     * plus-sum-to-one scheme.
+     *
+     * @return the solved amounts, same order as {@code stableCompositions}
+     *         with indices {@code excludeI}/{@code excludeJ} removed, or
+     *         {@code null} if there is no solution
+     */
+    private static double[] solveRemainingAmounts(
+            int excludeI,
+            int excludeJ,
+            double[][] stableCompositions,
+            List<Condition> planeConditions,
+            DiagramEquilibrium boundaryEquilibrium) {
+
+        int p = stableCompositions.length;
+        int remainingCount = p - 2;
+
+        // planeConditions.size() "additional conditions" plus the closing
+        // total-amount equation this method adds itself.
+        if (remainingCount != planeConditions.size() + 1) {
+            return null;
+        }
+
+        int[] remaining = new int[remainingCount];
+        int k = 0;
+        for (int idx = 0; idx < p; idx++) {
+            if (idx == excludeI || idx == excludeJ) continue;
+            remaining[k++] = idx;
+        }
+
+        // Total system amount N (formula units): the diagram's own fixed
+        // TOTAL_MOLES condition if it has one, else the invariant node's
+        // own current total -- Eq. (9) must preserve whatever total the
+        // node itself has, excluded phases contributing zero.
+        double totalMoles = Double.NaN;
+        for (Condition c : boundaryEquilibrium.conditions.all()) {
+            if (c.variable == Condition.Variable.TOTAL_MOLES && c.isFixed()) {
+                totalMoles = c.fixedValue;
+            }
+        }
+        if (Double.isNaN(totalMoles)) {
+            totalMoles = 0.0;
+            for (String phaseName : boundaryEquilibrium.stablePhases) {
+                totalMoles += boundaryEquilibrium.phaseAmounts.get(phaseName);
+            }
+        }
+        double[] overallMoleFractions = overallComposition(boundaryEquilibrium);
+
+        int n = remainingCount;
+        double[][] A = new double[n][n];
+        double[] b = new double[n];
+
+        for (int row = 0; row < planeConditions.size(); row++) {
+            Condition c = planeConditions.get(row);
+            for (int j = 0; j < n; j++) {
+                A[row][j] = stableCompositions[remaining[j]][c.componentIndex];
+            }
+            b[row] = overallMoleFractions[c.componentIndex] * totalMoles;
+        }
+
+        // Closing equation: total amount across the remaining phases
+        // equals the node's own total (excluded phases contribute zero).
+        for (int j = 0; j < n; j++) {
+            A[n - 1][j] = 1.0;
+        }
+        b[n - 1] = totalMoles;
+
+        try {
+
+            Matrix matA = new Matrix(A);
+            Matrix matB = new Matrix(b, n);
+            return matA.solve(matB).getColumnPackedCopy();
+
+        } catch (RuntimeException e) {
+
+            return null;
+        }
+    }
+
+    /**
+     * Finds an already-registered node matching {@code candidate} under
+     * OC's own {@code map_newnode} rule: identical stable phase set, T
+     * and P within {@link #NODE_TP_RELATIVE_TOLERANCE}, and every
+     * chemical potential within {@link #NODE_MU_RELATIVE_TOLERANCE} --
+     * both tolerances scaled relative to the EXISTING registered node's
+     * own value, floored at 1.0. Returns {@code null} if none match.
+     */
+    private static DiagramNode findMatchingNode(List<DiagramNode> nodes, DiagramEquilibrium candidate) {
+        for (DiagramNode existing : nodes) {
+            DiagramEquilibrium reference = existing.equilibrium;
+            if (!reference.stablePhases.equals(candidate.stablePhases)) continue;
+            if (!withinRelativeTolerance(candidate.T, reference.T, NODE_TP_RELATIVE_TOLERANCE)) continue;
+            if (!withinRelativeTolerance(candidate.P, reference.P, NODE_TP_RELATIVE_TOLERANCE)) continue;
+            if (reference.chemicalPotentials.length != candidate.chemicalPotentials.length) continue;
+            boolean muMatch = true;
+            for (int i = 0; i < reference.chemicalPotentials.length; i++) {
+                if (!withinRelativeTolerance(candidate.chemicalPotentials[i],
+                        reference.chemicalPotentials[i], NODE_MU_RELATIVE_TOLERANCE)) {
+                    muMatch = false;
+                    break;
+                }
+            }
+            if (!muMatch) continue;
+            return existing;
+        }
+        return null;
+    }
+
+    private static boolean withinRelativeTolerance(double candidate, double reference, double relativeTolerance) {
+        double scale = Math.max(1.0, Math.abs(reference));
+        return Math.abs(candidate - reference) <= scale * relativeTolerance;
+    }
+
+    /**
+     * Algorithm C1's "Select axis with largest variation" box (Sundman
+     * 2021 Fig. 5, S3.3): "algorithm C1 will check which axis varies
+     * most rapidly and possibly change the axis to use for incrementing
+     * the next iteration." Compares, for each axis, how far the last
+     * accepted step moved it relative to that axis's own increment
+     * ({@code |Δaxis_i| / step_i}) and returns the index of the largest;
+     * a no-op for a 1-axis (STEP) diagram, where this is the only axis.
+     *
+     * <p>This is the paper's literal box only: unlike OpenCalphad's
+     * {@code map_step2} (smp2A.F90 ~3660-3720), it has no hysteresis
+     * margin, no cooldown period after a switch, and no interaction with
+     * fix-phase selection -- those are OC engineering refinements beyond
+     * what Fig. 5 specifies, deliberately left out here.
+     */
+    private static int selectAxisWithLargestVariation(
+            List<Condition> axes, double[] previousAxisValues, double[] newAxisValues) {
+        int best = 0;
+        double bestVariation = -1.0;
+        for (int i = 0; i < axes.size(); i++) {
+            double variation = Math.abs(newAxisValues[i] - previousAxisValues[i]) / axes.get(i).step;
+            if (variation > bestVariation) {
+                bestVariation = variation;
+                best = i;
+            }
+        }
+        return best;
     }
 
     /**
@@ -598,24 +1234,40 @@ public final class PhaseDiagramEngine {
      * sufficient to seed {@link EquilibriumSolverV2#solveZpf}, which only
      * reads {@code phaseName}/{@code amount}/{@code y} off each seed
      * {@code PhaseResult} and recomputes everything else itself.
+     *
+     * <p>{@code eq.stablePhases} is keyed by instance label (see {@link
+     * DiagramEquilibrium#stablePhases}'s own javadoc), but {@link
+     * EquilibriumSolverV2#seedFromEquilibriumResult} re-matches each seed
+     * {@code PhaseResult} against {@code candidates} by its BARE {@code
+     * phaseName} -- so that field is read back from {@link
+     * DiagramEquilibrium#phaseModelNames} here, not the instance label
+     * itself.
      */
     private static EquilibriumResult toEquilibriumResultForSeeding(DiagramEquilibrium eq) {
         List<EquilibriumResult.PhaseResult> stable = new java.util.ArrayList<>();
-        for (String phaseName : eq.stablePhases) {
+        for (String instanceLabel : eq.stablePhases) {
             stable.add(new EquilibriumResult.PhaseResult(
-                    phaseName, "", eq.phaseAmounts.get(phaseName),
-                    eq.phaseMoleFractions.get(phaseName), eq.phaseConstitutions.get(phaseName),
-                    0.0, 0.0, eq.phaseTotalMoles.get(phaseName)));
+                    eq.phaseModelNames.get(instanceLabel), "", eq.phaseAmounts.get(instanceLabel),
+                    eq.phaseMoleFractions.get(instanceLabel), eq.phaseConstitutions.get(instanceLabel),
+                    0.0, 0.0, eq.phaseTotalMoles.get(instanceLabel)));
         }
         return new EquilibriumResult(eq.T, eq.P, eq.chemicalPotentials,
                 stable, java.util.Collections.emptyList(), eq.converged, 0);
     }
 
-    /** Scans {@code pendingExits} for the first not-yet-{@code done} exit, or {@code null} if none remain. */
-    private static DiagramExit searchPendingExit(List<DiagramExit> pendingExits) {
-        for (DiagramExit exit : pendingExits) {
-            if (!exit.done) {
-                return exit;
+    /**
+     * Scans every node's exits, in {@code nodes} order, for the first
+     * not-yet-{@code done} exit, or {@code null} if none remain across
+     * the whole list (Sundman 2021 S3.3: "Algorithm C1 will begin
+     * searching the list of nodes to find exits ... If there are none
+     * the mapping is finished").
+     */
+    private static DiagramExit searchPendingExit(List<DiagramNode> nodes) {
+        for (DiagramNode node : nodes) {
+            for (DiagramExit exit : node.exits) {
+                if (!exit.done) {
+                    return exit;
+                }
             }
         }
         return null;
@@ -660,18 +1312,6 @@ public final class PhaseDiagramEngine {
     }
 
     /**
-     * Generates starting point(s) for diagram tracing. Currently returns
-     * a single starting point; multiple starting points are a manual,
-     * user-driven operation (issue #TODO: linked disconnected components).
-     *
-     * @param singleStartWalkValue the starting value along the walk axis
-     * @return a list containing the single starting point
-     */
-    public static List<double[]> generateStartingPoints(double singleStartWalkValue) {
-        return List.of(new double[] { singleStartWalkValue });
-    }
-
-    /**
      * Algorithm B orchestration: the single top-to-bottom entry point for
      * automated phase-diagram tracing, from condition validation through
      * plot classification. Validates the n+2 condition count, generates
@@ -701,44 +1341,6 @@ public final class PhaseDiagramEngine {
             double[] compOverall,
             List<GibbsEnergyModel> candidates) {
 
-        Traced traced = traceForClassification(
-                numComponents, axes, startValues, fixedT, fixedP, compOverall, candidates);
-        return classifyPlot(traced.registry, traced.plotType, traced.axisNames,
-                traced.axisMin, traced.axisMax, traced.compositionAxisIndex,
-                traced.compositionComponentIndex);
-    }
-
-    /** Bundles a traced {@link NodeRegistry} with the metadata {@link #classifyPlot} needs. */
-    private static final class Traced {
-        final NodeRegistry registry;
-        final PlotType plotType;
-        final String[] axisNames;
-        final double[] axisMin;
-        final double[] axisMax;
-        final int compositionAxisIndex;
-        final int compositionComponentIndex;
-
-        Traced(NodeRegistry registry, PlotType plotType, String[] axisNames, double[] axisMin,
-                double[] axisMax, int compositionAxisIndex, int compositionComponentIndex) {
-            this.registry = registry;
-            this.plotType = plotType;
-            this.axisNames = axisNames;
-            this.axisMin = axisMin;
-            this.axisMax = axisMax;
-            this.compositionAxisIndex = compositionAxisIndex;
-            this.compositionComponentIndex = compositionComponentIndex;
-        }
-    }
-
-    private static Traced traceForClassification(
-            int numComponents,
-            AxisConfig[] axes,
-            double[] startValues,
-            double fixedT,
-            double fixedP,
-            double[] compOverall,
-            List<GibbsEnergyModel> candidates) {
-
         if (axes.length != startValues.length) {
             throw new IllegalArgumentException(
                     "axes.length (" + axes.length + ") must equal startValues.length ("
@@ -754,160 +1356,23 @@ public final class PhaseDiagramEngine {
                     "For 2-axis MAP, axes[1] must be COMPOSITION; got " + axes[1].type);
         }
 
-        validateConditionCount(numComponents, numComponents + 2);
-        generateStartingPoints(startValues[0]);
-
-        EquilibriumResult initialEquilibrium = solveInitialEquilibrium(
-                axes[0], fixedT, fixedP, startValues[0], compOverall, candidates);
-
-        LineFollower.Setup setup;
-        PlotType plotType;
         String[] axisNames;
-        double[] axisMin, axisMax;
-        int compositionAxisIndex, compositionComponentIndex;
+        int compositionAxisIndex;
+        ConditionSet conds;
 
         if (axes.length == 1) {
-            setup = new StepDiagramTracer().setUp(
-                    axes[0], fixedT, fixedP, compOverall, candidates, initialEquilibrium);
-
-            plotType = PlotType.PROPERTY_OR_STEP_DIAGRAM;
+            conds = ConditionSet.fromStepAxis(numComponents, axes[0], fixedT, fixedP, compOverall);
             axisNames = new String[] { axes[0].name };
-            axisMin = new double[] { axes[0].min };
-            axisMax = new double[] { axes[0].max };
             compositionAxisIndex = -1;
-            compositionComponentIndex = -1;
         } else {
-            setup = new MapDiagramTracer().setUp(
-                    axes[0], axes[1], fixedT, fixedP, startValues[0], compOverall, candidates,
-                    initialEquilibrium);
-
-            plotType = PlotType.BINARY_T_X;
+            conds = ConditionSet.fromBinaryAxes(
+                    numComponents, axes[0], axes[1], fixedT, fixedP, compOverall);
             axisNames = new String[] { axes[0].name, axes[1].name };
-            axisMin = new double[] { axes[0].min, axes[1].min };
-            axisMax = new double[] { axes[0].max, axes[1].max };
             compositionAxisIndex = 1;
-            compositionComponentIndex = axes[1].componentIndex;
         }
 
-        LineFollower.drain(setup, candidates);
-
-        return new Traced(setup.registry(), plotType, axisNames, axisMin, axisMax,
-                compositionAxisIndex, compositionComponentIndex);
-    }
-
-    /**
-     * Solves a single equilibrium at the starting conditions. This is the
-     * shared Algorithm A box that Algorithm B executes before branching
-     * to STEP or MAP, ensuring both branches operate from the same
-     * converged starting point.
-     *
-     * @param axis the first/walked axis
-     * @param fixedT temperature (modified by axis if axis is TEMPERATURE)
-     * @param fixedP pressure (modified by axis if axis is PRESSURE)
-     * @param startWalkValue the axis value where to solve
-     * @param compOverall overall composition
-     * @param candidates candidate phase models
-     * @return converged equilibrium result
-     * @throws IllegalStateException if convergence fails
-     */
-    public static EquilibriumResult solveInitialEquilibrium(
-            AxisConfig axis,
-            double fixedT,
-            double fixedP,
-            double startWalkValue,
-            double[] compOverall,
-            List<GibbsEnergyModel> candidates) {
-
-        double t0 = fixedT, p0 = fixedP;
-        double[] comp = compOverall.clone();
-        switch (axis.type) {
-            case TEMPERATURE: t0 = startWalkValue; break;
-            case PRESSURE: p0 = startWalkValue; break;
-            case COMPOSITION: comp = StepTracer.applyCompositionAxis(axis, startWalkValue, comp); break;
-            default: throw new IllegalStateException("Unhandled axis type: " + axis.type);
-        }
-
-        EquilibriumResult result = EquilibriumSolveHelper.solveOrSentinel(t0, p0, comp, candidates);
-        if (!result.isConverged()) {
-            throw new IllegalStateException(
-                    "Initial equilibrium did not converge at " + axis.name + "=" + startWalkValue);
-        }
-        return result;
-    }
-
-    /**
-     * Drains the map diagram (2-axis ZPF tracing) from one starting point --
-     * the 2-axis counterpart of {@link #drainStepLoop}. Walks the first
-     * axis while keeping a phase at zero amount.
-     *
-     * @param walkAxis axis to walk
-     * @param releaseAxis axis to release (must be COMPOSITION for binary MAP)
-     * @param fixedT temperature
-     * @param fixedP pressure
-     * @param startWalkValue starting walk value
-     * @param compOverall overall composition
-     * @param candidates candidate phase models
-     * @param startResult pre-solved initial equilibrium, or null to solve it here
-     * @return registry of traced nodes and lines
-     */
-    public static NodeRegistry drainMapLoop(
-            AxisConfig walkAxis,
-            AxisConfig releaseAxis,
-            double fixedT,
-            double fixedP,
-            double startWalkValue,
-            double[] compOverall,
-            List<GibbsEnergyModel> candidates,
-            EquilibriumResult startResult) {
-
-        return new MapDiagramTracer().drain(
-                walkAxis, releaseAxis, fixedT, fixedP, startWalkValue, compOverall, candidates, startResult);
-    }
-
-    /**
-     * Drains the map diagram using a ConditionSet for generalized diagram
-     * types (binary, ternary isothermal, isopleth, etc.).
-     *
-     * @param conds full condition set for the diagram
-     * @param searchAxisIndex index of the axis to search/walk
-     * @param releaseAxisIndex index of the axis to release
-     * @param startSearchValue starting value for the search axis
-     * @param compOverall overall composition
-     * @param candidates candidate phase models
-     * @return registry of traced nodes and lines
-     */
-    public static NodeRegistry drainMapLoop(
-            ConditionSet conds,
-            int searchAxisIndex,
-            int releaseAxisIndex,
-            double startSearchValue,
-            double[] compOverall,
-            List<GibbsEnergyModel> candidates) {
-
-        return new MapDiagramTracer().drain(
-                conds, searchAxisIndex, releaseAxisIndex, startSearchValue, compOverall, candidates);
-    }
-
-    /**
-     * Drains the step diagram (single-axis property scan) from one starting point.
-     *
-     * @param axis the axis to walk
-     * @param fixedT temperature
-     * @param fixedP pressure
-     * @param compOverall overall composition
-     * @param candidates candidate phase models
-     * @param startResult pre-solved initial equilibrium, or null to solve it here
-     * @return registry of traced nodes and lines
-     */
-    public static NodeRegistry drainStepLoop(
-            AxisConfig axis,
-            double fixedT,
-            double fixedP,
-            double[] compOverall,
-            List<GibbsEnergyModel> candidates,
-            EquilibriumResult startResult) {
-
-        return new StepDiagramTracer().drain(axis, fixedT, fixedP, compOverall, candidates, startResult);
+        DiagramResult diagram = callAlgorithmB(conds, startValues, candidates);
+        return buildResultFromDiagram(diagram, conds, axisNames, compositionAxisIndex);
     }
 
     private static final double GLOBAL_STABILITY_RELATIVE_TOLERANCE = 1.0e-4;
@@ -1011,231 +1476,4 @@ public final class PhaseDiagramEngine {
         return f == 0 ? NodeClass.INVARIANT : ordinary;
     }
 
-    /**
-     * Filters the traced line network, removing excluded lines and returning
-     * the lines ready for plotting. Nodes are deduplicated inline during
-     * tracing via {@link NodeRegistry#findOrCreate}.
-     *
-     * @param registry the traced node/line registry
-     * @return all non-excluded lines in the registry
-     */
-    public static List<Line> mergeDedupNetwork(NodeRegistry registry) {
-        List<Line> kept = new java.util.ArrayList<>();
-        for (Node node : registry.getNodes()) {
-            for (Line line : node.getLines()) {
-                if (!line.isExcluded()) {
-                    kept.add(line);
-                }
-            }
-        }
-        return kept;
-    }
-
-    /**
-     * Identifies and labels phase regions from the traced line network.
-     * Assigns stable-phase labels to each line and node, and computes
-     * tie-triangles for 3-phase regions.
-     *
-     * @param registry the traced node/line registry
-     * @return phase regions with labels and tie-triangles
-     */
-    public static PhaseRegions identifyPhaseRegions(NodeRegistry registry) {
-        java.util.Map<Line, java.util.Set<String>> lineLabels = new java.util.LinkedHashMap<>();
-        java.util.Map<Node, java.util.Set<String>> nodeLabels = new java.util.LinkedHashMap<>();
-        List<PhaseRegions.TieTriangle> tieTriangles = new java.util.ArrayList<>();
-
-        for (Node node : registry.getNodes()) {
-            nodeLabels.put(node, node.stablePhaseNames);
-
-            if (node.stablePhaseNames.size() == 3) {
-                List<String> phaseNames = new java.util.ArrayList<>();
-                List<double[]> vertices = new java.util.ArrayList<>();
-                for (EquilibriumResult.PhaseResult pr : node.equilibrium.getStablePhases()) {
-                    phaseNames.add(pr.phaseName);
-                    vertices.add(pr.x);
-                }
-                tieTriangles.add(new PhaseRegions.TieTriangle(node, phaseNames, vertices));
-            }
-
-            for (Line line : node.getLines()) {
-                lineLabels.put(line, lineStablePhaseNames(line));
-            }
-        }
-
-        return new PhaseRegions(lineLabels, nodeLabels, tieTriangles);
-    }
-
-    /**
-     * The stable-phase set bounding {@code line} -- every point sampled
-     * along it shares the same stable-phase set by construction (a
-     * {@link Line} terminates exactly when that set changes), so the
-     * first sampled point's set suffices; empty if no points were
-     * sampled (e.g. a line terminated immediately at an axis limit).
-     */
-    private static java.util.Set<String> lineStablePhaseNames(Line line) {
-        List<EquilibriumResult> points = line.getPoints();
-        if (points.isEmpty()) {
-            return java.util.Set.of();
-        }
-        java.util.Set<String> names = new java.util.LinkedHashSet<>();
-        for (EquilibriumResult.PhaseResult pr : points.get(0).getStablePhases()) {
-            names.add(pr.phaseName);
-        }
-        return names;
-    }
-
-    // ------------------------------------------------------------------
-    // CLASSIFY REQUESTED PLOT / VALIDATE PLOT
-    // ------------------------------------------------------------------
-
-    /** The plot types the flowchart's CLASSIFY REQUESTED PLOT box lists. */
-    public enum PlotType {
-        BINARY_T_X,
-        ACTIVITY_OR_CHEMICAL_POTENTIAL,
-        H_X_S_X_G_X,
-        TERNARY_ISOTHERMAL,
-        TERNARY_ISOPLETH,
-        MULTICOMPONENT_ISOPLETH_OR_PSEUDO_ISOTHERMAL,
-        PROPERTY_OR_STEP_DIAGRAM
-    }
-
-    /**
-     * Converts the traced node/line network into a renderable phase diagram
-     * result for the specified plot type. Validates axis count and converts
-     * stored equilibria into line segments and node points. For diagrams with
-     * a released composition axis, splits multi-phase lines into one segment
-     * per stable phase using each phase's own composition.
-     *
-     * @param registry the traced network
-     * @param requestedType the desired plot type
-     * @param axisNames diagram axis names
-     * @param axisMin minimum value per axis
-     * @param axisMax maximum value per axis
-     * @param compositionAxisIndex index of released composition axis (-1 if none)
-     * @param compositionComponentIndex component index of composition axis
-     * @return the complete classified phase diagram
-     * @throws IllegalArgumentException if axis count does not match requestedType
-     * @throws UnsupportedOperationException if requestedType is not yet implemented
-     */
-    public static PhaseDiagramResult classifyPlot(
-            NodeRegistry registry,
-            PlotType requestedType,
-            String[] axisNames,
-            double[] axisMin,
-            double[] axisMax,
-            int compositionAxisIndex,
-            int compositionComponentIndex) {
-
-        int expectedAxes = expectedAxisCount(requestedType);
-        if (axisNames.length != expectedAxes || axisMin.length != expectedAxes || axisMax.length != expectedAxes) {
-            throw new IllegalArgumentException(
-                    requestedType + " requires exactly " + expectedAxes + " axis/axes, got "
-                    + axisNames.length + " names / " + axisMin.length + " mins / "
-                    + axisMax.length + " maxes -- not a well-posed diagram (VALIDATE PLOT).");
-        }
-
-        switch (requestedType) {
-            case BINARY_T_X:
-            case PROPERTY_OR_STEP_DIAGRAM:
-            case TERNARY_ISOTHERMAL:
-            case TERNARY_ISOPLETH:
-                return buildResult(registry, axisNames, axisMin, axisMax,
-                        compositionAxisIndex, compositionComponentIndex);
-
-            case ACTIVITY_OR_CHEMICAL_POTENTIAL:
-            case H_X_S_X_G_X:
-            case MULTICOMPONENT_ISOPLETH_OR_PSEUDO_ISOTHERMAL:
-            default:
-                throw new UnsupportedOperationException(
-                        requestedType + " not yet implemented -- see "
-                        + "PhaseDiagramEngine#classifyPlot's own javadoc for what's missing "
-                        + "and docs/phase_diagram_engine_flowchart.md's CLASSIFY REQUESTED PLOT box.");
-        }
-    }
-
-    /** VALIDATE PLOT's own axis-count expectation per {@link PlotType} -- see {@link #classifyPlot}'s javadoc. */
-    private static int expectedAxisCount(PlotType type) {
-        return type == PlotType.PROPERTY_OR_STEP_DIAGRAM ? 1 : 2;
-    }
-
-    /**
-     * The actual {@link Node}/{@link Line} -&gt; {@link PhaseDiagramResult}
-     * conversion shared by every implemented {@link PlotType} in {@link
-     * #classifyPlot} -- see that method's javadoc for what this does and
-     * does not compute (in particular the &sect;4.1-driven per-phase
-     * composition split this method performs).
-     */
-    private static PhaseDiagramResult buildResult(
-            NodeRegistry registry, String[] axisNames, double[] axisMin, double[] axisMax,
-            int compositionAxisIndex, int compositionComponentIndex) {
-
-        PhaseDiagramResult result = new PhaseDiagramResult(axisNames, axisMin, axisMax);
-        int numAxes = axisNames.length;
-
-        for (Line line : mergeDedupNetwork(registry)) {
-            List<EquilibriumResult> points = line.getPoints();
-            if (points.isEmpty()) {
-                continue;
-            }
-            String fixedPhase = line.fixedPhases.isEmpty() ? null : line.fixedPhases.get(0);
-
-            if (compositionAxisIndex < 0) {
-                // No released composition (e.g. STEP) -- the stored walk
-                // coordinates are already correct as-is.
-                result.addLine(new LineSegment(line.getAxisCoords(), fixedPhase,
-                        new java.util.ArrayList<>(lineStablePhaseNames(line))));
-                continue;
-            }
-
-            // Sundman 2021 §4.1: a proper T-x diagram plots "the mole
-            // fraction of Cu in ALL STABLE PHASES" -- one curve per
-            // stable phase, not the overall composition Line.getAxisCoords()
-            // stores at compositionAxisIndex. Split this one walked run
-            // into one LineSegment per phase name, each phase's own
-            // PhaseResult.x substituted in at compositionAxisIndex.
-            List<double[]> walkCoords = line.getAxisCoords();
-            for (String phaseName : lineStablePhaseNames(line)) {
-                List<double[]> perPhaseCoords = new java.util.ArrayList<>(points.size());
-                boolean phasePresentThroughout = true;
-                for (int i = 0; i < points.size(); i++) {
-                    double[] x = phaseCompositionOrNull(points.get(i), phaseName);
-                    if (x == null) {
-                        phasePresentThroughout = false;
-                        break;
-                    }
-                    double[] coord = walkCoords.get(i).clone();
-                    coord[compositionAxisIndex] = x[compositionComponentIndex];
-                    perPhaseCoords.add(coord);
-                }
-                if (phasePresentThroughout && !perPhaseCoords.isEmpty()) {
-                    result.addLine(new LineSegment(perPhaseCoords, fixedPhase, List.of(phaseName)));
-                }
-            }
-        }
-
-        for (Node node : registry.getNodes()) {
-            // Every Node in a NodeRegistry is a real phase-set-change
-            // point -- an axis-limit termination (Line#terminateAtAxisLimit)
-            // never creates a Node at all, only a dangling Line with no
-            // end node (see Line.getEndNode()'s javadoc), so
-            // NodePoint.Type.BOUNDARY does not arise from this graph.
-            NodePoint.Type type = node.stablePhaseNames.size() > numAxes + 1
-                    ? NodePoint.Type.INVARIANT
-                    : NodePoint.Type.CROSSING;
-            result.addNode(new NodePoint(
-                    node.axisValues, new java.util.ArrayList<>(node.stablePhaseNames), type));
-        }
-
-        return result;
-    }
-
-    /** {@code eq}'s stable-phase mole-fraction composition for {@code phaseName}, or {@code null} if not stable there. */
-    private static double[] phaseCompositionOrNull(EquilibriumResult eq, String phaseName) {
-        for (EquilibriumResult.PhaseResult pr : eq.getStablePhases()) {
-            if (pr.phaseName.equals(phaseName)) {
-                return pr.x;
-            }
-        }
-        return null;
-    }
 }

@@ -1,39 +1,35 @@
 package system.ports;
 
-import legacy.calbince.ExptData;
-import legacy.calbince.PhaseData;
-
 import java.io.IOException;
 
 /**
- * Port interface for writing optimization workflow outputs.
- * Infrastructure layer provides the concrete implementation.
+ * @deprecated Legacy optimization output port. No longer used after legacy code removal.
+ * Parameter optimization workflow has been replaced with modern architecture.
  */
+@Deprecated
 public interface OptimizationOutputPort {
 
     /**
-     * Factory method to create an output writer with the specified configuration.
-     * @param filePrefix prefix for output files
-     * @param logLevel log level
-     * @return configured output port
+     * @deprecated Not implemented
      */
+    @Deprecated
     OutputWriter createWriter(String filePrefix, int logLevel) throws IOException;
 
     /**
-     * Writer interface for actual output operations.
+     * @deprecated Not implemented
      */
+    @Deprecated
     interface OutputWriter {
         /**
-         * Initialize optimization output and write header information.
-         * @param exptdata experimental data
-         * @param phasedata phase data
+         * @deprecated Not implemented
          */
-        void initOptimization(ExptData exptdata, PhaseData phasedata) throws IOException;
+        @Deprecated
+        void initOptimization(Object exptdata, Object phasedata) throws IOException;
 
         /**
-         * Finalize optimization output and write results.
-         * @param phasedata phase data containing results
+         * @deprecated Not implemented
          */
-        void finalizeOptimization(PhaseData phasedata) throws IOException;
+        @Deprecated
+        void finalizeOptimization(Object phasedata) throws IOException;
     }
 }

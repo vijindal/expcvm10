@@ -1,7 +1,7 @@
 package ui.api;
 
-import session.CalculationSession;
-import session.calctype.ModelSelection;
+import application.ApplicationLayer;
+import application.calctype.ModelSelection;
 import ui.layer.ModelBrowseService;
 
 import java.util.Map;
@@ -9,9 +9,9 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * In-memory registry of live {@link CalculationSession} instances, one per
+ * In-memory registry of live {@link ApplicationLayer} instances, one per
  * API session ID. Per {@code docs/plan-rest-api-calculation-session.md}:
- * one {@code CalculationSession} per API session (never a shared
+ * one {@code ApplicationLayer} per API session (never a shared
  * singleton), and concurrent requests to the SAME session ID synchronize
  * on that session's own lock rather than being rejected or corrupting state.
  *
@@ -22,14 +22,14 @@ public final class SessionStore {
 
     /** Pairs a session with the lock requests against it must hold. */
     public static final class Entry {
-        public final CalculationSession session = new CalculationSession();
+        public final ApplicationLayer session = new ApplicationLayer();
         public final ModelBrowseService browse = new ModelBrowseService(session);
         public final Object lock = new Object();
 
         /**
          * The {@link ModelSelection} last passed to {@code PUT .../model},
          * so a later {@code POST .../calculations/{kind}} can call {@link
-         * session.calctype.CalculationInterface#runCalculating} without the
+         * application.calctype.CalculationInterface#runCalculating} without the
          * caller resending tdb/elements/phases on every calculation
          * request. {@code null} until the model endpoint has been called
          * at least once.

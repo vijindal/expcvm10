@@ -1,0 +1,451 @@
+@startuml ExPCVM_Architecture
+!theme plain
+skinparam classBackgroundColor #FEFEFE
+skinparam classArrowColor #333333
+skinparam classBorderColor #333333
+skinparam classTextColor #000000
+
+' ===========================================================================================
+' LAYER 1: UI LAYER (Top)
+' ===========================================================================================
+package "ui (GUI / CLI / API)" #36558F {
+    class MainController {
+        +runSinglePoint(...): EquilibriumResult
+    }
+
+    class CliApp {
+    }
+
+    class CalculationApiServer {
+        +handleSetModel(...): void
+        +handleCalculation(...): void
+    }
+
+    class ModelBrowseService {
+        +selectableElements(tdbPath): List<String>
+        +selectablePhases(tdbPath, elements): List<String>
+    }
+
+    class ModelInspectionService {
+        +inspectModel(tdbPath, elements): ModelInfo
+        +getPhasesForElements(tdbPath, elements): List<String>
+    }
+
+    class MapResultPanel {
+        +render(): void
+    }
+
+    class StepResultPanel {
+        +render(): void
+    }
+
+    class PhaseDiagramPanel {
+        +render(): void
+    }
+
+    class CoarseDiagramPanel {
+        +render(): void
+    }
+}
+
+package "ui.request & ui.result" #36558F {
+    class CalculationResult {
+        -method: String
+        -value: double
+        -compositionResult: double[]
+        -temperature: double
+        -pressure: double
+        -message: String
+        -success: boolean
+    }
+
+    class ModelInfo {
+        -phaseName: String
+        -modelType: String
+        -sublattices: Sublattice[]
+    }
+
+    class CoarseDiagramResult {
+        -gridPoints: List<GridPoint>
+    }
+
+    class GridPoint {
+        -x: double
+        -y: double
+        -stablePhases: List<String>
+        -converged: boolean
+    }
+}
+
+' ===========================================================================================
+' LAYER 2: SESSION LAYER (Middle) - The Coordinator
+' ===========================================================================================
+package "application (4th Layer Coordinator)" #4B2F72 {
+    class ApplicationLayer {
+        -currentKey: ModelKey
+        -currentSystem: ThermodynamicSystem
+        -currentEquilibriumResult: EquilibriumResult
+        -currentStepResult: PhaseDiagramResult
+        -currentCoarseDiagramResult: CoarseDiagramResult
+        -currentPhaseDiagram: PhaseDiagramResult
+        +setModel(tdbPath, elements, phases): void
+        +calculateEquilibrium(T, P, comp): void
+        +calculateInitialState(T, P, comp): void
+        +calculateStep(axis, fixedT, fixedP, comp): void
+        +calculatePhaseDiagram(axes, startAxes, T, P, comp): void
+        +calculateCoarseBinaryDiagram(...): void
+        +calculateCoarseTernaryDiagram(...): void
+        +currentEquilibriumResult(): EquilibriumResult
+        +currentStepResult(): PhaseDiagramResult
+        +currentPhaseDiagram(): PhaseDiagramResult
+        +availableDatabases(): List<String>
+        +availableElements(tdbPath): List<String>
+        +availablePhasesFor(tdbPath, elements): List<String>
+    }
+
+    class ModelKey {
+        tdbFilePath: String
+        elements: List<String>
+        phases: List<String>
+        modelKind: PhaseModelKind
+    }
+
+    interface CalculationInterface {
+        {static} +runCalculating(session, kind, model, params): Object
+        {static} +runAssessing(kind, params): Object
+    }
+
+    class ModelSelection {
+        tdbFilePath: String
+        elements: List<String>
+        phases: List<String>
+    }
+}
+
+' ===========================================================================================
+' LAYER 3A: SYSTEM LAYER (Bottom Left)
+' ===========================================================================================
+package "system (Thermodynamic Models)" #8B4513 {
+    class ThermodynamicSystem {
+        -elements: List<String>
+        -phaseModels: List<GibbsEnergyModel>
+        +build(tdbPath, elements, phases): ThermodynamicSystem
+        +getElements(): List<String>
+        +getPhaseModels(): List<GibbsEnergyModel>
+    }
+
+    abstract class GibbsEnergyModel {
+        -phaseName: String
+        -modelType: PhaseModelKind
+        +evaluateG(T, P, y): double
+        +gradG_dy(T, P, y): double[]
+        +hessG_dy2(T, P, y): double[][]
+        +dG_dT(T, P, y): double
+        +dG_dP(T, P, y): double
+        +getMoles(y): double
+        +dMoles_dy(y): double[]
+    }
+
+    enum PhaseModelKind {
+        CEF
+        CVM
+        AUTO
+    }
+
+    class CefGibbs extends GibbsEnergyModel {
+        -cepolynomials: Map<String, CefPolynomial>
+        -sublattices: List<Sublattice>
+        -sitefractions: double[]
+    }
+
+    class CvmGibbs extends GibbsEnergyModel {
+        -cvmData: CvmPhaseData
+        -probabilities: double[]
+    }
+
+    class UnaryGibbs extends GibbsEnergyModel {
+        -elementGibbs: ElementGibbs
+    }
+}
+
+package "system.model subpackages" #8B4513 {
+    class CefPolynomial {
+        -coefficients: double[]
+        +evaluate(T): double
+        +derivative(T): double
+    }
+
+    class SgtePolynomial extends CefPolynomial {
+    }
+
+    class CvmPhaseData {
+        -phaseName: String
+        -cvmType: String
+        -parameters: Map<String, double[]>
+    }
+
+    class ElementGibbs {
+        -element: String
+        -phase: PhaseType
+        -polynomial: SgtePolynomial
+    }
+
+    class PhaseType {
+        -name: String
+        -structure: String
+    }
+}
+
+' ===========================================================================================
+' LAYER 3B: CALCULATION LAYER (Bottom Right)
+' ===========================================================================================
+package "calc (Equilibrium & Diagram Solvers)" #228B22 {
+    class EquilibriumSolverV2 {
+        -phaseModels: List<GibbsEnergyModel>
+        -T: double
+        -P: double
+        -targetAmounts: double[]
+        -mu: double[]
+        -phaseAmounts: double[]
+        -stablePhases: int[]
+        +solve(): EquilibriumResult
+        -updateState(): void
+        -updateStablePhaseSet(): void
+        -performNewtonStep(): void
+    }
+
+    class GridMinimizer {
+        +solve(phaseModels, T, P, comp): EquilibriumResult
+    }
+
+    class PhaseDiagramEngine {
+        -system: ThermodynamicSystem
+        -solver: EquilibriumSolverV2
+        +calculatePhaseDiagram(axes, range): PhaseDiagramResult
+    }
+
+    class StepTracer {
+        +trace(axis, fixedT, fixedP, comp, phaseModels): PhaseDiagramResult
+    }
+
+    class CoarseDiagramTracer {
+        +traceBinary(...): CoarseDiagramResult
+        +traceTernary(...): CoarseDiagramResult
+    }
+}
+
+package "calc.equil & calc.diagram details" #228B22 {
+    class EquilibriumResult {
+        -state: EquilibriumState
+        -converged: boolean
+        -iterations: int
+        -residual: double
+    }
+
+    class EquilibriumState {
+        -temperature: double
+        -pressure: double
+        -elementCompositions: double[]
+        -phaseAmounts: double[]
+        -stablePhases: String[]
+        -chemicalPotentials: double[]
+    }
+
+    class PhaseDiagramResult {
+        -axisNames: String[]
+        -axisMin: double[]
+        -axisMax: double[]
+        -lines: List<LineSegment>
+        -nodes: List<NodePoint>
+        -complete: boolean
+        -message: String
+    }
+
+    class LineSegment {
+        -coords: List<double[]>
+        -fixedPhase: String
+        -stablePhases: List<String>
+    }
+
+    class NodePoint {
+        -axisValues: double[]
+        -stablePhases: List<String>
+        -type: NodeType
+    }
+
+    enum NodeType {
+        CROSSING
+        INVARIANT
+        BOUNDARY
+    }
+
+    class AxisConfig {
+        -axisName: String
+        -min: double
+        -max: double
+        -steps: int
+    }
+
+    class PhaseMatrixAssembler {
+        +assembleMatrix(model, y, T, P): Matrix
+        +invertMatrix(matrix): Matrix
+    }
+}
+
+' ===========================================================================================
+' UTILITY LAYER (Shared)
+' ===========================================================================================
+package "util" #D3D3D3 {
+    class Matrix {
+        -data: double[][]
+        +multiply(other): Matrix
+        +inverse(): Matrix
+        +transpose(): Matrix
+    }
+
+    class SingularValueDecomposition {
+        +decompose(matrix): SVDResult
+    }
+
+    class Maths {
+        +solveLinearSystem(A, b): double[]
+    }
+
+    class Constants {
+        R_GAS: double
+        KB: double
+    }
+}
+
+' ===========================================================================================
+' RELATIONSHIPS: UI ↔ SESSION (Two-way bridge)
+' ===========================================================================================
+
+MainController -.->|browse / calculate| ApplicationLayer
+CliApp -.->|browse / calculate| ApplicationLayer
+CalculationApiServer -.->|browse / calculate| ApplicationLayer
+
+ModelBrowseService -.->|uses| ApplicationLayer
+ModelInspectionService -.->|uses| ApplicationLayer
+
+' UI-internal composition
+MainController --> ModelBrowseService
+CliApp --> ModelBrowseService
+CliApp --> ModelInspectionService
+MainController --> MapResultPanel
+MainController --> StepResultPanel
+MainController --> PhaseDiagramPanel
+MainController --> CoarseDiagramPanel
+
+' UI panels read results from session
+MapResultPanel -.->|reads from| ApplicationLayer
+StepResultPanel -.->|reads from| ApplicationLayer
+PhaseDiagramPanel -.->|reads from| ApplicationLayer
+CoarseDiagramPanel -.->|reads from| ApplicationLayer
+
+' ===========================================================================================
+' RELATIONSHIPS: SESSION → SYSTEM & CALCULATION (Unidirectional - Session controls both)
+' ===========================================================================================
+
+ApplicationLayer --> ModelKey
+ApplicationLayer --> CalculationInterface
+
+' Session → System Layer
+ApplicationLayer --> ThermodynamicSystem
+ThermodynamicSystem --> GibbsEnergyModel
+GibbsEnergyModel <|-- CefGibbs
+GibbsEnergyModel <|-- CvmGibbs
+GibbsEnergyModel <|-- UnaryGibbs
+
+CefGibbs --> SgtePolynomial
+CvmGibbs --> CvmPhaseData
+UnaryGibbs --> ElementGibbs
+ElementGibbs --> SgtePolynomial
+ElementGibbs --> PhaseType
+
+' Session → Calculation Layer
+ApplicationLayer --> EquilibriumSolverV2
+ApplicationLayer --> GridMinimizer
+ApplicationLayer --> PhaseDiagramEngine
+ApplicationLayer --> StepTracer
+ApplicationLayer --> CoarseDiagramTracer
+
+' Calculation layer internal relationships
+EquilibriumSolverV2 --> GibbsEnergyModel
+EquilibriumSolverV2 --> PhaseMatrixAssembler
+EquilibriumSolverV2 --> EquilibriumState
+EquilibriumSolverV2 --> EquilibriumResult
+
+GridMinimizer --> GibbsEnergyModel
+GridMinimizer --> EquilibriumResult
+
+PhaseDiagramEngine --> EquilibriumSolverV2
+PhaseDiagramEngine --> PhaseDiagramResult
+PhaseDiagramEngine --> LineSegment
+PhaseDiagramEngine --> NodePoint
+
+StepTracer --> EquilibriumSolverV2
+StepTracer --> PhaseDiagramResult
+StepTracer --> AxisConfig
+
+CoarseDiagramTracer --> GridMinimizer
+CoarseDiagramTracer --> CoarseDiagramResult
+CoarseDiagramTracer --> GridPoint
+CoarseDiagramTracer --> AxisConfig
+
+' Session → Result storage
+ApplicationLayer --> EquilibriumResult
+ApplicationLayer --> PhaseDiagramResult
+ApplicationLayer --> CoarseDiagramResult
+
+' ===========================================================================================
+' UTILITY LAYER RELATIONSHIPS
+' ===========================================================================================
+
+PhaseMatrixAssembler --> Matrix
+Matrix --> SingularValueDecomposition
+EquilibriumSolverV2 --> Matrix
+EquilibriumSolverV2 --> Maths
+
+PhaseDiagramResult --> LineSegment
+PhaseDiagramResult --> NodePoint
+LineSegment --> NodeType
+NodePoint --> NodeType
+
+' ===========================================================================================
+' ANNOTATIONS
+' ===========================================================================================
+
+note top of MainController
+  **UI LAYER (Top)**
+  - Sends browsing requests to ApplicationLayer
+  - Sends calculation requests via CalculationInterface
+  - Reads results from ApplicationLayer
+  - NO direct access to System/Calculation layers
+end note
+
+note top of ApplicationLayer
+  **SESSION LAYER (Middle) - THE COORDINATOR**
+  - Holds current ThermodynamicSystem (caches parsed TDB)
+  - Holds latest results (EquilibriumResult, PhaseDiagramResult, etc.)
+  - Single point of contact between UI and System/Calculation
+  - Routes all requests through CalculationInterface
+end note
+
+note bottom of EquilibriumSolverV2
+  **CALCULATION LAYER (Bottom Right)**
+  - Solves equilibrium using Sundman Algorithm A
+  - Performs phase diagram tracing (Algorithms B/C/D)
+  - Queries GibbsEnergyModel for G and derivatives
+  - Called by ApplicationLayer only (never by UI directly)
+end note
+
+note bottom of ThermodynamicSystem
+  **SYSTEM LAYER (Bottom Left)**
+  - Builds GibbsEnergyModel[] from TDB file
+  - Models: CEF, CVM, Unary
+  - Provides G(T,P,y), dG/dy, d2G/dy2, etc.
+  - Called by ApplicationLayer only (never by UI directly)
+end note
+
+@enduml

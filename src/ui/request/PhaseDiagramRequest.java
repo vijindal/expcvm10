@@ -1,6 +1,6 @@
 package ui.request;
 
-import calc.diagram.AxisConfig;
+import ui.request.AxisConfig;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -79,6 +79,16 @@ public class PhaseDiagramRequest {
     private double[] startComposition;
 
     /**
+     * Per-axis starting value, same length/order as {@link #axes}. Null
+     * (or a null entry) falls back to that axis's own {@code min} --
+     * {@link #startAxisValues()}'s previous, only behavior. Set this when
+     * the diagram should start its stable-set search from somewhere other
+     * than an axis's lower bound, e.g. a MAP's T-axis starting at a
+     * user-chosen temperature instead of always the range floor.
+     */
+    private double[] startAxisValues;
+
+    /**
      * Optional progress callback for COARSE diagrams (ignored by
      * STEP/MAP): called from the calculation's background thread after
      * each completed grid row -- see {@code CoarseDiagramTracer}. Not
@@ -119,6 +129,14 @@ public class PhaseDiagramRequest {
                                                              : startComposition.clone(); }
     public void setStartComposition(double[] c)     { this.startComposition = c.clone(); }
 
+    public void setStartAxisValue(int axisIndex, double value) {
+        if (startAxisValues == null || startAxisValues.length != axes.size()) {
+            startAxisValues = new double[axes.size()];
+            java.util.Arrays.fill(startAxisValues, Double.NaN);
+        }
+        startAxisValues[axisIndex] = value;
+    }
+
     public Consumer<String> getProgressCallback()              { return progressCallback; }
     public void             setProgressCallback(Consumer<String> cb) { this.progressCallback = cb; }
 
@@ -130,12 +148,17 @@ public class PhaseDiagramRequest {
     }
 
     /**
-     * Build the starting axis-value vector from the current axis configs.
-     * Sets each axis to its minimum value as the default start.
+     * Build the starting axis-value vector from the current axis configs:
+     * each axis defaults to its own {@code min}, overridden per axis by
+     * {@link #setStartAxisValue} where the caller supplied one.
      */
     public double[] startAxisValues() {
         double[] vals = new double[axes.size()];
-        for (int i = 0; i < axes.size(); i++) vals[i] = axes.get(i).min;
+        for (int i = 0; i < axes.size(); i++) {
+            double override = startAxisValues != null && i < startAxisValues.length
+                    ? startAxisValues[i] : Double.NaN;
+            vals[i] = Double.isNaN(override) ? axes.get(i).min : override;
+        }
         return vals;
     }
 }

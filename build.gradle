@@ -39,11 +39,25 @@ tasks.named('test', Test) {
     systemProperties System.properties.findAll { k, v ->
         k.toString().startsWith('sgte.') || k.toString().startsWith('tdb.')
     }
+    // Bound forked test-JVM memory: with no limit here, Gradle defaults
+    // maxParallelForks to (CPU cores / 2) and lets each forked JVM pick
+    // its own default heap, which can exhaust memory on smaller machines.
+    maxHeapSize = '512m'
+    maxParallelForks = 1
 }
 
 tasks.named('run') {
     workingDir = project.projectDir
-    standardInput = System.in
+    // Only the interactive CLI (no args, or args not starting with --gui)
+    // reads stdin (see ui.cli.CliApp's Prompter); wiring System.in
+    // unconditionally makes `gradlew run --args="--gui"` hang/misbehave
+    // under a non-interactive caller (CI, IDE launcher, agent tooling)
+    // that provides no real stdin.
+    doFirst {
+        if (!args.contains('--gui')) {
+            standardInput = System.in
+        }
+    }
 }
 
 tasks.register('fatJar', Jar) {

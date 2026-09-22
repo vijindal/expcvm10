@@ -1,8 +1,8 @@
 package ui.gui;
 
 import ui.request.PhaseDiagramRequest;
-import calc.diagram.AxisConfig;
-import calc.diagram.AxisConfig.Type;
+import ui.request.AxisConfig;
+import ui.request.AxisConfig.Type;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -50,6 +50,13 @@ public class PhaseDiagramConfigPanel extends JPanel {
     // e.g. "x(Zr)" for V-Zr, once a database/elements are selected)
     private JTextField startCompositionField;
     private JLabel startCompositionLabel;
+
+    // MAP: starting point for Algorithm B's stable-set search, decoupled
+    // from axis0's own scan range (its min/max) and axis1's scan range --
+    // see PhaseDiagramRequest#setStartAxisValue.
+    private JTextField startTemperatureField;
+    private JTextField startCompositionMapField;
+    private JLabel startCompositionMapLabel;
 
     private JTextField pressureField;
     private JTextField temperatureField;
@@ -153,20 +160,25 @@ public class PhaseDiagramConfigPanel extends JPanel {
         int row = 0;
 
         // ── Axis 0 ─────────────────────────────────────────────────
+        // MAP's axis 1 is fixed to COMPOSITION below, so axis 0 defaults
+        // to TEMPERATURE for the classic T-x map; STEP has no axis 1 and
+        // keeps its own COMPOSITION default.
         addSectionLabel(panel, gbc, row++, isStep ? "AXIS (Scan Variable)" : "AXIS 0 (X-Axis)");
-        axis0TypeCombo = addAxisTypeCombo(panel, gbc, row++, "Type", isStep ? "COMPOSITION" : "COMPOSITION");
-        axis0Range = addRangeField(panel, gbc, row++, "Range",
-                isStep ? "300, 2500, 100" : "0.0, 1.0, 0.1");
+        axis0TypeCombo = addAxisTypeCombo(panel, gbc, row++, "Type", isStep ? "COMPOSITION" : "TEMPERATURE");
+        axis0Range = addRangeField(panel, gbc, row++, "Range", "300, 2500, 100");
         axis0TypeCombo.addItemListener(e -> axis0Range.setText(
                 "COMPOSITION".equals(axis0TypeCombo.getSelectedItem()) ? "0.0, 1.0, 0.1" : "300, 2500, 100"));
 
         // ── Axis 1 (MAP only) ───────────────────────────────────────
+        // PhaseDiagramEngine.calculatePhaseDiagram requires axes[1] to be
+        // COMPOSITION for a 2-axis MAP (Sundman 2021 S3.3's binary case);
+        // offering TEMPERATURE/PRESSURE here would only fail later in the
+        // background worker, so the combo is fixed to the one legal value.
         if (!isStep) {
             addSectionLabel(panel, gbc, row++, "AXIS 1 (Y-Axis)");
-            axis1TypeCombo = addAxisTypeCombo(panel, gbc, row++, "Type", "TEMPERATURE");
-            axis1Range = addRangeField(panel, gbc, row++, "Range", "300, 2500, 100");
-            axis1TypeCombo.addItemListener(e -> axis1Range.setText(
-                    "COMPOSITION".equals(axis1TypeCombo.getSelectedItem()) ? "0.0, 1.0, 0.1" : "300, 2500, 100"));
+            axis1TypeCombo = addAxisTypeCombo(panel, gbc, row++, "Type", "COMPOSITION",
+                    new String[]{"COMPOSITION"});
+            axis1Range = addRangeField(panel, gbc, row++, "Range", "0.0, 1.0, 0.1");
         }
 
         row = addPhaseSelectionSection(panel, gbc, row);
@@ -197,7 +209,36 @@ public class PhaseDiagramConfigPanel extends JPanel {
                         els != null && els.size() >= 2 ? "x(" + els.get(1) + ")" : "x(comp 2)");
             });
         } else {
-            temperatureField = addTextField(panel, gbc, row++, "Temperature (K)", "");
+            // MAP: axis0 is T by default and axis1 is COMPOSITION (see
+            // above), so fixedT is unused here (PhaseDiagramRequest#fixedT
+            // is only read when T isn't a diagram axis) -- what MAP needs
+            // instead is where in the diagram Algorithm B starts its
+            // stable-set search, which used to silently default to
+            // axis0.min/axis1.min (composition = 0, a pure-component edge
+            // that often has no transition in range). Both are now
+            // user-set fields.
+            startTemperatureField = addTextField(panel, gbc, row++, "Start T (K)", "300");
+            startCompositionMapLabel = new JLabel("Start x(comp 2)");
+            startCompositionMapLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0; gbc.gridwidth = 1;
+            panel.add(startCompositionMapLabel, gbc);
+
+            startCompositionMapField = new JTextField("0.5");
+            startCompositionMapField.setBackground(DarkTheme.BG_INPUT);
+            startCompositionMapField.setForeground(DarkTheme.FG_PRIMARY);
+            startCompositionMapField.setCaretColor(DarkTheme.FG_PRIMARY);
+            startCompositionMapField.setFont(new Font("Consolas", Font.PLAIN, 10));
+            gbc.gridx = 1; gbc.gridy = row; gbc.weightx = 1; gbc.gridwidth = 2;
+            panel.add(startCompositionMapField, gbc);
+            gbc.gridwidth = 1;
+            row++;
+
+            dbPanel.setOnSelectionChanged(sel -> {
+                populatePhaseCheckBoxes(sel.getAvailablePhases());
+                List<String> els = sel.getElements();
+                startCompositionMapLabel.setText(
+                        els != null && els.size() >= 2 ? "Start x(" + els.get(1) + ")" : "Start x(comp 2)");
+            });
         }
 
         // Filler
@@ -464,13 +505,20 @@ public class PhaseDiagramConfigPanel extends JPanel {
 
     private JComboBox<String> addAxisTypeCombo(JPanel panel, GridBagConstraints gbc, int row,
                                                String label, String selected) {
+        return addAxisTypeCombo(panel, gbc, row, label, selected,
+                new String[]{"COMPOSITION", "TEMPERATURE", "PRESSURE"});
+    }
+
+    private JComboBox<String> addAxisTypeCombo(JPanel panel, GridBagConstraints gbc, int row,
+                                               String label, String selected, String[] options) {
         JLabel labelComp = new JLabel(label);
         labelComp.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0; gbc.gridwidth = 1;
         panel.add(labelComp, gbc);
 
-        JComboBox<String> combo = new JComboBox<>(new String[]{"COMPOSITION", "TEMPERATURE", "PRESSURE"});
+        JComboBox<String> combo = new JComboBox<>(options);
         combo.setSelectedItem(selected);
+        combo.setEnabled(options.length > 1);
         combo.setBackground(DarkTheme.BG_INPUT);
         combo.setForeground(DarkTheme.FG_PRIMARY);
         combo.setRenderer(new DarkTheme.ComboRenderer());
@@ -539,10 +587,18 @@ public class PhaseDiagramConfigPanel extends JPanel {
                 catch (NumberFormatException ignored) {}
             }
             request.setStartComposition(readCoarseStartComposition(sel.getElements().size()));
-        } else if (!isStep && temperatureField != null
-                   && !temperatureField.getText().trim().isEmpty()) {
-            try { request.setFixedT(Double.parseDouble(temperatureField.getText().trim())); }
-            catch (NumberFormatException ignored) {}
+        } else if (mode == Mode.MAP) {
+            if (startTemperatureField != null && axis0 != null && axis0.type == Type.TEMPERATURE) {
+                try {
+                    request.setStartAxisValue(0, Double.parseDouble(startTemperatureField.getText().trim()));
+                } catch (NumberFormatException ignored) {}
+            }
+            if (startCompositionMapField != null) {
+                try {
+                    double x2 = Double.parseDouble(startCompositionMapField.getText().trim());
+                    request.setStartComposition(new double[]{1.0 - x2, x2});
+                } catch (NumberFormatException ignored) {}
+            }
         }
         return request;
     }
@@ -552,7 +608,7 @@ public class PhaseDiagramConfigPanel extends JPanel {
      * {@link #populateCoarseElementUI}), falling back to a uniform
      * composition over {@code numElements} components if the fields
      * haven't been populated yet or don't match -- {@link
-     * session.CalculationSession#calculateCoarseBinaryDiagram}/
+     * application.ApplicationLayer#calculateCoarseBinaryDiagram}/
      * {@code calculateCoarseTernaryDiagram} both require a non-null
      * composition vector to renormalize/distribute the non-swept
      * components against; values for axis-swept components are

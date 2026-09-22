@@ -9,7 +9,7 @@ import javax.swing.UIManager;
  * GUI entry point for the application.
  *
  * <p>Only {@link OptimizationUseCase} is still injected -- the GUI's
- * calculation and browsing paths go through {@code CalculationSession}
+ * calculation and browsing paths go through {@code ApplicationLayer}
  * (held inside {@link MainController}), per the target data flow. See
  * {@code MainController} for the paths still pending that wiring.
  */

@@ -8,9 +8,9 @@ import java.util.Map;
  * (CLI/GUI/API) that wants to accept or display composition in mass units
  * rather than mole fraction.
  *
- * <p>Deliberately NOT part of {@link session.calctype.CalculationInterface}:
+ * <p>Deliberately NOT part of {@link application.calctype.CalculationInterface}:
  * that class's entire contract is collecting already-mole-fraction params
- * from a UI, passing them to {@code CalculationSession}, and passing the
+ * from a UI, passing them to {@code ApplicationLayer}, and passing the
  * result straight back -- a thin, auditable pass-through, not a place for
  * unit-conversion logic. Composition units are a UI-facing presentation
  * concern (what a user types/reads), not a calculation concern (the
