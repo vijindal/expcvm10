@@ -3,16 +3,22 @@ package system.model;
 import system.database.tdb;
 import system.model.cef.CefGibbs;
 import system.model.cvm.CvmPhaseSpec;
+import system.model.cvm.TdbCvmModelBuilder;
 
 import java.util.List;
 import java.util.Map;
 
 /**
- * Constructs phase {@link GibbsEnergyModel}s: {@link CefGibbs} from a TDB
- * database via {@link #build}, or a CVM model from an explicit
- * {@link CvmPhaseSpec} via {@link #buildCvm} (CVM has no TDB grammar yet).
- * {@link PhaseModelKind#CVM} through the TDB path still throws
- * {@link UnsupportedOperationException}.
+ * Constructs phase {@link GibbsEnergyModel}s from a TDB database.
+ *
+ * <p>Supports both CEF (via {@link CefGibbs}) and CVM (via
+ * {@link TdbCvmModelBuilder}) through the TDB-driven path. Callers should
+ * use {@link PhaseModelAvailability#availableModels} to discover which
+ * models are available, then explicitly request one via {@link #buildCef}
+ * or {@link #buildCvm}.
+ *
+ * <p>Legacy {@link #build(String, tdb, List, Map, Map, PhaseModelKind)}
+ * entry points remain for backward compatibility.
  */
 public final class PhaseModelFactory {
 
@@ -67,5 +73,52 @@ public final class PhaseModelFactory {
      */
     public static GibbsEnergyModel buildCvm(CvmPhaseSpec spec) {
         return spec.toModel();
+    }
+
+    /**
+     * Explicitly builds a CEF model for the given phase/element set.
+     *
+     * <p>Caller is responsible for verifying that CEF is available via
+     * {@link PhaseModelAvailability#isAvailable}. No auto-fallback occurs
+     * if CEF parameters are missing; the constructor will throw.
+     *
+     * @param phaseName phase name
+     * @param database  loaded TDB
+     * @param elements  ordered system elements
+     * @param affMap    magnetic A-function map (may be null)
+     * @param pMap      magnetic p-function map (may be null)
+     * @return          the CEF model
+     * @throws IllegalArgumentException if CEF parameters are not found
+     */
+    public static GibbsEnergyModel buildCef(
+            String phaseName,
+            tdb database,
+            List<String> elements,
+            Map<String, Double> affMap,
+            Map<String, Double> pMap) {
+
+        return build(phaseName, database, elements, affMap, pMap, PhaseModelKind.CEF);
+    }
+
+    /**
+     * Explicitly builds a CVM model for the given phase/element set via TDB.
+     *
+     * <p>Caller is responsible for verifying that CVM is available via
+     * {@link PhaseModelAvailability#isAvailable}. Throws clearly if CVM
+     * parameters are not found.
+     *
+     * @param database  loaded TDB with G_CVM parameters
+     * @param elements  ordered system elements
+     * @param phaseName phase name
+     * @return          the CVM model
+     * @throws IllegalArgumentException if G_CVM parameters are not found
+     * @throws IllegalStateException if GHSER data is missing
+     */
+    public static GibbsEnergyModel buildCvmFromTdb(
+            tdb database,
+            List<String> elements,
+            String phaseName) {
+
+        return TdbCvmModelBuilder.buildTdbCvmModel(database, elements, phaseName);
     }
 }
