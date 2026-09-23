@@ -1,7 +1,7 @@
 package system.model.cvm;
 
 import system.database.tdb;
-import system.database.UnaryGibbsBuilder;
+import system.database.PhaseUnaryGibbsExtractor;
 import system.model.GibbsEnergyModel;
 import system.model.PhaseModelFactory;
 import system.model.cvm.gen.CvmGeometryGenerator;
@@ -19,7 +19,7 @@ import java.util.List;
  *   <li>Converting them to CecTerms via {@code TdbCvmParameterConverter}</li>
  *   <li>Generating phase geometry via {@code CvmGeometryGenerator}</li>
  *   <li>Converting geometry to {@code CvmPhaseData} via adapter</li>
- *   <li>Obtaining GHSER reference energies via {@code UnaryGibbsBuilder}</li>
+ *   <li>Obtaining unary reference energies via {@code PhaseUnaryGibbsExtractor} (shared with CEF)</li>
  *   <li>Assembling a {@link CvmPhaseSpec} and building the model</li>
  * </ol>
  *
@@ -73,8 +73,10 @@ public final class TdbCvmModelBuilder {
         // Step 3: Generate CVM phase geometry and convert to CvmPhaseData
         CvmPhaseData phaseData = generateCvmPhaseData(phaseName, elements);
 
-        // Step 4: Load GHSER reference energies for all elements
-        ElementGibbs[] ghserArray = loadGhserArray(database, elements);
+        // Step 4: Load unary Gibbs energies for the selected phase
+        // (common reference path shared with CEF)
+        ElementGibbs[] ghserArray = PhaseUnaryGibbsExtractor.buildPhaseUnaryGibbs(
+                database, elements, phaseName);
 
         // Step 5: Assemble spec and build model
         CvmPhaseSpec spec = new CvmPhaseSpec(phaseData, cecTerms, ghserArray, elements);
@@ -128,17 +130,4 @@ public final class TdbCvmModelBuilder {
         return energyName; // No remapping needed for other names
     }
 
-    /**
-     * Loads GHSER reference energies for all elements.
-     */
-    private static ElementGibbs[] loadGhserArray(tdb database, List<String> elements) {
-        ElementGibbs[] ghser = new ElementGibbs[elements.size()];
-
-        for (int i = 0; i < elements.size(); i++) {
-            String element = elements.get(i);
-            ghser[i] = UnaryGibbsBuilder.build(element, database);
-        }
-
-        return ghser;
-    }
 }
