@@ -1,5 +1,6 @@
 package system.model.cvm.gen.structure;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -27,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * evaluation), which is unmodified, already validated elsewhere, and not
  * re-tested here.</p>
  */
+@Tag("exploratory")
 class GenericPipelineEquivalenceTest {
 
     private static PipelineResult runPipeline(List<Cluster> maxClusters, SpaceGroup sg, int numComponents) {

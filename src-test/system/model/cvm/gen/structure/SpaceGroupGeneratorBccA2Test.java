@@ -1,5 +1,6 @@
 package system.model.cvm.gen.structure;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -19,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * {@code inputs/sym/BCC_A2-SG.txt} file exactly (same 96 (rotation,
  * translation) pairs, order-independent).
  */
+@Tag("exploratory")
 class SpaceGroupGeneratorBccA2Test {
 
     @Test

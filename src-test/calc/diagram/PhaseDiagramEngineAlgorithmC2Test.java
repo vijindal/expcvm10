@@ -1,5 +1,6 @@
 package calc.diagram;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import system.ThermodynamicSystem;
 import system.model.GibbsEnergyModel;
@@ -27,7 +28,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * node itself (T, composition, chemical potentials), not just the
  * bracketing line points either side of it that {@link
  * PhaseDiagramEngineAlgorithmC1Test} already checks.
+ *
+ * <p><strong>Classified as SLOW (multiple boundary solves with OC reference checks).</strong>
  */
+@Tag("slow")
 public class PhaseDiagramEngineAlgorithmC2Test {
 
     private static final double T_ABSOLUTE_TOLERANCE = 0.01;

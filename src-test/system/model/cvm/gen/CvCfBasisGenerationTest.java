@@ -1,5 +1,6 @@
 package system.model.cvm.gen;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -10,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Test B: CVCF basis. Verifies CF names/order and dimensions for the
  * generated BCC_A2 binary basis.
  */
+@Tag("exploratory")
 class CvCfBasisGenerationTest {
 
     @Test

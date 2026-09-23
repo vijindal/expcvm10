@@ -1,5 +1,6 @@
 package system.model.cvm.gen;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import system.model.unary.ElementGibbs;
 
@@ -14,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>These tests focus on model construction and geometry validation
  * rather than full equilibrium solving.</p>
  */
+@Tag("exploratory")
 class GeneratedModelIntegrationTest {
 
     @Test

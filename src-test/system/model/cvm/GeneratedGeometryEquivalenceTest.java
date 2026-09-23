@@ -1,5 +1,6 @@
 package system.model.cvm;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import system.model.cvm.gen.GeneratedCvmGeometry;
 
@@ -21,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * code -- so agreement between them is a real cross-check of the port, not
  * a tautology.</p>
  */
+@Tag("exploratory")
 class GeneratedGeometryEquivalenceTest {
 
     private static final double TOL = 1e-9;

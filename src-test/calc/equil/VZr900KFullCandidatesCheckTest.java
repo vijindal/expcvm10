@@ -1,5 +1,6 @@
 package calc.equil;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import system.database.TdbParser;
@@ -17,7 +18,10 @@ import java.util.Locale;
  * {V2ZR, BCC_A2}, omitting HCP_A3, which OpenCalphad finds is actually
  * stable here (see docs/oc_reference_tests and
  * examples/macros/vzr_check_900K_output.txt in the OC checkout).
+ *
+ * <p><strong>Classified as INTEGRATION-HEAVY (multi-phase diagnostic check).</strong>
  */
+@Tag("integration-heavy")
 public class VZr900KFullCandidatesCheckTest {
 
     @Test

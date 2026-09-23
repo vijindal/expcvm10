@@ -1,5 +1,6 @@
 package system.model.cvm.gen;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -9,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * dimensions and the configuration-count conservation invariant (each
  * cluster type's CV rows partition all K^size atomic configurations).
  */
+@Tag("exploratory")
 class CMatrixGenerationTest {
 
     @Test

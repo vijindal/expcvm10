@@ -34,7 +34,9 @@ dependencies {
 }
 
 tasks.named('test', Test) {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags 'exploratory', 'slow', 'integration-heavy', 'external'
+    }
     workingDir = project.projectDir
     systemProperties System.properties.findAll { k, v ->
         k.toString().startsWith('sgte.') || k.toString().startsWith('tdb.')
@@ -42,6 +44,79 @@ tasks.named('test', Test) {
     // Bound forked test-JVM memory: with no limit here, Gradle defaults
     // maxParallelForks to (CPU cores / 2) and lets each forked JVM pick
     // its own default heap, which can exhaust memory on smaller machines.
+    maxHeapSize = '512m'
+    maxParallelForks = 1
+}
+
+tasks.register('testIntegrationHeavy', Test) {
+    group = 'verification'
+    description = 'Run integration-heavy tests (expensive multi-phase scenarios)'
+    dependsOn testClasses
+    useJUnitPlatform {
+        includeTags 'integration-heavy'
+    }
+    workingDir = project.projectDir
+    systemProperties System.properties.findAll { k, v ->
+        k.toString().startsWith('sgte.') || k.toString().startsWith('tdb.')
+    }
+    maxHeapSize = '512m'
+    maxParallelForks = 1
+}
+
+tasks.register('testSlow', Test) {
+    group = 'verification'
+    description = 'Run slow tests (parameter scans, grids, expensive numerical computations)'
+    dependsOn testClasses
+    useJUnitPlatform {
+        includeTags 'slow'
+    }
+    workingDir = project.projectDir
+    systemProperties System.properties.findAll { k, v ->
+        k.toString().startsWith('sgte.') || k.toString().startsWith('tdb.')
+    }
+    maxHeapSize = '512m'
+    maxParallelForks = 1
+}
+
+tasks.register('testExplore', Test) {
+    group = 'verification'
+    description = 'Run exploratory tests (geometry generation, architecture validation, reference checks)'
+    dependsOn testClasses
+    useJUnitPlatform {
+        includeTags 'exploratory'
+    }
+    workingDir = project.projectDir
+    systemProperties System.properties.findAll { k, v ->
+        k.toString().startsWith('sgte.') || k.toString().startsWith('tdb.')
+    }
+    maxHeapSize = '512m'
+    maxParallelForks = 1
+}
+
+tasks.register('testExternal', Test) {
+    group = 'verification'
+    description = 'Run external dependency tests (CEWorkbench cross-checks, etc.)'
+    dependsOn testClasses
+    useJUnitPlatform {
+        includeTags 'external'
+    }
+    workingDir = project.projectDir
+    systemProperties System.properties.findAll { k, v ->
+        k.toString().startsWith('sgte.') || k.toString().startsWith('tdb.')
+    }
+    maxHeapSize = '512m'
+    maxParallelForks = 1
+}
+
+tasks.register('testAll', Test) {
+    group = 'verification'
+    description = 'Run all tests (core, integration, slow, exploratory, external)'
+    dependsOn testClasses
+    useJUnitPlatform()
+    workingDir = project.projectDir
+    systemProperties System.properties.findAll { k, v ->
+        k.toString().startsWith('sgte.') || k.toString().startsWith('tdb.')
+    }
     maxHeapSize = '512m'
     maxParallelForks = 1
 }

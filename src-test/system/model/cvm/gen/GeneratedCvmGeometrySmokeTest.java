@@ -1,5 +1,6 @@
 package system.model.cvm.gen;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.Test;
  * loudly and immediately rather than only inside the more detailed
  * equivalence tests.
  */
+@Tag("exploratory")
 class GeneratedCvmGeometrySmokeTest {
 
     @Test

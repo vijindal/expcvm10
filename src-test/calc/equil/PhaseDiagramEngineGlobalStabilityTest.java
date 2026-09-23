@@ -1,6 +1,7 @@
 package calc.equil;
 
 import calc.diagram.PhaseDiagramEngine;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import system.ThermodynamicSystem;
 import system.model.GibbsEnergyModel;
@@ -24,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * GridMinimizer}'s independent search, a ~10.7% relative difference,
  * far past {@code isGloballyStable}'s 1e-4 tolerance.
  */
+@Tag("slow")
 class PhaseDiagramEngineGlobalStabilityTest {
 
     @Test

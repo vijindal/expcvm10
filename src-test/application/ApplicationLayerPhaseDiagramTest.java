@@ -2,6 +2,7 @@ package application;
 
 import ui.request.AxisConfig;
 import calc.diagram.PhaseDiagramResult;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -19,7 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>OC reference: the Ag-Cu liquidus crossing at x(Cu)=0.05, T=1176.13K
  * (data/agcu.TDB).
+ *
+ * <p><strong>Classified as SLOW (full UI layer integration with phase diagram computation).</strong>
  */
+@Tag("slow")
 public class ApplicationLayerPhaseDiagramTest {
 
     @Test

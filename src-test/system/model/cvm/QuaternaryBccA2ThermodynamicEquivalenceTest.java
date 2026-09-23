@@ -1,5 +1,6 @@
 package system.model.cvm;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import system.model.cvm.gen.GeneratedCvmGeometry;
 import system.model.cvm.gen.GeneratedCvmPhaseDataAdapter;
@@ -35,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * SGTE/GHSER reference-energy term needs to be added or subtracted for this
  * comparison to be apples-to-apples.</p>
  */
+@Tag("exploratory")
 class QuaternaryBccA2ThermodynamicEquivalenceTest {
 
     private static final double T = 1273.0;

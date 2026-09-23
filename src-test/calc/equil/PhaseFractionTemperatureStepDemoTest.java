@@ -1,5 +1,6 @@
 package calc.equil;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import system.model.GibbsEnergyModel;
@@ -17,7 +18,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * composition, V-Zr binary. Uses {@link EquilibriumSolverV2#solve}'s
  * {@link EquilibriumResult.PhaseResult#amount}/{@code atoms()} at each
  * converged point.
+ *
+ * <p><strong>Classified as SLOW (temperature scan loop with multiple equilibrium solves).</strong>
  */
+@Tag("slow")
 public class PhaseFractionTemperatureStepDemoTest {
 
     private static final String TDB = "data/VZR-re2.TDB";

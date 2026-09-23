@@ -1,5 +1,6 @@
 package system.model.cvm.gen.structure;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -23,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * the file's cluster, which is the physically meaningful notion of
  * "the same maximal cluster".</p>
  */
+@Tag("exploratory")
 class MaximalClusterGeneratorBccA2Test {
 
     @Test

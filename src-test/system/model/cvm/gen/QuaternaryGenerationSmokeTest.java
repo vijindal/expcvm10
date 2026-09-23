@@ -1,8 +1,10 @@
 package system.model.cvm.gen;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /** Smoke test: the K=4 BCC_A2 CVCF basis builds and validates. */
+@Tag("exploratory")
 class QuaternaryGenerationSmokeTest {
 
     @Test

@@ -1,5 +1,6 @@
 package calc.equil;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import system.database.TdbParser;
@@ -26,6 +27,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code HillertSolver}/{@code CVMGibbsModel} (a separate codebase --
  * {@code C:\Users\admin\codes\CEWorkbench}, read-only reference, not a
  * dependency of this project).
+ *
+ * <p><strong>Classified as EXTERNAL (CEWorkbench reference validation).</strong>
  *
  * <h2>What is being validated</h2>
  * {@link EquilibriumSolverV2} is the ONE shared equilibrium solver in this
@@ -105,6 +108,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * CEWorkbench's own SGTE unary evaluation). The absolute G values above are
  * therefore on the same footing as {@code CvmGibbsModel.G(T,P,y)}.
  */
+@Tag("external")
 class EquilibriumSolverV2CvmHillertCrossCheckTest {
 
     private static final String TDB = "data/VZR-re2.TDB";

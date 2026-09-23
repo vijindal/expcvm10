@@ -1,5 +1,6 @@
 package system.model.cvm.gen;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -12,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * and the Stage 1a/1b cluster-identification pipeline runs and produces the
  * expected cluster inventory.
  */
+@Tag("exploratory")
 class BccA2StructureGenerationTest {
 
     @Test
