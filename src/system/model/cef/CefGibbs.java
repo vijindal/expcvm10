@@ -3,8 +3,10 @@ package system.model.cef;
 import system.database.tdb;
 import system.database.tdb.Phase;
 import system.database.tdb.Parameter;
+import system.database.PhaseUnaryGibbsExtractor;
 import system.model.GibbsEnergyModel;
 import system.model.PhaseModelKind;
+import system.model.unary.ElementGibbs;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -328,6 +330,15 @@ public class CefGibbs extends GibbsEnergyModel {
      */
     private final int[][] elementIndexOnSublattice;
 
+    /**
+     * Optional phase-specific unary Gibbs references, bound to the selected
+     * phase via PhaseUnaryGibbsExtractor. When provided, {@link #referenceEnergy}
+     * computes G_ref as Σ_i x_i * G_i(T) instead of Σ_em P_em * G_em(T).
+     * Both formulations are mathematically equivalent; this enables shared
+     * reference behavior between CEF and CVM models.
+     */
+    private final ElementGibbs[] phaseUnaryReferences;
+
 
     // ══════════════════════════════════════════════════════════════════
     // Constructors
@@ -340,6 +351,13 @@ public class CefGibbs extends GibbsEnergyModel {
      * {@code TYPE_DEFINITION ... MAGNETIC} records and a
      * {@link PhaseModelKind} selector.
      *
+     * <p><b>Legacy/direct construction:</b> Uses end-member Gibbs energies
+     * from the TDB directly without loading phase-specific unary references.
+     * Suitable for backward compatibility and non-TDB CEF construction.
+     *
+     * <p>For TDB-driven CEF that shares unary references with CVM, use
+     * {@link #buildCefFromTdbWithCommonReferences} factory method instead.
+     *
      * @param database  loaded TDB database (element filtering is applied
      *                  internally via {@code getPhaseParam})
      * @param elements  ordered system element symbols
@@ -348,22 +366,57 @@ public class CefGibbs extends GibbsEnergyModel {
     public CefGibbs(tdb database, List<String> elements, String phaseName,
                     Map<String, Double> affMap, Map<String, Double> pMap,
                     PhaseModelKind kind) {
-        this(extract(database, elements, phaseName, affMap, pMap, kind));
+        this(extract(database, elements, phaseName, affMap, pMap, kind), null);
+    }
+
+    /**
+     * TDB-driven CEF construction with mandatory phase-specific unary references.
+     *
+     * <p>Used by {@code PhaseModelFactory.buildCefFromTdb()} to ensure
+     * TDB-driven CEF uses the same unary reference source as CVM.
+     *
+     * <p>Throws if unary references cannot be loaded; does not silently fall back
+     * to end-member computation.
+     *
+     * @param database  loaded TDB database
+     * @param elements  ordered system elements
+     * @param phaseName phase name
+     * @param affMap    magnetic A-function map (may be null)
+     * @param pMap      magnetic p-function map (may be null)
+     * @param kind      model kind (must be CEF or AUTO)
+     * @return          new CEF instance with mandatory common unary references
+     * @throws IllegalArgumentException if CEF parameters or unary references not found
+     */
+    public static CefGibbs buildCefFromTdbWithCommonReferences(
+            tdb database,
+            List<String> elements,
+            String phaseName,
+            Map<String, Double> affMap,
+            Map<String, Double> pMap,
+            PhaseModelKind kind) {
+
+        Parts p = extract(database, elements, phaseName, affMap, pMap, kind);
+
+        // MANDATORY: Load common unary references. No fallback to end-member path.
+        ElementGibbs[] unaryRefs = PhaseUnaryGibbsExtractor.buildPhaseUnaryGibbs(
+                database, elements, phaseName);
+
+        return new CefGibbs(p, unaryRefs);
     }
 
     /**
      * Private array-based constructor. Takes the fully extracted CEF
-     * structure ({@link Parts}) and assembles both the site-fraction math
-     * state and the composition-facing model state.
+     * structure ({@link Parts}) and optional unary references, then assembles
+     * both the site-fraction math state and the composition-facing model state.
      */
-    private CefGibbs(Parts p) {
+    private CefGibbs(Parts p, ElementGibbs[] unaryRefs) {
         this(p.siteRatios, p.constituents, p.endMembers, p.interactions,
              p.magnetic, p.tcEndMembers, p.tcInteractions,
              p.bmagEndMembers, p.bmagInteractions,
              p.v0EndMembers, p.v0Interactions,
              p.vaEndMembers, p.vaInteractions,
              p.phaseName, new ArrayList<>(p.elements),
-             p.constituentNames);
+             p.constituentNames, unaryRefs);
     }
 
     /**
@@ -399,7 +452,8 @@ public class CefGibbs extends GibbsEnergyModel {
              List<CefInteractionParam> vaInteractions,
              String phaseName,
              ArrayList<String> elements,
-             ArrayList<ArrayList<String>> constituentNames) {
+             ArrayList<ArrayList<String>> constituentNames,
+             ElementGibbs[] unaryReferences) {
 
         if (siteRatios == null || constituents == null)
             throw new IllegalArgumentException(
@@ -515,6 +569,11 @@ public class CefGibbs extends GibbsEnergyModel {
                 elements == null ? new ArrayList<>() : new ArrayList<>(elements);
         this.elementIndexOnSublattice =
                 buildElementIndexMap(ncSub, this.elementNames_value, constituentNames);
+
+        /*
+         * Optional phase-specific unary references for shared CEF/CVM behavior.
+         */
+        this.phaseUnaryReferences = unaryReferences;
 
     }
 
@@ -735,17 +794,21 @@ public class CefGibbs extends GibbsEnergyModel {
     /**
      * Zeroth-order CEF reference contribution.
      *
+     * <p>If phase-specific unary references are available (loaded from
+     * PhaseUnaryGibbsExtractor), computes G_ref = Σ_i x_i G_ref,i(T).
+     * Otherwise uses the classical end-member formulation:
+     *
      * <pre>
      * G_ref = sum_I P_I G_I
      * </pre>
      *
-     * where
-     *
-     * <pre>
-     * P_I = product_s y[s][I_s].
-     * </pre>
+     * Both formulations are mathematically equivalent for CEF.
      */
     private double referenceEnergy(double T, double[] y) {
+
+        if (phaseUnaryReferences != null) {
+            return referenceEnergyFromUnary(T, y);
+        }
 
         double result = 0.0;
 
@@ -766,6 +829,52 @@ public class CefGibbs extends GibbsEnergyModel {
 
             if (probability != 0.0)
                 result += probability * endMembers[em].G(T);
+        }
+
+        return result;
+    }
+
+    /**
+     * Computes reference energy using phase-specific unary references:
+     * G_ref = Σ_i x_i G_ref,i(T)
+     *
+     * <p>Derives mole fractions from site occupancies. For a CEF phase with
+     * sublattices of site ratios a_s, the mole fraction x_i of element i is:
+     *
+     * <pre>
+     * x_i = (Σ_s a_s * y[s,i]) / (Σ_s a_s)
+     * </pre>
+     *
+     * This exactly recovers the composition mapping from the constructor.
+     */
+    private double referenceEnergyFromUnary(double T, double[] y) {
+
+        double result = 0.0;
+
+        // Compute total site ratio (normalization)
+        double totalSites = 0.0;
+        for (int s = 0; s < ns; s++) {
+            totalSites += a[s];
+        }
+
+        for (int el = 0; el < elementNames_value.size(); el++) {
+
+            double x_el_numerator = 0.0;
+
+            // Sum weighted y-values for all constituents mapping to this element
+            for (int s = 0; s < ns; s++) {
+                for (int i = 0; i < ncSub[s]; i++) {
+                    if (elementIndexOnSublattice[s][i] == el) {
+                        x_el_numerator += a[s] * y[offset[s] + i];
+                    }
+                }
+            }
+
+            double x_el = x_el_numerator / totalSites;
+
+            if (x_el > 0.0) {
+                result += x_el * phaseUnaryReferences[el].ghser(T);
+            }
         }
 
         return result;
@@ -1000,18 +1109,20 @@ public class CefGibbs extends GibbsEnergyModel {
 
 
     /**
-     * Adds the reference-state gradient contribution using the same
-     * second-order automatic differentiation of the complete endmember
-     * probability {@code P_I = product_s y[s][i_s]} that
-     * {@link #referenceHessian} uses for the Hessian -- reading
-     * {@code probability.grad} instead of {@code probability.hess} from
-     * an otherwise identical construction, so gradient and Hessian cannot
-     * silently diverge the way a pair of independently hand-rolled
-     * formulas can.
+     * Adds the reference-state gradient contribution.
+     *
+     * <p>If phase-specific unary references are available, computes the gradient
+     * of G_ref = Σ_i x_i G_ref,i(T). Otherwise uses the second-order automatic
+     * differentiation of the complete endmember probability.
      */
     private void referenceGradient(double T,
                                    double[] y,
                                    double[] g) {
+
+        if (phaseUnaryReferences != null) {
+            referenceGradientFromUnary(T, y, g);
+            return;
+        }
 
         final int n = y.length;
 
@@ -1044,6 +1155,55 @@ public class CefGibbs extends GibbsEnergyModel {
 
             for (int k = 0; k < n; k++) {
                 g[k] += G * probability.grad[k];
+            }
+        }
+    }
+
+    /**
+     * Computes the gradient of G_ref = Σ_i x_i G_ref,i(T) using automatic
+     * differentiation of composition variables.
+     */
+    private void referenceGradientFromUnary(double T,
+                                            double[] y,
+                                            double[] g) {
+
+        final int n = y.length;
+
+        // Compute total site ratio (normalization)
+        double totalSites = 0.0;
+        for (int s = 0; s < ns; s++) {
+            totalSites += a[s];
+        }
+
+        for (int el = 0; el < elementNames_value.size(); el++) {
+
+            double x_el_numerator = 0.0;
+            AD2 x_el_ad = AD2.constant(0.0, n);
+
+            // Build composition numerator with AD tracking
+            for (int s = 0; s < ns; s++) {
+                for (int i = 0; i < ncSub[s]; i++) {
+                    if (elementIndexOnSublattice[s][i] == el) {
+                        int varIdx = offset[s] + i;
+                        double y_si = y[varIdx];
+                        x_el_numerator += a[s] * y_si;
+                        x_el_ad = x_el_ad.add(
+                            AD2.constant(a[s], n).multiply(
+                                AD2.variable(y_si, varIdx, n)
+                            )
+                        );
+                    }
+                }
+            }
+
+            double x_el = x_el_numerator / totalSites;
+
+            if (x_el > 0.0) {
+                double G_ref_i = phaseUnaryReferences[el].ghser(T);
+                AD2 x_el_ad_normalized = x_el_ad.scale(1.0 / totalSites);
+                for (int k = 0; k < n; k++) {
+                    g[k] += G_ref_i * x_el_ad_normalized.grad[k];
+                }
             }
         }
     }
@@ -1152,6 +1312,11 @@ public class CefGibbs extends GibbsEnergyModel {
                                   double[] y,
                                   double[][] H) {
 
+        if (phaseUnaryReferences != null) {
+            referenceHessianFromUnary(T, y, H);
+            return;
+        }
+
         final int n = y.length;
 
         for (int em = 0; em < totalEM; em++) {
@@ -1187,6 +1352,57 @@ public class CefGibbs extends GibbsEnergyModel {
 
                     H[i][j] +=
                             G * probability.hess[i][j];
+                }
+            }
+        }
+    }
+
+    /**
+     * Computes the Hessian of G_ref = Σ_i x_i G_ref,i(T) using automatic
+     * differentiation of composition variables.
+     */
+    private void referenceHessianFromUnary(double T,
+                                           double[] y,
+                                           double[][] H) {
+
+        final int n = y.length;
+
+        // Compute total site ratio (normalization)
+        double totalSites = 0.0;
+        for (int s = 0; s < ns; s++) {
+            totalSites += a[s];
+        }
+
+        for (int el = 0; el < elementNames_value.size(); el++) {
+
+            double x_el_numerator = 0.0;
+            AD2 x_el_ad = AD2.constant(0.0, n);
+
+            // Build composition numerator with AD tracking
+            for (int s = 0; s < ns; s++) {
+                for (int i = 0; i < ncSub[s]; i++) {
+                    if (elementIndexOnSublattice[s][i] == el) {
+                        int varIdx = offset[s] + i;
+                        double y_si = y[varIdx];
+                        x_el_numerator += a[s] * y_si;
+                        x_el_ad = x_el_ad.add(
+                            AD2.constant(a[s], n).multiply(
+                                AD2.variable(y_si, varIdx, n)
+                            )
+                        );
+                    }
+                }
+            }
+
+            double x_el = x_el_numerator / totalSites;
+
+            if (x_el > 0.0) {
+                double G_ref_i = phaseUnaryReferences[el].ghser(T);
+                AD2 x_el_ad_normalized = x_el_ad.scale(1.0 / totalSites);
+                for (int i = 0; i < n; i++) {
+                    for (int j = 0; j < n; j++) {
+                        H[i][j] += G_ref_i * x_el_ad_normalized.hess[i][j];
+                    }
                 }
             }
         }
@@ -3253,6 +3469,7 @@ public class CefGibbs extends GibbsEnergyModel {
         parts.constituentNames = deepCopyConstituentList(constituentList);
         return parts;
     }
+
 
     /*
      * =====================================================================

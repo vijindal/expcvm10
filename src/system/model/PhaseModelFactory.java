@@ -76,11 +76,14 @@ public final class PhaseModelFactory {
     }
 
     /**
-     * Explicitly builds a CEF model for the given phase/element set.
+     * Legacy direct CEF construction (end-member references).
      *
-     * <p>Caller is responsible for verifying that CEF is available via
-     * {@link PhaseModelAvailability#isAvailable}. No auto-fallback occurs
-     * if CEF parameters are missing; the constructor will throw.
+     * <p><b>Backward compatibility:</b> Builds CEF using historical end-member
+     * reference path directly from TDB, without loading phase-specific unary
+     * references via PhaseUnaryGibbsExtractor.
+     *
+     * <p>For TDB-driven construction that shares unary references with CVM,
+     * use {@link #buildCefFromTdb} instead.
      *
      * @param phaseName phase name
      * @param database  loaded TDB
@@ -98,6 +101,41 @@ public final class PhaseModelFactory {
             Map<String, Double> pMap) {
 
         return build(phaseName, database, elements, affMap, pMap, PhaseModelKind.CEF);
+    }
+
+    /**
+     * TDB-driven CEF construction with mandatory shared unary references.
+     *
+     * <p><b>TDB-driven path:</b> Uses phase-specific unary references
+     * via {@link system.database.PhaseUnaryGibbsExtractor} for consistency with
+     * CVM models. This ensures G_ref_CEF == G_ref_CVM when both models are
+     * available for the same phase/element set.
+     *
+     * <p>Mandatory references: Does not fall back to end-member computation if
+     * unary references cannot be loaded. Throws a clear exception if the shared
+     * reference path fails.
+     *
+     * <p>Caller is responsible for verifying that CEF is available via
+     * {@link PhaseModelAvailability#isAvailable}. No auto-fallback occurs
+     * if CEF or reference parameters are missing; the constructor will throw.
+     *
+     * @param phaseName phase name
+     * @param database  loaded TDB
+     * @param elements  ordered system elements
+     * @param affMap    magnetic A-function map (may be null)
+     * @param pMap      magnetic p-function map (may be null)
+     * @return          the CEF model using common unary references
+     * @throws IllegalArgumentException if CEF or unary reference data not found
+     */
+    public static GibbsEnergyModel buildCefFromTdb(
+            String phaseName,
+            tdb database,
+            List<String> elements,
+            Map<String, Double> affMap,
+            Map<String, Double> pMap) {
+
+        return CefGibbs.buildCefFromTdbWithCommonReferences(
+                database, elements, phaseName, affMap, pMap, PhaseModelKind.CEF);
     }
 
     /**
