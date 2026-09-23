@@ -20,6 +20,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -380,5 +381,89 @@ class EquilibriumSolverV2CvmSinglePhaseEndToEndTest {
         double[] xDirect = cvm.compositionFromInternal(yConverged);
         assertEquals(xDirect[0], stable.x[0], 1.0e-9);
         assertEquals(xDirect[1], stable.x[1], 1.0e-9);
+    }
+
+    /**
+     * CVM single-phase equilibrium test using normal GridMinimizer
+     * initialization path (NOT setInitialStateForTest).
+     *
+     * This test proves that CvmGibbsModel can use the standard solver
+     * initialization path via GridMinimizer.initialize(), which was
+     * previously blocked by CEF-specific type guards.
+     *
+     * Uses data/VZR-re2-CVM-eName-model.TDB with:
+     * - Elements: V, Zr
+     * - Phase: BCC_A2
+     * - T = 1000 K, P = 101325 Pa
+     * - Overall composition: x(V)=0.6, x(Zr)=0.4
+     */
+    @Test
+    void cvmNormalGridInitializationPath() throws IOException {
+
+        // Build the CVM model from TDB
+        tdb database = new tdb("data/VZR-re2-CVM-eName-model.TDB");
+        GibbsEnergyModel model = TdbCvmModelBuilder.buildTdbCvmModel(
+                database, Arrays.asList("V", "ZR"), "BCC_A2");
+
+        assertTrue(model instanceof CvmGibbsModel,
+                "TDB-built model should be a CvmGibbsModel");
+
+        CvmGibbsModel cvm = (CvmGibbsModel) model;
+
+        // Test parameters
+        double T = 1000.0;
+        double P = 101325.0;
+        double[] xOverall = {0.6, 0.4};  // V=0.6, Zr=0.4
+
+        // Single candidate: the CVM model
+        List<GibbsEnergyModel> candidates = List.of(cvm);
+
+        // Create solver WITHOUT prescribing initial state
+        // (lets GridMinimizer run normally)
+        EquilibriumSolverV2 solver = new EquilibriumSolverV2();
+        solver.setTolerance(1.0e-8);
+
+        // KEY TEST: Run the normal solve path without setInitialStateForTest()
+        // This MUST NOT throw UnsupportedOperationException
+        // Previously blocked by: instanceof CefGibbs checks removed from:
+        // - addNewStableSlot() line 1164-1167
+        // - seedFromEquilibriumResult() line 1252-1256, 1289
+        // - bestSeedConstitution() parameter type line 1196
+        EquilibriumResult result = null;
+        UnsupportedOperationException caughtUoe = null;
+        try {
+            result = solver.solve(T, P, xOverall, candidates);
+        } catch (UnsupportedOperationException uoe) {
+            caughtUoe = uoe;
+        }
+
+        // Verify no UnsupportedOperationException
+        assertNull(caughtUoe,
+                "GridMinimizer path should no longer reject CVM with UOE: "
+                + (caughtUoe != null ? caughtUoe.getMessage() : ""));
+        assertNotNull(result, "Solver should return a result");
+
+        // Log status for inspection
+        System.out.println("\n=== CVM Normal GridMinimizer Path Test ===");
+        System.out.println("Result returned: YES");
+        System.out.println("No UnsupportedOperationException: YES");
+        System.out.println("Converged: " + result.isConverged());
+        System.out.println("Iterations: " + result.getIterations());
+        System.out.println("Stable phases: " + result.getStablePhases().size());
+
+        // Minimal assertion: at least one stable phase should exist
+        assertTrue(result.getStablePhases().size() >= 1,
+                "Should have at least one stable phase");
+
+        EquilibriumResult.PhaseResult stable = result.getStablePhases().get(0);
+
+        // Verify phase identity
+        assertEquals("BCC_A2", stable.phaseName);
+        assertEquals("CVM", stable.modelType);
+
+        System.out.println("Phase: " + stable.phaseName + " (" + stable.modelType + ")");
+        System.out.println("Composition: x=" + Arrays.toString(stable.x));
+        System.out.println("Amount: " + stable.amount);
+        System.out.println("G: " + stable.G);
     }
 }

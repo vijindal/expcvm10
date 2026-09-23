@@ -1161,14 +1161,9 @@ public class EquilibriumSolverV2 {
                     + "given candidate phases.");
         }
 
-        if (!(candidates.get(candidateIndex) instanceof CefGibbs)) {
-            throw new UnsupportedOperationException(
-                    "EquilibriumSolverV2 currently requires CEF candidate phases.");
-        }
-
-        CefGibbs cef = (CefGibbs) candidates.get(candidateIndex);
-        PhaseWork newWork = new PhaseWork(cef);
-        newWork.y = bestSeedConstitution(cef);
+        GibbsEnergyModel model = candidates.get(candidateIndex);
+        PhaseWork newWork = new PhaseWork(model);
+        newWork.y = bestSeedConstitution(model);
         evaluatePhaseWork(newWork);
 
         int newSlotCount = stablePhases.length + 1;
@@ -1193,20 +1188,20 @@ public class EquilibriumSolverV2 {
      * is not yet available (should not happen once {@link
      * #seedFromEquilibriumResult} has run) or no sample is finite.
      */
-    private double[] bestSeedConstitution(CefGibbs cef) {
+    private double[] bestSeedConstitution(GibbsEnergyModel model) {
 
         if (mu == null) {
-            return initializeSinglePhaseState(cef, targetComposition());
+            return initializeSinglePhaseState(model, targetComposition());
         }
 
-        double[][] samples = new GridMinimizer().sampleSiteFractions(cef);
+        double[][] samples = new GridMinimizer().sampleSiteFractions(model);
 
         double bestDrivingForce = Double.NEGATIVE_INFINITY;
         double[] bestY = null;
 
         for (double[] y : samples) {
 
-            PhaseWork trial = new PhaseWork(cef);
+            PhaseWork trial = new PhaseWork(model);
             trial.y = y;
 
             try {
@@ -1224,7 +1219,7 @@ public class EquilibriumSolverV2 {
 
         return (bestY != null)
                 ? bestY
-                : initializeSinglePhaseState(cef, targetComposition());
+                : initializeSinglePhaseState(model, targetComposition());
     }
 
     /**
@@ -1249,15 +1244,8 @@ public class EquilibriumSolverV2 {
         phaseWorks = new ArrayList<>(nph);
         for (int p = 0; p < nph; p++) {
             GibbsEnergyModel model = candidates.get(p);
-            if (!(model instanceof CefGibbs)) {
-                throw new UnsupportedOperationException(
-                        "EquilibriumSolverV2 currently requires CEF candidate "
-                        + "phases. Phase " + p + " (" + model.phaseName()
-                        + ") is not a CefGibbs.");
-            }
-            CefGibbs cef = (CefGibbs) model;
-            PhaseWork work = new PhaseWork(cef);
-            work.y = initializeSinglePhaseState(cef, targetComposition());
+            PhaseWork work = new PhaseWork(model);
+            work.y = initializeSinglePhaseState(model, targetComposition());
             evaluatePhaseWork(work);
             phaseWorks.add(work);
         }
@@ -1286,8 +1274,8 @@ public class EquilibriumSolverV2 {
             stablePhases[k] = p;
             phaseAmounts[k] = pr.amount;
 
-            CefGibbs cef = (CefGibbs) candidates.get(p);
-            PhaseWork work = new PhaseWork(cef);
+            GibbsEnergyModel model = candidates.get(p);
+            PhaseWork work = new PhaseWork(model);
             work.y = pr.y.clone();
             evaluatePhaseWork(work);
             stableSlots.add(work);
