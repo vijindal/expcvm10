@@ -1,0 +1,20 @@
+Isolated projects is an incubating feature.
+Calculating task graph as no cached configuration is available for tasks: test --tests .claude .git .gitignore .gradle .vscode backup bin build build.gradle cef_contract_test_output.txt cef_contract_test_run.log changelog.txt codebase_uml.puml codebase_uml_simplified.puml data detailed_test_output.txt docs equil_solver_v2_baseline_test_output.txt equil_solver_v2_e2e_test_output.txt expcvm10 expcvm_src.zip gradle gradle.properties gradlew gradlew.bat inputs LICENSE README.md run-tests.sh settings.gradle src src-test test_run.log
+
+[Incubating] Problems report is available at: file:///C:/Users/admin/codes/expcvm10/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Task '.git' not found in root project 'expcvm10'. Some candidates are: 'init'.
+
+* Try:
+> Run gradlew tasks to get a list of available tasks.
+> For more on name expansion, please refer to https://docs.gradle.org/9.3.1/userguide/command_line_interface.html#sec:name_abbreviation in the Gradle documentation.
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 1s
+Configuration cache entry stored.
