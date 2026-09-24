@@ -77,7 +77,7 @@ public class CvmGibbs {
     /**
      * Constructs a CVM Gibbs evaluator.
      *
-     * @param data   parsed phase data from .nb file
+     * @param data   phase data (constructed by TDB/geometry pipeline)
      * @param ghser  GHSER evaluators (ElementGibbs instances), one per component (0-based)
      */
     public CvmGibbs(CvmPhaseData data,

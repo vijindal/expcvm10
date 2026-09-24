@@ -2,11 +2,13 @@ package system.model.cvm;
 
 /**
  * Immutable data container for the pre-computed CVM (Cluster Variation Method)
- * structural data loaded from a Mathematica {@code .nb} output file.
+ * structural data. The production path constructs this via {@link GeneratedCvmPhaseDataAdapter}
+ * from {@link GeneratedCvmGeometry}.
  *
- * <h2>Source</h2>
- * Each field corresponds directly to a named variable in {@code calGmcecvm[phaseData]}
- * in {@code clusGen_25}. The mapping is exact:
+ * <h2>Data mapping</h2>
+ * Fields correspond to the CVM cluster structure representation. Each field matches
+ * the structure originally defined in the Mathematica reference code {@code calGmcecvm[phaseData]}.
+ * The mapping is:
  * <pre>
  *   phaseData[[1]][[1]]  → tcdis
  *   phaseData[[1]][[4]]  → mhdis       (= msdis)
