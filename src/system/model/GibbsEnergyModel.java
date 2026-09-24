@@ -1,6 +1,7 @@
 package system.model;
 
 import java.util.ArrayList;
+import system.model.InternalConstraintSet;
 
 /**
  * Abstract contract for Gibbs energy models, in Sundman's internal-variable
@@ -119,6 +120,14 @@ public abstract class GibbsEnergyModel {
     public abstract double[] getInitialInternalVars(double[] x);
     public abstract double[] compositionFromInternal(double[] y);
     public abstract boolean isValid(double[] y);
+
+    /**
+     * Linear equality constraints on internal variables: C·y = b.
+     *
+     * @return constraint set (e.g., per-sublattice sum constraints for CEF,
+     *         composition-normalization for CVM)
+     */
+    public abstract InternalConstraintSet getConstraintSet();
 
     // ══════════════════════════════════════════════════════════════════
     // Site-Fraction Thermodynamics (Abstract - Each Model Implements)

@@ -5,6 +5,7 @@ import system.database.tdb.Phase;
 import system.database.tdb.Parameter;
 import system.database.PhaseUnaryGibbsExtractor;
 import system.model.GibbsEnergyModel;
+import system.model.InternalConstraintSet;
 import system.model.PhaseModelKind;
 import system.model.unary.ElementGibbs;
 
@@ -673,6 +674,10 @@ public class CefGibbs extends GibbsEnergyModel {
         return offset.clone();
     }
 
+    @Override
+    public InternalConstraintSet getConstraintSet() {
+        return new CefConstraintSet(numSiteVars(), offset, ncSub);
+    }
 
     /* ------------------------------------------------------------------
      * Composition validation

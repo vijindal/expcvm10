@@ -1,0 +1,30 @@
+Isolated projects is an incubating feature.
+Calculating task graph as configuration cache cannot be reused because system property 'user.dir' has changed.
+> Task :clean
+> Task :processResources NO-SOURCE
+> Task :processTestResources NO-SOURCE
+
+> Task :compileJava
+D:\codes\expcvm10\src\system\database\tdb.java:35: warning: [dep-ann] deprecated item is not annotated with @Deprecated
+public class tdb {
+       ^
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+Note: D:\codes\expcvm10\src\util\PrintfFormat.java uses unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+1 warning
+
+> Task :classes
+
+> Task :compileTestJava
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+
+> Task :testClasses
+> Task :test
+
+[Incubating] Problems report is available at: file:///D:/codes/expcvm10/build/reports/problems/problems-report.html
+
+BUILD SUCCESSFUL in 29s
+4 actionable tasks: 4 executed
+Configuration cache entry stored.

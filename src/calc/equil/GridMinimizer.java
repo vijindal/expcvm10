@@ -58,6 +58,14 @@ public class GridMinimizer {
      */
     private static final int PDENS = 2000;
 
+    /**
+     * Package-private accessor to PDENS for tests.
+     * Do NOT expose this in the public API.
+     */
+    static int getPDENS() {
+        return PDENS;
+    }
+
     /** Floor for site fractions to avoid log(0)/division singularities. */
     private static final double MIN_SITE_FRACTION = 1.0e-14;
 
@@ -80,10 +88,13 @@ public class GridMinimizer {
         int nc = xOverall.length;
         int np = candidates.size();
 
-        // Steps 1-2: sample every candidate phase's internal degrees of
-        // freedom directly (site fractions), evaluate G/atom and X at
-        // every sampled point, and build the combined lower envelope
-        // (minimum G/atom per point, tagged with which phase achieved it).
+        // Steps 1-2 (Phase 3B): sample composition space for every
+        // candidate phase, equilibrate each sampled composition as an
+        // independent single-phase problem via its own inner
+        // EquilibriumSolverV2 instance, and build the combined lower
+        // envelope from the EQUILIBRATED (x, G, Y) points (minimum G/atom
+        // per point, tagged with which phase achieved it) -- not the raw
+        // unequilibrated sample.
         List<double[]> envX     = new ArrayList<>();  // overall composition x at each point
         List<Double>   envG     = new ArrayList<>();  // G per mole real atom (Sundman's M^alpha)
         List<Integer>  envPhase = new ArrayList<>();  // candidate index
@@ -92,12 +103,45 @@ public class GridMinimizer {
         for (int ip = 0; ip < np; ip++) {
             GibbsEnergyModel m = candidates.get(ip);
 
-            double[][] points = sampleSiteFractions(m);
+            double[][] compositions = sampleCompositions(m.numComponents());
 
-            for (double[] y : points) {
+            for (double[] x0 : compositions) {
 
-                double G;
+                double[] y0;
+                try {
+                    y0 = m.getInitialInternalVars(x0);
+                } catch (Exception e) {
+                    continue;
+                }
+                if (y0 == null) continue;
+
+                EquilibriumSolverV2 inner = new EquilibriumSolverV2();
+                inner.setInitialState(
+                        new int[]{0},
+                        new double[][]{y0},
+                        new double[]{1.0});
+
+                EquilibriumResult innerResult;
+                try {
+                    // The inner problem contains EXACTLY this one
+                    // candidate model, indexed 0, so it cannot activate
+                    // any other phase.
+                    innerResult = inner.solve(T, P, x0, List.of(m));
+                } catch (Exception e) {
+                    continue;
+                }
+
+                if (innerResult == null || !innerResult.isConverged()) continue;
+
+                List<EquilibriumResult.PhaseResult> stable =
+                        innerResult.getStablePhases();
+                if (stable.size() != 1) continue;
+
+                EquilibriumResult.PhaseResult pr = stable.get(0);
+
+                double[] y = pr.y;
                 double[] x;
+                double G;
                 try {
                     /*
                      * Normalize by totalMoles(y) (Sundman's M^alpha, Eq.
@@ -259,6 +303,87 @@ public class GridMinimizer {
         return new EquilibriumResult(
                 T, P, state.mu, stableResults, metastableResults,
                 false, 0);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Phase 3A: Composition-space sampling
+    //
+    // Generates valid overall compositions (simplex interior and boundary
+    // points) independent of any model's internal degrees of freedom.
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Samples the composition space (overall mole fractions) for a given
+     * number of components. Returns points satisfying:
+     *
+     * <pre>
+     * x_i >= 0, sum(x_i) = 1
+     * </pre>
+     *
+     * <p>Algorithm:
+     * <ol>
+     *   <li>Pure components: [1,0,...,0], [0,1,...,0], ..., [0,0,...,1]</li>
+     *   <li>Binary edges: EDGE_POINTS samples along each (a,b) pair</li>
+     *   <li>Interior points: Halton-generated points via exponential
+     *       normalization (r_i = -log(u_i), x_i = r_i / sum(r))</li>
+     * </ol>
+     *
+     * @param nc number of components
+     * @return array of shape {@code [numPoints][nc]}, all valid simplex
+     *         points; deterministic output
+     */
+    double[][] sampleCompositions(int nc) {
+
+        List<double[]> points = new ArrayList<>();
+
+        // --- Pure components: nc endpoints. ---
+        for (int i = 0; i < nc; i++) {
+            double[] x = new double[nc];
+            x[i] = 1.0;
+            points.add(x);
+        }
+
+        // --- Binary edges: EDGE_POINTS samples per pair (avoid duplicate
+        // endpoints if practical). ---
+        if (nc >= 2) {
+            for (int a = 0; a < nc; a++) {
+                for (int b = a + 1; b < nc; b++) {
+                    for (int k = 0; k < EDGE_POINTS; k++) {
+                        double lam = (EDGE_POINTS == 1)
+                                ? 0.5
+                                : (double) k / (EDGE_POINTS - 1);
+                        double[] x = new double[nc];
+                        x[a] = lam;
+                        x[b] = 1.0 - lam;
+                        points.add(x);
+                    }
+                }
+            }
+        }
+
+        // --- Interior Halton sampling: nc positive Halton values,
+        // transformed via r_i = -log(u_i), then normalized. ---
+        int numInterior = PDENS * (nc - 1);
+        if (numInterior > 0) {
+            double[][] halton = Halton.generate(nc, numInterior);
+            for (double[] u : halton) {
+                // Transform: r_i = -log(u_i)
+                double[] r = new double[nc];
+                double sum = 0.0;
+                for (int i = 0; i < nc; i++) {
+                    r[i] = -Math.log(u[i]);
+                    sum += r[i];
+                }
+                // Normalize: x_i = r_i / sum
+                double[] x = new double[nc];
+                for (int i = 0; i < nc; i++) {
+                    x[i] = r[i] / sum;
+                }
+                points.add(x);
+            }
+        }
+
+        return points.toArray(new double[0][]);
     }
 
     // ─────────────────────────────────────────────────────────────────

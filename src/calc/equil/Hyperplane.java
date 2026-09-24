@@ -94,10 +94,8 @@ public final class Hyperplane {
             constraintRhs[i] = targetMoleFractions[i];
         }
 
-        int[] bestGuessSimplex = new int[simplexSize];
-        for (int i = 0; i < simplexSize; i++) {
-            bestGuessSimplex[i] = i;
-        }
+        int[] bestGuessSimplex = selectWellConditionedSeed(
+                compositions, numPoints, simplexSize, constraintCoefs, constraintRhs);
 
         int[][] trialSimplices = new int[simplexSize][simplexSize];
         for (int i = 0; i < simplexSize; i++) {
@@ -184,6 +182,109 @@ public final class Hyperplane {
     }
 
     /**
+     * Chooses the initial pivot-search seed simplex: the same
+     * {@code {0, 1, ..., simplexSize-1}} input-order seed used
+     * unconditionally before, but with any vertex that would leave the
+     * seed degenerate replaced by the next not-yet-included sampled point.
+     *
+     * <p>The seed simplex is the one piece of {@link #solve} that is never
+     * validated before use -- every later trial simplex is filtered
+     * through the pivot loop's own {@code smallestFractions[savedTrial]
+     * < -simplexSize} degeneracy check ({@code solve}, a few lines above
+     * the pivot loop) before it is trusted, but the seed feeds directly
+     * into the first iteration's {@code simplexFractions} call without
+     * ever passing that same check itself. If the seed happens to be
+     * near-duplicate (or otherwise near-collinear) points, that first call
+     * solves a near-singular system that {@link util.Matrix#solve} does
+     * not reject (its LU pivot test is an exact {@code == 0.0}, not a
+     * tolerance), producing enormous but finite barycentric fractions --
+     * which then satisfy that very same {@code < -simplexSize} check on
+     * the seed itself, so the pivot loop exits at iteration 0 reporting
+     * the unrefined seed, before a single pivot ever runs.
+     *
+     * <p>This helper closes that gap by applying the pivot loop's own
+     * {@code simplexFractions} / {@code < -simplexSize} degeneracy test to
+     * the seed up front, using the exact same convention the pivot loop
+     * already trusts elsewhere, rather than inventing a separate
+     * conditioning criterion.
+     */
+    private static int[] selectWellConditionedSeed(double[][] compositions,
+                                                     int numPoints,
+                                                     int simplexSize,
+                                                     double[][] constraintCoefs,
+                                                     double[] constraintRhs) {
+
+        int[] seed = new int[simplexSize];
+        for (int i = 0; i < simplexSize; i++) {
+            seed[i] = i;
+        }
+
+        if (isNondegenerateSimplex(compositions, seed, simplexSize, constraintCoefs, constraintRhs)) {
+            return seed;
+        }
+
+        // The default seed is degenerate. Repair it one vertex at a time --
+        // the same index-by-index vertex-replacement order the pivot loop
+        // itself already uses to build trial simplices -- but, for each
+        // vertex, scan the remaining not-yet-included sampled points and
+        // keep whichever single replacement yields the LARGEST min(fractions)
+        // for the current seed (the same argmax(smallestFractions) standard
+        // the pivot loop already applies when choosing among its own trial
+        // simplices), not merely the first replacement that clears the
+        // degeneracy bound. A replacement that only barely clears
+        // "non-degenerate" can still be a poor bracketing choice that
+        // strands the pivot loop a few iterations later; scanning for the
+        // best available vertex (bounded by the remaining candidate points,
+        // so still O(numPoints) per vertex) makes the repaired seed a much
+        // more reliable starting point without touching the pivot loop
+        // itself. This is a local repair of the seed only; it does not
+        // sort, deduplicate, or otherwise touch the rest of the point cloud.
+        for (int vertex = 0; vertex < simplexSize; vertex++) {
+            int original = seed[vertex];
+            int bestCandidate = original;
+            double bestScore = Double.NEGATIVE_INFINITY;
+
+            for (int candidate = 0; candidate < numPoints; candidate++) {
+                if (containsIndex(seed, candidate) && candidate != original) {
+                    continue; // already used by another seed vertex
+                }
+                seed[vertex] = candidate;
+                double[] frac = simplexFractions(compositions, seed, constraintCoefs, constraintRhs);
+                double score = min(frac);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestCandidate = candidate;
+                }
+            }
+
+            seed[vertex] = bestCandidate;
+        }
+
+        return seed;
+    }
+
+    /**
+     * True if {@code simplex}'s own barycentric fractions for the target
+     * composition -- the exact quantity {@code simplexFractions} computes
+     * for every trial simplex inside the pivot loop -- pass the pivot
+     * loop's existing degeneracy convention ({@code min(fractions) >=
+     * -simplexSize}, mirroring the {@code smallestFractions[savedTrial]
+     * < -simplexSize} early-exit in {@link #solve}). Reusing that exact
+     * check here, rather than a separate geometric tolerance, means a
+     * candidate seed is judged degenerate by precisely the same standard
+     * the pivot loop already applies to every other simplex it considers.
+     */
+    private static boolean isNondegenerateSimplex(double[][] compositions,
+                                                    int[] simplex,
+                                                    int simplexSize,
+                                                    double[][] constraintCoefs,
+                                                    double[] constraintRhs) {
+
+        double[] frac = simplexFractions(compositions, simplex, constraintCoefs, constraintRhs);
+        return min(frac) >= -simplexSize;
+    }
+
+    /**
      * Direct port of pycalphad's {@code simplex_fractions}: the barycentric
      * coordinates of the constraint-defined target point within the given
      * simplex of sampled points.
@@ -261,6 +362,15 @@ public final class Hyperplane {
         double m = Double.POSITIVE_INFINITY;
         for (double v : a) if (v < m) m = v;
         return m;
+    }
+
+    private static boolean containsIndex(int[] simplex, int target) {
+        for (int idx : simplex) {
+            if (idx == target) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static int argmax(double[] a) {

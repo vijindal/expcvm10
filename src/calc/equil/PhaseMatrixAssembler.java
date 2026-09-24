@@ -1,6 +1,7 @@
 package calc.equil;
 
 import system.model.GibbsEnergyModel;
+import system.model.InternalConstraintSet;
 import system.model.PhaseEquilData;
 import util.Matrix;
 
@@ -70,25 +71,27 @@ public final class PhaseMatrixAssembler {
         double[] GxT   = model.d2G_dydT(T, P, y);
         double[] GxP   = model.d2G_dydP(T, P, y);
 
-        // Step 2: assemble phase matrix M (nip+ns)x(nip+ns), with one
-        // Lagrange-multiplier row/column per sublattice s, enforcing
-        // Sigma_i y[s,i] = 1 independently for each sublattice (Sundman
-        // 2015 Eq. 40).
-        int ns       = model.numSublattices();
-        int[] offs   = model.offsets();
-        int[] ncSL   = model.constituentsPerSublattice();
-        int matDim   = nip + ns;
+        // Step 2: assemble phase matrix M (nip+nc_constraints)x(nip+nc_constraints),
+        // with one Lagrange-multiplier row/column per linear equality constraint
+        // C·y = b (Sundman 2015 Eq. 40). Constraints are obtained from the model's
+        // InternalConstraintSet abstraction, not from sublattice structure.
+        InternalConstraintSet constraints = model.getConstraintSet();
+        int nConstraints = constraints.numConstraints();
+        double[][] C = constraints.constraintJacobian();
+        int matDim   = nip + nConstraints;
         double[][] M = new double[matDim][matDim];
         for (int i = 0; i < nip; i++) {
             for (int j = 0; j < nip; j++) {
                 M[i][j] = Gxx[i][j];
             }
         }
-        for (int s = 0; s < ns; s++) {
-            int borderRow = nip + s;
-            for (int i = offs[s]; i < offs[s] + ncSL[s]; i++) {
-                M[i][borderRow] = 1.0;
-                M[borderRow][i] = 1.0;
+        for (int k = 0; k < nConstraints; k++) {
+            int borderRow = nip + k;
+            for (int i = 0; i < nip; i++) {
+                if (C[k][i] != 0.0) {
+                    M[i][borderRow] = C[k][i];
+                    M[borderRow][i] = C[k][i];
+                }
             }
         }
 

@@ -10,6 +10,7 @@ import java.util.Map;
 import system.model.GibbsEnergyModel;
 import system.model.PhaseEquilData;
 import system.model.cef.CefGibbs;
+import system.model.cef.CefInternalStateSampler;
 import system.ports.EquilibriumResult;
 import util.Matrix;
 import util.SingularValueDecomposition;
@@ -324,18 +325,25 @@ public class EquilibriumSolverV2 {
     private TestInitialState testInitialState;
 
     /**
-     * Package-private test hook: prescribe the initial stable-phase set,
+     * Public production API: prescribe the initial stable-phase set,
      * per-phase constitutions, and phase amounts that {@link #solve}
-     * will start from, instead of the normal single-phase initial guess.
+     * will start from, instead of the normal single-phase initial guess
+     * derived by {@link GridMinimizer}.
      *
-     * Intended for end-to-end tests that need to reproduce a controlled
-     * starting point (already validated against a separate matrix-level
-     * test) through the actual public solve() iteration. This does not
-     * alter solver mathematics, line search, convergence, or phase
-     * management -- it only overrides the starting point that
-     * {@link #initialize()} would otherwise construct.
+     * <p>This enables inner solver instances to equilibrate a fixed
+     * composition at a prescribed constitution without invoking
+     * GridMinimizer. The prescribed state is ONLY an initial state,
+     * not the final equilibrium -- the normal Newton/Sundman iteration
+     * proceeds from this starting point, allowing phase amounts,
+     * constitutions, and the stable-phase set itself to evolve.
      *
-     * Must be called before {@link #solve}.
+     * <p>Solver mathematics are unchanged: Newton equations, phase
+     * response calculations, global equilibrium matrix assembly,
+     * convergence criteria, phase addition/removal, and constraint
+     * machinery all work identically whether the initial state is
+     * prescribed or comes from GridMinimizer.
+     *
+     * <p>Must be called before {@link #solve}.
      *
      * @param stablePhases   candidate-phase indices that start stable
      * @param initialY       initial site-fraction vector per stable
@@ -345,7 +353,7 @@ public class EquilibriumSolverV2 {
      *                       indexed in the same order as
      *                       {@code stablePhases}
      */
-    void setInitialStateForTest(
+    public void setInitialState(
             int[] stablePhases,
             double[][] initialY,
             double[] initialAmounts) {
@@ -355,14 +363,14 @@ public class EquilibriumSolverV2 {
                 || initialAmounts == null) {
 
             throw new IllegalArgumentException(
-                    "Test initial state arrays must not be null.");
+                    "Initial state arrays must not be null.");
         }
 
         if (stablePhases.length != initialY.length
                 || stablePhases.length != initialAmounts.length) {
 
             throw new IllegalArgumentException(
-                    "Test initial state arrays must have matching "
+                    "Initial state arrays must have matching "
                     + "stable-phase length.");
         }
 
@@ -371,6 +379,26 @@ public class EquilibriumSolverV2 {
                         stablePhases.clone(),
                         initialY.clone(),
                         initialAmounts.clone());
+    }
+
+    /**
+     * Package-private test hook: prescribe the initial stable-phase set,
+     * per-phase constitutions, and phase amounts that {@link #solve}
+     * will start from, instead of the normal single-phase initial guess.
+     *
+     * <p>Deprecated: use the public {@link #setInitialState} instead.
+     * This method exists only to preserve backward compatibility with
+     * existing test code.
+     *
+     * @deprecated use {@link #setInitialState} instead
+     */
+    @Deprecated
+    void setInitialStateForTest(
+            int[] stablePhases,
+            double[][] initialY,
+            double[] initialAmounts) {
+
+        setInitialState(stablePhases, initialY, initialAmounts);
     }
 
     // ================================================================
@@ -1126,18 +1154,16 @@ public class EquilibriumSolverV2 {
      * tangency in the same Newton step.
      *
      * <p>Fix: seed the new phase's constitution from the sample point
-     * (among {@link GridMinimizer#sampleSiteFractions}'s site-fraction
-     * samples -- the same Halton/edge sampling {@code GridMinimizer}
-     * itself uses to build its initial lower-hull estimate) with the
-     * LARGEST Sundman Eq. 62 driving force against the seed's own
-     * chemical potentials {@link #mu}. This is exactly how a
-     * metastable phase's candidacy is judged everywhere else in this
-     * solver ({@link #drivingForce}, {@link #updateStablePhaseSet}'s
-     * own add-phase test) -- the sampled point closest to tangency with
-     * the current hyperplane is the best available starting
-     * constitution, matching how OpenCalphad/pycalphad track a
-     * metastable phase's driving force continuously along the walk
-     * rather than cold-seeding it only after the crossing is detected.
+     * (from this model's {@code getStateSampler()}) with the LARGEST
+     * Sundman Eq. 62 driving force against the seed's own chemical
+     * potentials {@link #mu}. This is exactly how a metastable phase's
+     * candidacy is judged everywhere else in this solver ({@link
+     * #drivingForce}, {@link #updateStablePhaseSet}'s own add-phase
+     * test) -- the sampled point closest to tangency with the current
+     * hyperplane is the best available starting constitution, matching
+     * how OpenCalphad/pycalphad track a metastable phase's driving
+     * force continuously along the walk rather than cold-seeding it
+     * only after the crossing is detected.
      *
      * @return the new slot's index into {@link #stablePhases}/{@link
      *         #phaseAmounts}/{@link #stableSlots}
@@ -1180,18 +1206,51 @@ public class EquilibriumSolverV2 {
     }
 
     /**
-     * Picks the site-fraction sample point of {@code cef} with the
-     * largest Sundman Eq. 62 driving force against the current seed's
-     * chemical potentials {@link #mu} -- see {@link #addNewStableSlot}
-     * for why this replaces a generic composition-only initial guess.
-     * Falls back to {@link #initializeSinglePhaseState} if {@link #mu}
+     * Picks the best available starting constitution for a newly-appearing
+     * boundary/ZPF phase against the current seed's chemical potentials
+     * {@link #mu} -- see {@link #addNewStableSlot} for why this replaces a
+     * generic composition-only initial guess.
+     *
+     * <p>Dispatches by model type, exactly the same CEF/CVM distinction
+     * {@link #updateStablePhaseSet}'s candidate-addition pass already
+     * makes, for the same underlying reason (see {@link
+     * #relaxCvmCandidateAtComposition}'s javadoc): CEF's internal DOF are
+     * directly-sampleable site fractions, but CVM's {@code y=[u;x]} has
+     * {@code u} coupled to {@code x} by cluster-probability admissibility
+     * constraints that a raw sampler cannot enforce (Phase 4E/4F audits).
+     *
+     * <ul>
+     *   <li><b>CEF</b> (unchanged): sample the phase's site-fraction space
+     *       directly via {@link GridMinimizer#sampleSiteFractions} and
+     *       score each raw sampled point's driving force.</li>
+     *   <li><b>CVM</b>: search OVER COMPOSITION using {@link
+     *       GridMinimizer#sampleCompositions} (the same Phase 3A
+     *       algorithm {@link GridMinimizer#initialize} already uses to
+     *       search composition space), relaxing {@code u} to a stationary
+     *       point at each trial composition via {@link
+     *       #relaxCvmCandidateAtComposition} before scoring -- a newly-
+     *       appearing zero-amount phase is not mass-balance-constrained to
+     *       {@link #targetComposition()} (Phase 4F), so the seed's
+     *       composition must itself be searched, not fixed.</li>
+     * </ul>
+     *
+     * <p>Falls back to {@link #initializeSinglePhaseState} if {@link #mu}
      * is not yet available (should not happen once {@link
-     * #seedFromEquilibriumResult} has run) or no sample is finite.
+     * #seedFromEquilibriumResult} has run) or no sample/relaxation
+     * produces a finite driving force -- this fallback does not guarantee
+     * tangency with {@link #mu} (see {@link #addNewStableSlot}'s javadoc
+     * on why a composition-only guess can leave the first boundary Newton
+     * matrix singular); it exists only so a degenerate search still
+     * returns SOME valid constitution rather than throwing.
      */
     private double[] bestSeedConstitution(GibbsEnergyModel model) {
 
         if (mu == null) {
             return initializeSinglePhaseState(model, targetComposition());
+        }
+
+        if (model instanceof system.model.cvm.CvmGibbsModel) {
+            return bestCvmSeedConstitution((system.model.cvm.CvmGibbsModel) model);
         }
 
         double[][] samples = new GridMinimizer().sampleSiteFractions(model);
@@ -1214,6 +1273,75 @@ public class EquilibriumSolverV2 {
             if (Double.isFinite(d) && d > bestDrivingForce) {
                 bestDrivingForce = d;
                 bestY = y;
+            }
+        }
+
+        return (bestY != null)
+                ? bestY
+                : initializeSinglePhaseState(model, targetComposition());
+    }
+
+    /**
+     * CVM branch of {@link #bestSeedConstitution}: formulation B of the
+     * Phase 4F audit -- search over trial compositions ({@link
+     * GridMinimizer#sampleCompositions}), relaxing {@code u} to a
+     * stationary, admissible state at each fixed trial composition via
+     * {@link #relaxCvmCandidateAtComposition} (the same nested-{@link
+     * EquilibriumSolverV2} mechanism {@link #relaxCvmCandidate} already
+     * uses for main-loop candidate discovery, just at a searched
+     * composition instead of {@link #targetComposition()}), and keeping
+     * the relaxed state with the largest finite Sundman Eq. 62 driving
+     * force against the current boundary {@link #mu}.
+     *
+     * <p>Every retained candidate is therefore, by construction: (1) a
+     * stationary point of the model's own Gibbs energy at its trial
+     * composition ({@code dG/du=0}, via the nested solve), so never a raw
+     * unequilibrated {@code [u;x]} guess; (2) {@link
+     * system.model.cvm.CvmGibbsModel#isValid} at that state (checked
+     * inside {@link #relaxCvmCandidateAtComposition} before it is
+     * returned); and (3) at a composition equal to its own trial
+     * composition to within the nested solve's own convergence tolerance
+     * (single-candidate, single-stable-slot mass balance forces this, the
+     * same guarantee {@code GridMinimizerInnerSolverWiringTest} already
+     * establishes for this pattern) -- never forcibly replaced by {@link
+     * #targetComposition()}.
+     *
+     * <p>Does not itself construct or modify any correlation-function
+     * value -- {@code u} is entirely the nested solver's own Newton
+     * output, exactly as {@link #relaxCvmCandidate} already provides for
+     * the main loop.
+     *
+     * @return the best relaxed CVM {@code y=[u;x]}, or {@code null} if no
+     *         sampled composition produced a finite-driving-force
+     *         candidate (caller falls back to {@link
+     *         #initializeSinglePhaseState})
+     */
+    private double[] bestCvmSeedConstitution(
+            system.model.cvm.CvmGibbsModel model) {
+
+        double[][] trialCompositions =
+                new GridMinimizer().sampleCompositions(model.numComponents());
+
+        double bestDrivingForce = Double.NEGATIVE_INFINITY;
+        double[] bestY = null;
+
+        for (double[] x : trialCompositions) {
+
+            CvmCandidateRelaxation relaxed =
+                    relaxCvmCandidateAtComposition(model, x);
+
+            if (relaxed == null) {
+                continue;
+            }
+
+            CandidateState state =
+                    new CandidateState(relaxed.y, relaxed.G, relaxed.mA);
+
+            double d = candidateDrivingForce(state, mu);
+
+            if (Double.isFinite(d) && d > bestDrivingForce) {
+                bestDrivingForce = d;
+                bestY = relaxed.y;
             }
         }
 
@@ -1784,11 +1912,12 @@ public class EquilibriumSolverV2 {
      * gap and select an initial stable-phase set from among the
      * candidates, rather than always starting at candidate 0.
      *
-     * PhaseWork bookkeeping itself is model-agnostic, but {@link
-     * GridMinimizer}'s site-fraction sampling is CEF-specific. A non-CEF
-     * candidate (e.g. CVM) must instead reach {@link #solve} via
-     * {@link #setInitialStateForTest}, which bypasses GridMinimizer
-     * entirely with an explicitly supplied stable set.
+     * GridMinimizer is model-agnostic (composition-space sampling), but the
+     * candidate-discovery phase-equilibrium search requires the model's
+     * internal-variable sampler, which is not yet implemented for CVM.
+     * A CVM candidate must instead reach {@link #solve} via {@link
+     * #setInitialStateForTest}, which bypasses GridMinimizer with an
+     * explicitly supplied stable set.
      */
     private void initialize() {
 
@@ -1889,22 +2018,13 @@ public class EquilibriumSolverV2 {
         } else {
 
             /*
-             * ------------------------------------------------------------
-             * Grid/global initial stable-phase set.
-             *
-             * GridMinimizer samples every candidate phase's internal
-             * degrees of freedom directly (site fractions) -- exact
-             * endmembers, edge points, and Halton-sampled interior points,
-             * mirroring pycalphad's calculate() -- takes the lower convex
-             * hull of the combined (composition, G/atom) point cloud, and
-             * returns the hull facet enclosing the requested overall
-             * composition as the initial stable-phase set, with per-phase
+             * Grid/global initial stable-phase set via composition-space
+             * sampling: sample composition space uniformly, equilibrate each
+             * sampled composition via a single-phase inner solver for each
+             * candidate, and use the lower convex hull to find the initial
+             * stable-phase set. Returns the hull facet enclosing the
+             * requested overall composition, with per-phase equilibrated
              * site fractions and lever-rule amounts.
-             *
-             * This replaces the previous "always start at candidate 0"
-             * placeholder, closing the miscibility-gap / global-min gap
-             * documented on this method's class-level javadoc.
-             * ------------------------------------------------------------
              */
             GridMinimizer gridMinimizer =
                     new GridMinimizer();
@@ -4999,10 +5119,11 @@ public class EquilibriumSolverV2 {
                 /*
                  * CEF candidate addition-by-driving-force: unchanged from
                  * before Step 8. Scans a CEF-specific sampled grid
-                 * (candidateSampledGrid()/GridMinimizer's own sampler) --
-                 * this candidate discovery mechanism is CEF-only because
-                 * only CEF's internal DOF are direct site fractions that a
-                 * generic Halton/endmember sampler can cover.
+                 * (candidateSampledGrid(), backed by CefInternalStateSampler
+                 * as of Phase 4D) -- this candidate discovery mechanism is
+                 * CEF-only because only CEF's internal DOF are direct site
+                 * fractions that a generic Halton/endmember sampler can
+                 * cover.
                  */
                 CefGibbs model =
                         (CefGibbs) candidate;
@@ -5018,15 +5139,11 @@ public class EquilibriumSolverV2 {
                     double g =
                             model.G(T, P, y);
 
+                    CandidateState state =
+                            new CandidateState(y, g, mA);
+
                     double d =
-                            -g;
-
-                    int n =
-                            Math.min(nc, mA.length);
-
-                    for (int A = 0; A < n; A++) {
-                        d += mu[A] * mA[A];
-                    }
+                            candidateDrivingForce(state, mu);
 
                     if (!(d > bestDrivingForce)) {
                         continue;
@@ -5078,15 +5195,12 @@ public class EquilibriumSolverV2 {
                     continue;
                 }
 
+                CandidateState state =
+                        new CandidateState(
+                                relaxed.y, relaxed.G, relaxed.mA);
+
                 double d =
-                        -relaxed.G;
-
-                int n =
-                        Math.min(nc, relaxed.mA.length);
-
-                for (int A = 0; A < n; A++) {
-                    d += mu[A] * relaxed.mA[A];
-                }
+                        candidateDrivingForce(state, mu);
 
                 if (!(d > bestDrivingForce)) {
                     continue;
@@ -5210,6 +5324,74 @@ public class EquilibriumSolverV2 {
     }
 
     /**
+     * A candidate phase's state as produced by either model-specific
+     * candidate-search mechanism in {@link #updateStablePhaseSet}'s
+     * addition pass -- CEF's raw sampled site fractions
+     * ({@link #candidateSampledGrid}) or CVM's relaxed stationary point
+     * ({@link #relaxCvmCandidate}) -- reduced to exactly the fields
+     * {@link #candidateDrivingForce} needs. This is purely an internal
+     * scoring adapter: it does not change, and must not be made to
+     * change, how either search obtains {@code y}/{@code G}/{@code moles}.
+     */
+    private static final class CandidateState {
+
+        final double[] y;
+        final double G;
+        final double[] moles;
+
+        CandidateState(double[] y, double G, double[] moles) {
+            this.y = y;
+            this.G = G;
+            this.moles = moles;
+        }
+    }
+
+    /**
+     * Sundman Eq. (62) driving force for a candidate state to become
+     * stable at the given chemical potentials:
+     *
+     *     D = -G + sum_A mu_A * M_A
+     *
+     * Identical formula and semantics to {@link #drivingForce(PhaseWork,
+     * double[])}, restated over {@link CandidateState} because neither
+     * candidate-discovery branch in {@link #updateStablePhaseSet} builds a
+     * full {@link PhaseWork} for a not-yet-selected trial state -- CEF
+     * scores every raw sampled grid point, and CVM's relaxed result is a
+     * {@link CvmCandidateRelaxation}, not a {@code PhaseWork}. Introduced
+     * so the addition pass's two branches no longer each inline this sum
+     * by hand.
+     */
+    private double candidateDrivingForce(
+            CandidateState state,
+            double[] muVector) {
+
+        if (state == null
+                || !Double.isFinite(state.G)
+                || state.moles == null
+                || muVector == null) {
+
+            return Double.NEGATIVE_INFINITY;
+        }
+
+        double d =
+                -state.G;
+
+        int n =
+                Math.min(
+                        muVector.length,
+                        state.moles.length);
+
+        for (int A = 0; A < n; A++) {
+
+            d +=
+                    muVector[A]
+                    * state.moles[A];
+        }
+
+        return d;
+    }
+
+    /**
      * Result of relaxing one CVM candidate's internal variables to a
      * stationary point -- see {@link #relaxCvmCandidate}.
      */
@@ -5285,6 +5467,18 @@ public class EquilibriumSolverV2 {
      * (already validated in Step 7 to match CEWorkbench's disordered-state
      * ordering to full double precision) -- not an arbitrary or random u.
      *
+     * <p>Delegates to {@link #relaxCvmCandidateAtComposition} at {@code
+     * this.targetComposition()} -- see that method for the actual
+     * mechanism. This wrapper exists only to keep the main-loop call site
+     * ({@link #updateStablePhaseSet}) unchanged: it must always mean
+     * "relax at the outer solve's overall composition," per this method's
+     * own "Composition choice" section above (still true and unchanged by
+     * Phase 4G -- {@link #bestSeedConstitution}'s boundary/ZPF use of the
+     * generalized helper searches OTHER compositions instead, because a
+     * newly-appearing zero-amount boundary phase is not mass-balance-
+     * constrained to the overall composition the way a main-loop candidate
+     * conceptually is).
+     *
      * @return the relaxed state, or {@code null} if the nested solve does
      *         not converge or the candidate's initial state is invalid
      *         (an invalid/non-convergent candidate cannot be favorably
@@ -5294,12 +5488,59 @@ public class EquilibriumSolverV2 {
     private CvmCandidateRelaxation relaxCvmCandidate(
             system.model.cvm.CvmGibbsModel candidate) {
 
-        double[] xOverall =
-                targetComposition();
+        return relaxCvmCandidateAtComposition(candidate, targetComposition());
+    }
+
+    /**
+     * Generalized form of {@link #relaxCvmCandidate}: relaxes {@code
+     * candidate}'s internal CVM variables {@code u} to a stationary point
+     * at the CALLER-SUPPLIED fixed composition {@code trialComposition},
+     * rather than always at {@code this.targetComposition()}.
+     *
+     * <p>Introduced by Phase 4G so the SAME nested-{@link
+     * EquilibriumSolverV2} relaxation mechanism can serve two distinct
+     * callers that need it at two different compositions:
+     * <ul>
+     *   <li>{@link #relaxCvmCandidate} (main-loop candidate discovery,
+     *       {@link #updateStablePhaseSet}) -- always at {@code
+     *       targetComposition()}, unchanged;</li>
+     *   <li>{@link #bestSeedConstitution} (boundary/ZPF new-phase
+     *       seeding, {@link #addNewStableSlot}) -- at each composition
+     *       {@link GridMinimizer#sampleCompositions} produces, because
+     *       (per the Phase 4F audit) a newly-appearing phase pinned at
+     *       zero amount is constrained only by its OWN tangent-plane
+     *       condition against the current {@link #mu}, not by the outer
+     *       mass balance, so its seed composition must itself be
+     *       searched rather than fixed at the overall target.</li>
+     * </ul>
+     *
+     * <p>Mechanically identical to the former single-composition body of
+     * {@link #relaxCvmCandidate}: {@code
+     * candidate.getInitialInternalVars(trialComposition)} seeds a FRESH
+     * nested {@link EquilibriumSolverV2} (never the outer/caller
+     * instance), with exactly one candidate model and one stable slot
+     * ({@code stablePhases={0}}), mass balance pinned to {@code
+     * trialComposition}. Neither the outer candidate list nor any outer
+     * model index is used -- the inner problem is self-contained, exactly
+     * as {@link GridMinimizer#initialize}'s own inner-solve loop and
+     * {@code GridMinimizerInnerSolverWiringTest} already establish for
+     * this same single-phase-at-fixed-x pattern.
+     *
+     * @param candidate         the CVM model to relax
+     * @param trialComposition  the fixed composition to relax it at
+     *                          (length {@code candidate.numComponents()})
+     * @return the relaxed state, or {@code null} if the nested solve does
+     *         not converge, converges to something other than exactly one
+     *         stable phase, or the candidate's initial/relaxed state is
+     *         invalid
+     */
+    private CvmCandidateRelaxation relaxCvmCandidateAtComposition(
+            system.model.cvm.CvmGibbsModel candidate,
+            double[] trialComposition) {
 
         double[] y0;
         try {
-            y0 = candidate.getInitialInternalVars(xOverall);
+            y0 = candidate.getInitialInternalVars(trialComposition);
         } catch (RuntimeException e) {
             return null;
         }
@@ -5316,7 +5557,7 @@ public class EquilibriumSolverV2 {
                 new EquilibriumSolverV2();
 
         nestedSolver.setTolerance(tolerance);
-        nestedSolver.setInitialStateForTest(
+        nestedSolver.setInitialState(
                 new int[]{0},
                 new double[][]{y0},
                 new double[]{1.0});
@@ -5325,7 +5566,7 @@ public class EquilibriumSolverV2 {
         try {
             nestedResult =
                     nestedSolver.solve(
-                            T, P, xOverall, singleCandidateList);
+                            T, P, trialComposition, singleCandidateList);
         } catch (RuntimeException e) {
             return null;
         }
@@ -5359,14 +5600,32 @@ public class EquilibriumSolverV2 {
     }
 
     /**
-     * Lazily samples and caches candidate p's internal-DOF site-fraction
-     * grid (endmembers + edges + Halton interior points), reusing
-     * GridMinimizer's own sampler so this matches exactly the same style
-     * of points used for initial phase selection.
+     * Lazily samples and caches candidate p's internal-variable grid,
+     * using parameters matching the initial-phase selection constants.
+     *
+     * <p>Sampling itself is owned by {@link CefInternalStateSampler}, not
+     * {@link GridMinimizer} -- {@link GridMinimizer} is composition-space
+     * sampling and equilibrium-surface hull initialization; CEF's own
+     * internal (site-fraction) state sampling belongs with the CEF model
+     * machinery instead (see the Phase 4C audit establishing that {@link
+     * GridMinimizer#sampleSiteFractions} and {@link
+     * CefInternalStateSampler#sample} are the same ported algorithm,
+     * confirmed bit-identical by {@code
+     * CefInternalStateSamplerEquivalenceTest}). {@link
+     * GridMinimizer#getPDENS()} is reused directly, package-visible for
+     * exactly this kind of test/production access, rather than
+     * constructing a {@link GridMinimizer} merely to read a constant --
+     * candidate discovery no longer depends on {@link GridMinimizer} at
+     * all here. The boundary/ZPF path's CEF branch ({@link
+     * #bestSeedConstitution}) still calls {@link
+     * GridMinimizer#sampleSiteFractions} directly and is intentionally
+     * left untouched by this change (Phase 4G's CVM-only boundary-seed
+     * fix left CEF's own sampling mechanism as-is; migrating it to
+     * {@link CefInternalStateSampler} remains a separate cleanup).
      */
     private double[][] candidateSampledGrid(
             int p,
-            GibbsEnergyModel model) {
+            CefGibbs model) {
 
         if (candidateGridCache == null) {
             candidateGridCache = new HashMap<>();
@@ -5379,9 +5638,16 @@ public class EquilibriumSolverV2 {
             return cached;
         }
 
+        int density =
+                GridMinimizer.getPDENS();
+
         double[][] sampled =
-                new GridMinimizer()
-                        .sampleSiteFractions(model);
+                new CefInternalStateSampler(
+                        model.numSublattices(),
+                        model.constituentsPerSublattice(),
+                        model.offsets(),
+                        model.numSiteVars())
+                        .sample(density, density);
 
         candidateGridCache.put(p, sampled);
 

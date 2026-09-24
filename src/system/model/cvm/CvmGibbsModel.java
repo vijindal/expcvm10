@@ -1,6 +1,7 @@
 package system.model.cvm;
 
 import system.model.GibbsEnergyModel;
+import system.model.InternalConstraintSet;
 import system.model.unary.ElementGibbs;
 
 import java.util.ArrayList;
@@ -369,6 +370,11 @@ public class CvmGibbsModel extends GibbsEnergyModel {
     @Override public int numSiteVars() { return data.nip; }
     @Override public int[] offsets() { return new int[] { data.ncf }; }
     @Override public int[] constituentsPerSublattice() { return new int[] { data.nComp }; }
+
+    @Override
+    public InternalConstraintSet getConstraintSet() {
+        return new CvmConstraintSet(data.ncf, data.nComp);
+    }
 
     // ══════════════════════════════════════════════════════════════════
     // Output / Debugging
