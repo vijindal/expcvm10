@@ -5,6 +5,7 @@ import system.model.unary.ElementGibbs;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -22,10 +23,27 @@ class CvmGibbsModelTest {
 
     private static CvmGibbsModel newModel(List<CecTerm> cecTerms) {
         CvmPhaseData data = CvmBinaryBccFixture.build();
-        ElementGibbs ghserA = new FakeElementGibbs("A", 1000.0, -5.0);
-        ElementGibbs ghserB = new FakeElementGibbs("B", -2000.0, 3.0);
+        ElementGibbs ghserA = new TestElementGibbs("A", 1000.0, -5.0);
+        ElementGibbs ghserB = new TestElementGibbs("B", -2000.0, 3.0);
         return new CvmGibbsModel(data, cecTerms,
                 new ElementGibbs[]{ghserA, ghserB}, List.of("A", "B"));
+    }
+
+    private static final class TestElementGibbs implements ElementGibbs {
+        private final String symbol;
+        private final double a;
+        private final double b;
+
+        TestElementGibbs(String symbol, double a, double b) {
+            this.symbol = symbol;
+            this.a = a;
+            this.b = b;
+        }
+
+        @Override public String elementSymbol() { return symbol; }
+        @Override public double gibbs(String phaseName, double T) { return a + b * T; }
+        @Override public double ghser(double T) { return a + b * T; }
+        @Override public Set<String> availablePhases() { return Set.of("BCC_A2"); }
     }
 
     /** The CEC set used by the CEWorkbench cross-check dump. */

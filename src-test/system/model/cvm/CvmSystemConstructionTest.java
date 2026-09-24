@@ -13,6 +13,7 @@ import system.model.unary.ElementGibbs;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -31,8 +32,8 @@ class CvmSystemConstructionTest {
                 new CecTerm("v3AB", -50.0, 0.01),
                 new CecTerm("v22AB", 200.0, -0.02),
                 new CecTerm("v21AB", -300.0, 0.05));
-        ElementGibbs ghserA = new FakeElementGibbs("A", 1000.0, -5.0);
-        ElementGibbs ghserB = new FakeElementGibbs("B", -2000.0, 3.0);
+        ElementGibbs ghserA = new TestElementGibbs("A", 1000.0, -5.0);
+        ElementGibbs ghserB = new TestElementGibbs("B", -2000.0, 3.0);
         return new CvmPhaseSpec(data, cecTerms,
                 new ElementGibbs[]{ghserA, ghserB}, List.of("A", "B"));
     }
@@ -77,6 +78,23 @@ class CvmSystemConstructionTest {
     // ══════════════════════════════════════════════════════════════════
     // Test 8 -- mixed CEF + CVM phase list
     // ══════════════════════════════════════════════════════════════════
+
+    private static final class TestElementGibbs implements ElementGibbs {
+        private final String symbol;
+        private final double a;
+        private final double b;
+
+        TestElementGibbs(String symbol, double a, double b) {
+            this.symbol = symbol;
+            this.a = a;
+            this.b = b;
+        }
+
+        @Override public String elementSymbol() { return symbol; }
+        @Override public double gibbs(String phaseName, double T) { return a + b * T; }
+        @Override public double ghser(double T) { return a + b * T; }
+        @Override public Set<String> availablePhases() { return Set.of("BCC_A2"); }
+    }
 
     @Test
     void mixedCefAndCvmPhaseListRequiresNoUncheckedCast() throws Exception {

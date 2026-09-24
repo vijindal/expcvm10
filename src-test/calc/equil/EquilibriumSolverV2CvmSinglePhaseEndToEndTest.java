@@ -58,8 +58,8 @@ class EquilibriumSolverV2CvmSinglePhaseEndToEndTest {
                 new CecTerm("v22AB", 200.0, -0.02),
                 new CecTerm("v21AB", -300.0, 0.05));
 
-        ElementGibbs ghserA = new FakeElementGibbs("A", 1000.0, -5.0);
-        ElementGibbs ghserB = new FakeElementGibbs("B", -2000.0, 3.0);
+        ElementGibbs ghserA = new TestElementGibbs("A", 1000.0, -5.0);
+        ElementGibbs ghserB = new TestElementGibbs("B", -2000.0, 3.0);
 
         CvmPhaseSpec spec = new CvmPhaseSpec(data, cecTerms,
                 new ElementGibbs[]{ghserA, ghserB}, List.of("A", "B"));
@@ -156,12 +156,12 @@ class EquilibriumSolverV2CvmSinglePhaseEndToEndTest {
     }
 
     /** Test-only {@link ElementGibbs} double: GHSER(T) = a + b*T. */
-    private static final class FakeElementGibbs implements ElementGibbs {
+    private static final class TestElementGibbs implements ElementGibbs {
         private final String symbol;
         private final double a;
         private final double b;
 
-        FakeElementGibbs(String symbol, double a, double b) {
+        TestElementGibbs(String symbol, double a, double b) {
             this.symbol = symbol;
             this.a = a;
             this.b = b;
