@@ -168,8 +168,8 @@ public final class CvCfBasis {
         //   p4 = {1.0, 0.0, 0.0}
         //
         // Pair types:
-        //   p1-p4 and p2-p3 are II-n pairs (used in v22AB)
-        //   p1-p2 (and others) are I-n pairs (used in v21AB)
+        //   p1-p4 and p2-p3 are II-n pairs (used in v2AB2)
+        //   p1-p2 (and others) are I-n pairs (used in v2AB1)
         //
         // Atom indices: A=0, B=1
         //
@@ -182,7 +182,7 @@ public final class CvCfBasis {
                         { 0.5, 0.5, 0.5 }, // p3
                         { 1.0, 0.0, 0.0 } // p4
                 },
-                List.of("v4AB", "v3AB", "v22AB", "v21AB", "xA", "xB"),
+                List.of("v4AB", "v3AB", "v2AB2", "v2AB1", "xA", "xB"),
                 List.of(
                         // v4AB = p[1][A]*p[2][B]*p[3][B]*p[4][A]
                         VSpec.product(1, 0, 2, 1, 3, 1, 4, 0),
@@ -192,10 +192,10 @@ public final class CvCfBasis {
                                 new int[] { 1, 0, 2, 1, 3, 1 },
                                 new int[] { 1, 1, 2, 0, 3, 0 }),
 
-                        // v22AB = p[1][A]*p[4][B] (II-n pair)
+                        // v2AB2 = p[1][A]*p[4][B] (II-n pair)
                         VSpec.product(1, 0, 4, 1),
 
-                        // v21AB = p[1][A]*p[2][B] (I-n pair)
+                        // v2AB1 = p[1][A]*p[2][B] (I-n pair)
                         VSpec.product(1, 0, 2, 1),
 
                         // xA = p[1][A]
@@ -218,7 +218,7 @@ public final class CvCfBasis {
         // 21 CVs total: 6 tetr + 6 tri + 6 pair + 3 point
         //   Tetrahedron (6): 3 binary (v4AB,v4AC,v4BC) + 3 ternary (v4ABC1/2/3)
         //   Triangle (6):    3 binary (v3AB,v3AC,v3BC) + 3 ternary (v3ABC1/2/3)
-        //   Pair (6):        3 II-n (v22AB,v22AC,v22BC) + 3 I-n (v21AB,v21AC,v21BC)
+        //   Pair (6):        3 II-n (v2AB2,v2AC2,v2BC2) + 3 I-n (v2AB1,v2AC1,v2BC1)
         //   Point (3):       xA, xB, xC
         //
         // Transcribed verbatim from CEWorkbench's org.ce.model.cvm.CvCfBasis.
@@ -235,8 +235,8 @@ public final class CvCfBasis {
                         "v4ABC1", "v4ABC2", "v4ABC3",
                         "v3AB", "v3AC", "v3BC",
                         "v3ABC1", "v3ABC2", "v3ABC3",
-                        "v22AB", "v22AC", "v22BC",
-                        "v21AB", "v21AC", "v21BC",
+                        "v2AB2", "v2AC2", "v2BC2",
+                        "v2AB1", "v2AC1", "v2BC1",
                         "xA", "xB", "xC"),
                 List.of(
                         // ---- tetrahedra ----
@@ -287,22 +287,22 @@ public final class CvCfBasis {
 
                         // ---- pairs ----
 
-                        // v22AB = p[1][A]*p[4][B] (II-n pair)
+                        // v2AB2 = p[1][A]*p[4][B] (II-n pair)
                         VSpec.product(1, 0, 4, 1),
 
-                        // v22AC = p[1][A]*p[4][C] (II-n pair)
+                        // v2AC2 = p[1][A]*p[4][C] (II-n pair)
                         VSpec.product(1, 0, 4, 2),
 
-                        // v22BC = p[1][B]*p[4][C] (II-n pair)
+                        // v2BC2 = p[1][B]*p[4][C] (II-n pair)
                         VSpec.product(1, 1, 4, 2),
 
-                        // v21AB = p[1][A]*p[2][B] (I-n pair)
+                        // v2AB1 = p[1][A]*p[2][B] (I-n pair)
                         VSpec.product(1, 0, 2, 1),
 
-                        // v21AC = p[1][A]*p[2][C] (I-n pair)
+                        // v2AC1 = p[1][A]*p[2][C] (I-n pair)
                         VSpec.product(1, 0, 2, 2),
 
-                        // v21BC = p[1][B]*p[2][C] (I-n pair)
+                        // v2BC1 = p[1][B]*p[2][C] (I-n pair)
                         VSpec.product(1, 1, 2, 2),
 
                         // ---- points ----
@@ -349,8 +349,8 @@ public final class CvCfBasis {
                         "v3ABD1", "v3ABD2", "v3ABD3",
                         "v3ACD1", "v3ACD2", "v3ACD3",
                         "v3BCD1", "v3BCD2", "v3BCD3",
-                        "v22AB", "v22AC", "v22AD", "v22BC", "v22BD", "v22CD",
-                        "v21AB", "v21AC", "v21AD", "v21BC", "v21BD", "v21CD",
+                        "v2AB2", "v2AC2", "v2AD2", "v2BC2", "v2BD2", "v2CD2",
+                        "v2AB1", "v2AC1", "v2AD1", "v2BC1", "v2BD1", "v2CD1",
                         "xA", "xB", "xC", "xD"),
                 List.of(
                         // ---- tetrahedra: 6 binary ----
@@ -454,32 +454,32 @@ public final class CvCfBasis {
 
                         // ---- pairs: 6 II-n (p1,p4) ----
 
-                        // v22AB = p[1][A]*p[4][B]
+                        // v2AB2 = p[1][A]*p[4][B]
                         VSpec.product(1, 0, 4, 1),
-                        // v22AC = p[1][A]*p[4][C]
+                        // v2AC2 = p[1][A]*p[4][C]
                         VSpec.product(1, 0, 4, 2),
-                        // v22AD = p[1][A]*p[4][D]
+                        // v2AD2 = p[1][A]*p[4][D]
                         VSpec.product(1, 0, 4, 3),
-                        // v22BC = p[1][B]*p[4][C]
+                        // v2BC2 = p[1][B]*p[4][C]
                         VSpec.product(1, 1, 4, 2),
-                        // v22BD = p[1][B]*p[4][D]
+                        // v2BD2 = p[1][B]*p[4][D]
                         VSpec.product(1, 1, 4, 3),
-                        // v22CD = p[1][C]*p[4][D]
+                        // v2CD2 = p[1][C]*p[4][D]
                         VSpec.product(1, 2, 4, 3),
 
                         // ---- pairs: 6 I-n (p1,p2) ----
 
-                        // v21AB = p[1][A]*p[2][B]
+                        // v2AB1 = p[1][A]*p[2][B]
                         VSpec.product(1, 0, 2, 1),
-                        // v21AC = p[1][A]*p[2][C]
+                        // v2AC1 = p[1][A]*p[2][C]
                         VSpec.product(1, 0, 2, 2),
-                        // v21AD = p[1][A]*p[2][D]
+                        // v2AD1 = p[1][A]*p[2][D]
                         VSpec.product(1, 0, 2, 3),
-                        // v21BC = p[1][B]*p[2][C]
+                        // v2BC1 = p[1][B]*p[2][C]
                         VSpec.product(1, 1, 2, 2),
-                        // v21BD = p[1][B]*p[2][D]
+                        // v2BD1 = p[1][B]*p[2][D]
                         VSpec.product(1, 1, 2, 3),
-                        // v21CD = p[1][C]*p[2][D]
+                        // v2CD1 = p[1][C]*p[2][D]
                         VSpec.product(1, 2, 2, 3),
 
                         // ---- points ----

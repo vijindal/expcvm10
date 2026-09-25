@@ -30,8 +30,8 @@ class CvmSystemConstructionTest {
         List<CecTerm> cecTerms = List.of(
                 new CecTerm("v4AB", 100.0, 0.0),
                 new CecTerm("v3AB", -50.0, 0.01),
-                new CecTerm("v22AB", 200.0, -0.02),
-                new CecTerm("v21AB", -300.0, 0.05));
+                new CecTerm("v2AB2", 200.0, -0.02),
+                new CecTerm("v2AB1", -300.0, 0.05));
         ElementGibbs ghserA = new TestElementGibbs("A", 1000.0, -5.0);
         ElementGibbs ghserB = new TestElementGibbs("B", -2000.0, 3.0);
         return new CvmPhaseSpec(data, cecTerms,
@@ -170,21 +170,21 @@ class CvmSystemConstructionTest {
         // ─────────────────────────────────────────────────────────────
         // Diagnostic: verify the e→v CEC mapping
         // ─────────────────────────────────────────────────────────────
-        // The TDB provides e4AB, e3AB, e22AB, e21AB with coefficients:
+        // The TDB provides e4AB, e3AB, e2AB2, e2AB1 with coefficients:
         //   e4AB   → (0.0,    0.000)
         //   e3AB   → (120.0,  0.000)
-        //   e22AB  → (-1120.0, -0.159)
-        //   e21AB  → (-746.7,  -0.106)
+        //   e2AB2  → (-1120.0, -0.159)
+        //   e2AB1  → (-746.7,  -0.106)
         //
-        // These should be mapped to v4AB, v3AB, v22AB, v21AB in the CVM layer.
+        // These should be mapped to v4AB, v3AB, v2AB2, v2AB1 in the CVM layer.
         // We can verify this indirectly by ensuring G evaluations are consistent
         // with the known CEC values.
 
         System.out.println("CEC mapping verification (e→v):");
         System.out.println("  e4AB   (0.0, 0.000)    → v4AB");
         System.out.println("  e3AB   (120.0, 0.000)  → v3AB");
-        System.out.println("  e22AB  (-1120.0, -0.159) → v22AB");
-        System.out.println("  e21AB  (-746.7, -0.106)  → v21AB");
+        System.out.println("  e2AB2  (-1120.0, -0.159) → v2AB2");
+        System.out.println("  e2AB1  (-746.7, -0.106)  → v2AB1");
 
         // ─────────────────────────────────────────────────────────────
         // Thermodynamic comparison at multiple states

@@ -1,0 +1,569 @@
+
+$ Database file for the Nb-Ti-V-Zr quaternary system
+$ Both CEF (LAVES_C15) and CVM (BCC_A2) parameters are included.
+$
+$ Unary SGTE data copied verbatim from this repo's existing TDB files:
+$   GHSERNB : data/cost507.tdb
+$   GHSERTI : data/cost507.tdb
+$   GHSERVV : data/VZR-re2-CVM-eName-model.TDB
+$   GHSERZR : data/VZR-re2-CVM-eName-model.TDB
+$
+$ LAVES_C15 (2 sublattices, site ratio 2:1, (Nb,Ti,V,Zr):(Nb,Ti,V,Zr))
+$ parameters are read from the user-supplied Mathematica function
+$ eListNbTiVZrC15CEF[elementList,eList,T] (2019-Gorbacheva Nb-Ti-V-Zr
+$ system), verbatim:
+$   G{A}{B}N = 2*GHSER{A} + GHSER{B} + <constant/T-linear term>
+$       -> PARAMETER G(LAVES_C15,A:B;0)
+$   L{A}{B}x{C}xN = sublattice 1 mixes (A,B), sublattice 2 fixed at C
+$       -> PARAMETER G(LAVES_C15,A,B:C;0)
+$   L{C}x{A}{B}xN = sublattice 1 fixed at C, sublattice 2 mixes (A,B)
+$       -> PARAMETER G(LAVES_C15,C:A,B;0)
+$ Every L-rule not listed below is 0 in the source function and omitted
+$ here (a CEF phase's absent interaction parameter is implicitly 0,
+$ matching TDB convention -- no UN_ASS placeholder is needed for a value
+$ that genuinely is zero, unlike cost507R.TDB's UN_ASS placeholders for
+$ values that are simply not yet assessed).
+$
+$ CVM (BCC_A2, tetrahedron/T approximation) CECs are the real published
+$ Jindal & Lele, CALPHAD 89 (2025) 102825, Table 17 CVCF-basis values
+$ (verbatim copy of the quaternary Nb-Ti-V-Zr Hamiltonian already stored
+$ in CEWorkbench: data/CEWorkbench/hamiltonians/Nb-Ti-V-Zr_BCC_A2_T_CVCF),
+$ restricted to this repo's currently-supported binary-pair-CEC subset
+$ (v4AB/v3AB/v2AB2/v2AB1 per pair; the higher-order ternary/quaternary
+$ CVCF terms in Table 17 are not yet representable by this repo's
+$ CvmPhaseData/CvmGibbs binary-tetrahedron-approximation machinery -- see
+$ TdbCvmModelBuilder/CvmGeometryGenerator.generateBccA2, which currently
+$ only supports binary/ternary BCC_A2 via the pairwise CEC basis, not a
+$ full quaternary CVCF basis). This TDB's BCC_A2 phase is therefore only
+$ directly usable for a BINARY or TERNARY sub-system extracted from it,
+$ same as every other CVM TDB in this repo.
+$
+ ELEMENT /-   ELECTRON_GAS              0.0000E+00  0.0000E+00  0.0000E+00!
+ ELEMENT VA   VACUUM                    0.0000E+00  0.0000E+00  0.0000E+00!
+ ELEMENT NB   BCC_A2                    9.2906E+01  5.2200E+03  3.6270E+01!
+ ELEMENT TI   HCP_A3                    4.7880E+01  4.8240E+03  3.0720E+01!
+ ELEMENT V    BCC_A2                    5.0941E+01  4.5070E+03  3.0890E+01!
+ ELEMENT ZR   HCP_A3                    9.1224E+01  5.5663E+03  3.9181E+01!
+
+
+ FUNCTION GHSERNB    2.98150E+02  -8519.353+142.045475*T-26.4711*T*LN(T)
+     +2.03475E-04*T**2-3.5012E-07*T**3+93399*T**(-1);  2.75000E+03  Y
+      -37669.3+271.720843*T-41.77*T*LN(T)+1.528238E+32*T**(-9);
+     6.00000E+03  N !
+ FUNCTION GHSERTI    2.98150E+02  -8059.921+133.615208*T-23.9933*T*LN(T)
+     -4.777975E-03*T**2+0.106716E-06*T**3+72636*T**(-1);  9.00000E+02  Y
+      -7811.815+132.988068*T-23.9887*T*LN(T)-4.2033E-03*T**2
+     -0.090876E-06*T**3+42680*T**(-1);  1.15500E+03  Y
+      908.837+66.976538*T-14.9466*T*LN(T)-8.1465E-03*T**2
+     +0.202715E-06*T**3-1477660*T**(-1);  1.94100E+03  Y
+      -124526.786+638.806871*T-87.2182461*T*LN(T)+8.204849E-03*T**2
+     -0.304747E-06*T**3+36699805*T**(-1);  4.00000E+03  N !
+ FUNCTION GHSERVV    2.98140E+02  -7930.43+133.346053*T-24.134*T*LN(T)
+     -.003098*T**2+1.2175E-07*T**3+69460*T**(-1);  7.90000E+02  Y
+      -7967.842+143.291093*T-25.9*T*LN(T)+6.25E-05*T**2-6.8E-07*T**3;
+     2.18300E+03  Y
+      -41689.864+321.140783*T-47.43*T*LN(T)+6.44389E+31*T**(-9);
+     4.00000E+03  N !
+ FUNCTION GHSERZR    2.98140E+02  -7827.595+125.64905*T-24.1618*T*LN(T)
+     -.00437791*T**2+34971*T**(-1);  2.12800E+03  Y
+      -26085.921+262.724183*T-42.144*T*LN(T)-1.342896E+31*T**(-9);
+     6.00000E+03  N !
+
+ FUNCTION UN_ASS 298.15 0; 300 N !
+
+ TYPE_DEFINITION % SEQ *!
+ DEFINE_SYSTEM_DEFAULT SPECIE 2 !
+ DEFAULT_COMMAND DEF_SYS_ELEMENT VA !
+
+
+ $ -------------------------------------------------------------------------
+ $ PHASE LAVES_C15 (2019-Gorbacheva Nb-Ti-V-Zr system)
+ $ -------------------------------------------------------------------------
+
+ PHASE LAVES_C15  %  2 2   1 !
+    CONSTITUENT LAVES_C15  :NB,TI,V,ZR : NB,TI,V,ZR :  !
+
+$  --- Endmembers G(LAVES_C15,A:B;0) = G{A}{B}N ---
+
+   PARAMETER G(LAVES_C15,NB:NB;0)  2.98150E+02  2*GHSERNB#+GHSERNB#+15000;
+   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,NB:TI;0)  2.98150E+02  2*GHSERNB#+GHSERTI#+15000;
+   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,NB:V;0)  2.98150E+02  2*GHSERNB#+GHSERVV#+45000;
+   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,NB:ZR;0)  2.98150E+02  2*GHSERNB#+GHSERZR#+21000;
+   6.00000E+03   N   REF:0 !
+
+   PARAMETER G(LAVES_C15,TI:NB;0)  2.98150E+02  2*GHSERTI#+GHSERNB#+15000;
+   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,TI:TI;0)  2.98150E+02  2*GHSERTI#+GHSERTI#+15000;
+   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,TI:V;0)  2.98150E+02  2*GHSERTI#+GHSERVV#+30000;
+   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,TI:ZR;0)  2.98150E+02  2*GHSERTI#+GHSERZR#+15000;
+   6.00000E+03   N   REF:0 !
+
+   PARAMETER G(LAVES_C15,V:NB;0)  2.98150E+02  2*GHSERVV#+GHSERNB#+45000;
+   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,V:TI;0)  2.98150E+02  2*GHSERVV#+GHSERTI#+30000;
+   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,V:V;0)  2.98150E+02  2*GHSERVV#+GHSERVV#+15000;
+   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,V:ZR;0)  2.98150E+02
+   2*GHSERVV#+GHSERZR#-10796.71+3.8144*T;   6.00000E+03   N   REF:0 !
+
+   PARAMETER G(LAVES_C15,ZR:NB;0)  2.98150E+02  2*GHSERZR#+GHSERNB#+21000;
+   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,ZR:TI;0)  2.98150E+02  2*GHSERZR#+GHSERTI#+15000;
+   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,ZR:V;0)  2.98150E+02
+   2*GHSERZR#+GHSERVV#+40796.71-3.8144*T;   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,ZR:ZR;0)  2.98150E+02  2*GHSERZR#+GHSERZR#+15000;
+   6.00000E+03   N   REF:0 !
+
+$  --- Sublattice-1 mixing interactions, sublattice 2 fixed:
+$      L{A}{B}x{C}xN -> G(LAVES_C15,A,B:C;0) ---
+$      (only the nonzero source terms; every omitted L-rule is 0)
+
+   PARAMETER G(LAVES_C15,TI,V:TI;0)  2.98150E+02  -36973.73+15.1442*T;
+   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,TI,V:V;0)  2.98150E+02  -36973.73+15.1442*T;
+   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,TI,V:ZR;0)  2.98150E+02  -36973.73+15.1442*T;
+   6.00000E+03   N   REF:0 !
+
+   PARAMETER G(LAVES_C15,V,ZR:TI;0)  2.98150E+02  35860.62+12.7268*T;
+   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,V,ZR:V;0)  2.98150E+02  35860.62+12.7268*T;
+   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,V,ZR:ZR;0)  2.98150E+02  35860.62+12.7268*T;
+   6.00000E+03   N   REF:0 !
+
+$  --- Sublattice-2 mixing interactions, sublattice 1 fixed:
+$      L{C}x{A}{B}xN -> G(LAVES_C15,C:A,B;0) ---
+
+   PARAMETER G(LAVES_C15,TI:TI,V;0)  2.98150E+02  5000;
+   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,V:TI,V;0)  2.98150E+02  5000;
+   6.00000E+03   N   REF:0 !
+
+   PARAMETER G(LAVES_C15,TI:V,ZR;0)  2.98150E+02  4086.75+9.5308*T;
+   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,V:V,ZR;0)  2.98150E+02  4086.75+9.5308*T;
+   6.00000E+03   N   REF:0 !
+   PARAMETER G(LAVES_C15,ZR:V,ZR;0)  2.98150E+02  4086.75+9.5308*T;
+   6.00000E+03   N   REF:0 !
+
+
+ $ -------------------------------------------------------------------------
+ $ PHASE BCC_A2 (Jindal & Lele, CALPHAD 89 (2025) 102825, Table 17)
+ $ Endmembers only -- the quaternary CVCF CEC set is stored separately
+ $ (see the class-level comment above); a binary or ternary sub-system's
+ $ own binary-pair CECs are read from this same file via the G_CVM lines
+ $ below.
+ $ -------------------------------------------------------------------------
+
+ TYPE_DEFINITION & GES A_P_D BCC_A2 MAGNETIC  -1.0    4.00000E-01 !
+ PHASE BCC_A2  %&  2 1   3 !
+    CONSTITUENT BCC_A2  :NB,TI,V,ZR : VA :  !
+
+   PARAMETER G(BCC_A2,NB:VA;0)  2.98150E+02  +GHSERNB#;  6.00000E+03  N REF:1 !
+   PARAMETER G(BCC_A2,TI:VA;0)  2.98150E+02  +GHSERTI#;  4.00000E+03  N REF:1 !
+   PARAMETER G(BCC_A2,V:VA;0)  2.98140E+02  +GHSERVV#;  4.00000E+03  N REF:1 !
+   PARAMETER G(BCC_A2,ZR:VA;0)  2.98140E+02  -525.539+124.9457*T
+  -25.607406*T*LN(T)-3.40084E-04*T**2-9.729E-09*T**3+25233*T**(-1)
+  -7.6143E-11*T**4;  2.12800E+03  Y
+   -30705.955+264.284163*T-42.144*T*LN(T)+1.276058E+32*T**(-9);  6.00000E+03
+   N REF:1 !
+
+$  --- Nb-V binary G_CVM pair CECs (Table 17: e2NbV1=14080, e2NbV2=7040,
+$      e3NbV=e4NbV=0) ---
+
+   PARAMETER G_CVM(BCC_A2,NB,V:VA;e4AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,V:VA;e3AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,V:VA;e2AB2)  2.98150E+02  7040.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,V:VA;e2AB1)  2.98150E+02  14080.0;
+   6.00000E+03   N !
+
+$  --- Nb-Zr binary G_CVM pair CECs (Table 17: e2NbZr1=7401.6+6.6432T,
+$      e2NbZr2=3700.8+3.3216T, e3NbZr=-4224, e4NbZr=0) ---
+
+   PARAMETER G_CVM(BCC_A2,NB,ZR:VA;e4AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,ZR:VA;e3AB)  2.98150E+02  -4224.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,ZR:VA;e2AB2)  2.98150E+02  3700.8+3.3216*T;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,ZR:VA;e2AB1)  2.98150E+02  7401.6+6.6432*T;
+   6.00000E+03   N !
+
+$  --- V-Zr binary G_CVM pair CECs (Table 17: e2VZr1=17920+2.544T,
+$      e2VZr2=8960+1.272T, e3VZr=-5760, e4VZr=0 -- same values already
+$      used, in the equivalent e2AB2/e2AB1 slots, by
+$      VZR-re2-CVM-eName-model.TDB's own CEC block) ---
+
+   PARAMETER G_CVM(BCC_A2,V,ZR:VA;e4AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,V,ZR:VA;e3AB)  2.98150E+02  -5760.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,V,ZR:VA;e2AB2)  2.98150E+02  8960.0+1.272*T;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,V,ZR:VA;e2AB1)  2.98150E+02  17920.0+2.544*T;
+   6.00000E+03   N !
+
+$  --- Nb-Ti binary G_CVM pair CECs (Table 17: e2NbTi1=6240, e2NbTi2=3120,
+$      e3NbTi=0, e4NbTi=0) ---
+
+   PARAMETER G_CVM(BCC_A2,NB,TI:VA;e4AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI:VA;e3AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI:VA;e2AB2)  2.98150E+02  3120.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI:VA;e2AB1)  2.98150E+02  6240.0;
+   6.00000E+03   N !
+
+$  --- Ti-V binary G_CVM pair CECs (Table 17: e2TiV1=8160, e2TiV2=4080,
+$      e3TiV=0, e4TiV=0) ---
+
+   PARAMETER G_CVM(BCC_A2,TI,V:VA;e4AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,V:VA;e3AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,V:VA;e2AB2)  2.98150E+02  4080.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,V:VA;e2AB1)  2.98150E+02  8160.0;
+   6.00000E+03   N !
+
+$  --- Ti-Zr binary G_CVM pair CECs (Table 17: e2TiZr1=-9264, e2TiZr2=-4632,
+$      e3TiZr=0, e4TiZr=0) ---
+
+   PARAMETER G_CVM(BCC_A2,TI,ZR:VA;e4AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,ZR:VA;e3AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,ZR:VA;e2AB2)  2.98150E+02  -4632.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,ZR:VA;e2AB1)  2.98150E+02  -9264.0;
+   6.00000E+03   N !
+
+$  --- Ternary Nb-V-Zr G_CVM CECs, query order [NB,V,ZR] (A=Nb,B=V,C=Zr).
+$      This block's parameter names are positional to THIS element order
+$      (CvmGeometryGenerator.generateBccA2 assigns A/B/C by the order the
+$      caller passes elements in, not by any fixed physical-pair name --
+$      see this file's class-level note) and are separate from the
+$      binary blocks above, so buildCvmFromTdb(db, [NB,V,ZR], BCC_A2)
+$      resolves to exactly this one block, not the three binary ones.
+$      Values: Table 17, restricted to the Nb,V,Zr sub-system --
+$      v4AB(Nb-V)=e4NbV=0, v4AC(Nb-Zr)=e4NbZr=0, v4BC(V-Zr)=e4VZr=0,
+$      v4ABC1/2/3(Nb-V-Zr)=e4NbVZr1/2/3=0 (not in Table 17, all zero);
+$      v3AB(Nb-V)=e3NbV=0, v3AC(Nb-Zr)=e3NbZr=-4224, v3BC(V-Zr)=e3VZr=-5760,
+$      v3ABC1/2/3(Nb-V-Zr)=e3NbVZr1/2/3=0;
+$      v2AB2(Nb-V)=e2NbV2=7040, v2AC2(Nb-Zr)=e2NbZr2=3700.8+3.3216T,
+$      v2BC2(V-Zr)=e2VZr2=8960+1.272T;
+$      v2AB1(Nb-V)=e2NbV1=14080, v2AC1(Nb-Zr)=e2NbZr1=7401.6+6.6432T,
+$      v2BC1(V-Zr)=e2VZr1=17920+2.544T ---
+
+   PARAMETER G_CVM(BCC_A2,NB,V,ZR:VA;e4AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,V,ZR:VA;e4AC)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,V,ZR:VA;e4BC)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,V,ZR:VA;e4ABC1)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,V,ZR:VA;e4ABC2)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,V,ZR:VA;e4ABC3)  2.98150E+02  0.0;
+   6.00000E+03   N !
+
+   PARAMETER G_CVM(BCC_A2,NB,V,ZR:VA;e3AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,V,ZR:VA;e3AC)  2.98150E+02  -4224.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,V,ZR:VA;e3BC)  2.98150E+02  -5760.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,V,ZR:VA;e3ABC1)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,V,ZR:VA;e3ABC2)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,V,ZR:VA;e3ABC3)  2.98150E+02  0.0;
+   6.00000E+03   N !
+
+   PARAMETER G_CVM(BCC_A2,NB,V,ZR:VA;e2AB2)  2.98150E+02  7040.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,V,ZR:VA;e2AC2)  2.98150E+02  3700.8+3.3216*T;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,V,ZR:VA;e2BC2)  2.98150E+02  8960.0+1.272*T;
+   6.00000E+03   N !
+
+   PARAMETER G_CVM(BCC_A2,NB,V,ZR:VA;e2AB1)  2.98150E+02  14080.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,V,ZR:VA;e2AC1)  2.98150E+02  7401.6+6.6432*T;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,V,ZR:VA;e2BC1)  2.98150E+02  17920.0+2.544*T;
+   6.00000E+03   N !
+
+$  --- Ternary Nb-Ti-V G_CVM CECs, query order [NB,TI,V] (A=Nb,B=Ti,C=V).
+$      Table 17: v4ABC1/2/3(Nb-Ti-V)=e4NbTiV1/2/3=48800,-24400,-24400;
+$      v3ABC1/2/3(Nb-Ti-V)=e3NbTiV1/2/3=-20000,-20000,-20000;
+$      v2AB2(Nb-Ti)=e2NbTi2=3120, v2AC2(Nb-V)=e2NbV2=7040,
+$      v2BC2(Ti-V)=e2TiV2=4080; v2AB1(Nb-Ti)=e2NbTi1=6240,
+$      v2AC1(Nb-V)=e2NbV1=14080, v2BC1(Ti-V)=e2TiV1=8160 ---
+
+   PARAMETER G_CVM(BCC_A2,NB,TI,V:VA;e4AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V:VA;e4AC)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V:VA;e4BC)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V:VA;e4ABC1)  2.98150E+02  48800.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V:VA;e4ABC2)  2.98150E+02  -24400.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V:VA;e4ABC3)  2.98150E+02  -24400.0;
+   6.00000E+03   N !
+
+   PARAMETER G_CVM(BCC_A2,NB,TI,V:VA;e3AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V:VA;e3AC)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V:VA;e3BC)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V:VA;e3ABC1)  2.98150E+02  -20000.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V:VA;e3ABC2)  2.98150E+02  -20000.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V:VA;e3ABC3)  2.98150E+02  -20000.0;
+   6.00000E+03   N !
+
+   PARAMETER G_CVM(BCC_A2,NB,TI,V:VA;e2AB2)  2.98150E+02  3120.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V:VA;e2AC2)  2.98150E+02  7040.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V:VA;e2BC2)  2.98150E+02  4080.0;
+   6.00000E+03   N !
+
+   PARAMETER G_CVM(BCC_A2,NB,TI,V:VA;e2AB1)  2.98150E+02  6240.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V:VA;e2AC1)  2.98150E+02  14080.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V:VA;e2BC1)  2.98150E+02  8160.0;
+   6.00000E+03   N !
+
+$  --- Ternary Nb-Ti-Zr G_CVM CECs, query order [NB,TI,ZR] (A=Nb,B=Ti,C=Zr).
+$      Table 17: v4ABC1/2/3(Nb-Ti-Zr)=e4NbTiZr1/2/3=0,0,0;
+$      v3AC(Nb-Zr)=e3NbZr=-4224; v3ABC1/2/3(Nb-Ti-Zr)=
+$      e3NbTiZr1/2/3=-3333.33,-3333.33,-3333.33;
+$      v2AB2(Nb-Ti)=e2NbTi2=3120, v2AC2(Nb-Zr)=e2NbZr2=3700.8+3.3216T,
+$      v2BC2(Ti-Zr)=e2TiZr2=-4632; v2AB1(Nb-Ti)=e2NbTi1=6240,
+$      v2AC1(Nb-Zr)=e2NbZr1=7401.6+6.6432T, v2BC1(Ti-Zr)=e2TiZr1=-9264 ---
+
+   PARAMETER G_CVM(BCC_A2,NB,TI,ZR:VA;e4AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,ZR:VA;e4AC)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,ZR:VA;e4BC)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,ZR:VA;e4ABC1)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,ZR:VA;e4ABC2)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,ZR:VA;e4ABC3)  2.98150E+02  0.0;
+   6.00000E+03   N !
+
+   PARAMETER G_CVM(BCC_A2,NB,TI,ZR:VA;e3AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,ZR:VA;e3AC)  2.98150E+02  -4224.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,ZR:VA;e3BC)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,ZR:VA;e3ABC1)  2.98150E+02  -3333.33;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,ZR:VA;e3ABC2)  2.98150E+02  -3333.33;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,ZR:VA;e3ABC3)  2.98150E+02  -3333.33;
+   6.00000E+03   N !
+
+   PARAMETER G_CVM(BCC_A2,NB,TI,ZR:VA;e2AB2)  2.98150E+02  3120.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,ZR:VA;e2AC2)  2.98150E+02  3700.8+3.3216*T;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,ZR:VA;e2BC2)  2.98150E+02  -4632.0;
+   6.00000E+03   N !
+
+   PARAMETER G_CVM(BCC_A2,NB,TI,ZR:VA;e2AB1)  2.98150E+02  6240.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,ZR:VA;e2AC1)  2.98150E+02  7401.6+6.6432*T;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,ZR:VA;e2BC1)  2.98150E+02  -9264.0;
+   6.00000E+03   N !
+
+$  --- Ternary Ti-V-Zr G_CVM CECs, query order [TI,V,ZR] (A=Ti,B=V,C=Zr).
+$      Table 17: v4ABC1/2/3(Ti-V-Zr)=e4TiVZr1/2/3=0,0,0; v3BC(V-Zr)=
+$      e3VZr=-5760; v3ABC1/2/3(Ti-V-Zr)=e3TiVZr1/2/3=10000,10000,10000;
+$      v2AB2(Ti-V)=e2TiV2=4080, v2AC2(Ti-Zr)=e2TiZr2=-4632,
+$      v2BC2(V-Zr)=e2VZr2=8960+1.272T; v2AB1(Ti-V)=e2TiV1=8160,
+$      v2AC1(Ti-Zr)=e2TiZr1=-9264, v2BC1(V-Zr)=e2VZr1=17920+2.544T ---
+
+   PARAMETER G_CVM(BCC_A2,TI,V,ZR:VA;e4AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,V,ZR:VA;e4AC)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,V,ZR:VA;e4BC)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,V,ZR:VA;e4ABC1)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,V,ZR:VA;e4ABC2)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,V,ZR:VA;e4ABC3)  2.98150E+02  0.0;
+   6.00000E+03   N !
+
+   PARAMETER G_CVM(BCC_A2,TI,V,ZR:VA;e3AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,V,ZR:VA;e3AC)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,V,ZR:VA;e3BC)  2.98150E+02  -5760.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,V,ZR:VA;e3ABC1)  2.98150E+02  10000.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,V,ZR:VA;e3ABC2)  2.98150E+02  10000.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,V,ZR:VA;e3ABC3)  2.98150E+02  10000.0;
+   6.00000E+03   N !
+
+   PARAMETER G_CVM(BCC_A2,TI,V,ZR:VA;e2AB2)  2.98150E+02  4080.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,V,ZR:VA;e2AC2)  2.98150E+02  -4632.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,V,ZR:VA;e2BC2)  2.98150E+02  8960.0+1.272*T;
+   6.00000E+03   N !
+
+   PARAMETER G_CVM(BCC_A2,TI,V,ZR:VA;e2AB1)  2.98150E+02  8160.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,V,ZR:VA;e2AC1)  2.98150E+02  -9264.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,TI,V,ZR:VA;e2BC1)  2.98150E+02  17920.0+2.544*T;
+   6.00000E+03   N !
+
+$  --- Full quaternary Nb-Ti-V-Zr G_CVM CECs, query order [NB,TI,V,ZR]
+$      (A=Nb,B=Ti,C=V,D=Zr) -- Jindal & Lele, CALPHAD 89 (2025) 102825,
+$      Table 17, verbatim (same values already stored, per-CF_n, in
+$      CEWorkbench's data/CEWorkbench/hamiltonians/
+$      Nb-Ti-V-Zr_BCC_A2_T_CVCF/hamiltonian.json). This block's parameter
+$      names are positional to THIS element order, separate from every
+$      binary/ternary block above, so buildCvmFromTdb(db,
+$      [NB,TI,V,ZR], BCC_A2) resolves to exactly this one block. ---
+
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4AC)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4AD)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4BC)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4BD)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4CD)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4ABC1)  2.98150E+02  48800.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4ABC2)  2.98150E+02  -24400.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4ABC3)  2.98150E+02  -24400.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4ABD1)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4ABD2)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4ABD3)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4ACD1)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4ACD2)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4ACD3)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4BCD1)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4BCD2)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4BCD3)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4ABCD1)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4ABCD2)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e4ABCD3)  2.98150E+02  0.0;
+   6.00000E+03   N !
+
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e3AB)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e3AC)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e3AD)  2.98150E+02  -4224.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e3BC)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e3BD)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e3CD)  2.98150E+02  -5760.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e3ABC1)  2.98150E+02  -20000.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e3ABC2)  2.98150E+02  -20000.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e3ABC3)  2.98150E+02  -20000.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e3ABD1)  2.98150E+02  -3333.33;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e3ABD2)  2.98150E+02  -3333.33;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e3ABD3)  2.98150E+02  -3333.33;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e3ACD1)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e3ACD2)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e3ACD3)  2.98150E+02  0.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e3BCD1)  2.98150E+02  10000.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e3BCD2)  2.98150E+02  10000.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e3BCD3)  2.98150E+02  10000.0;
+   6.00000E+03   N !
+
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e2AB2)  2.98150E+02  3120.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e2AC2)  2.98150E+02  7040.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e2AD2)  2.98150E+02  3700.8+3.3216*T;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e2BC2)  2.98150E+02  4080.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e2BD2)  2.98150E+02  -4632.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e2CD2)  2.98150E+02  8960.0+1.272*T;
+   6.00000E+03   N !
+
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e2AB1)  2.98150E+02  6240.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e2AC1)  2.98150E+02  14080.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e2AD1)  2.98150E+02  7401.6+6.6432*T;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e2BC1)  2.98150E+02  8160.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e2BD1)  2.98150E+02  -9264.0;
+   6.00000E+03   N !
+   PARAMETER G_CVM(BCC_A2,NB,TI,V,ZR:VA;e2CD1)  2.98150E+02  17920.0+2.544*T;
+   6.00000E+03   N !
+
+ LIST_OF_REFERENCES
+ NUMBER  SOURCE
+  !

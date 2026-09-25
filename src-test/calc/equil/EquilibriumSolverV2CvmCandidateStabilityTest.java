@@ -68,8 +68,8 @@ class EquilibriumSolverV2CvmCandidateStabilityTest {
         List<CecTerm> cecTerms = List.of(
                 new CecTerm("v4AB", 0.0, 0.0),
                 new CecTerm("v3AB", 120.0, 0.0),
-                new CecTerm("v22AB", -746.7, -0.106),
-                new CecTerm("v21AB", -1120.0, -0.159));
+                new CecTerm("v2AB2", -746.7, -0.106),
+                new CecTerm("v2AB1", -1120.0, -0.159));
 
         ElementGibbs ghserV = UnaryGibbsBuilder.build("V", parser.getUnderlyingTdb());
         ElementGibbs ghserZr = UnaryGibbsBuilder.build("ZR", parser.getUnderlyingTdb());
@@ -154,8 +154,8 @@ class EquilibriumSolverV2CvmCandidateStabilityTest {
         double[][] cfCoeffs = new double[uListLen][uListLen];
         for (int i = 0; i < uListLen; i++) cfCoeffs[i][i] = 1.0;
 
-        String[] u2Names = {"v4AB", "v3AB", "v22AB", "v21AB", "xA", "xB"};
-        String[] eNames = {"v4AB", "v3AB", "v22AB", "v21AB"};
+        String[] u2Names = {"v4AB", "v3AB", "v2AB2", "v2AB1", "xA", "xB"};
+        String[] eNames = {"v4AB", "v3AB", "v2AB2", "v2AB1"};
 
         return new CvmPhaseData(
                 "BCC_A2", nComp, ncf,

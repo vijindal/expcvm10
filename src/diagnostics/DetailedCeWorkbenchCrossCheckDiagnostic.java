@@ -55,8 +55,8 @@ public class DetailedCeWorkbenchCrossCheckDiagnostic {
             System.out.println("CEC values at T=" + T + "K:");
             System.out.println("  cecValues[0] = " + cecValues[0] + " (v4AB)");
             System.out.println("  cecValues[1] = " + cecValues[1] + " (v3AB)");
-            System.out.println("  cecValues[2] = " + cecValues[2] + " (v22AB)");
-            System.out.println("  cecValues[3] = " + cecValues[3] + " (v21AB)");
+            System.out.println("  cecValues[2] = " + cecValues[2] + " (v2AB2)");
+            System.out.println("  cecValues[3] = " + cecValues[3] + " (v2AB1)");
         } catch (Exception e) {
             System.out.println("Could not access CEC values: " + e.getMessage());
         }
@@ -85,8 +85,8 @@ public class DetailedCeWorkbenchCrossCheckDiagnostic {
                 switch (i) {
                     case 0: cfName = "v4AB"; break;
                     case 1: cfName = "v3AB"; break;
-                    case 2: cfName = "v22AB"; break;
-                    case 3: cfName = "v21AB"; break;
+                    case 2: cfName = "v2AB2"; break;
+                    case 3: cfName = "v2AB1"; break;
                 }
                 System.out.println("  y[" + i + "] = " + y[i] + " (" + cfName + ")");
             } else {

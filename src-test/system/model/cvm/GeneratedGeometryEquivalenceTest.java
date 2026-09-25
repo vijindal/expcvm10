@@ -83,13 +83,13 @@ class GeneratedGeometryEquivalenceTest {
 
         double[] x = {0.95, 0.05};
 
-        // Fixture side: u2vals = [v4AB,v3AB,v22AB,v21AB,xA,xB] at random state
+        // Fixture side: u2vals = [v4AB,v3AB,v2AB2,v2AB1,xA,xB] at random state
         double xA = x[0], xB = x[1];
         double v4AB = xA * xA * xB * xB;
         double v3AB = xA * xB * (xB - xA);
-        double v22AB = xA * xB;
-        double v21AB = xA * xB;
-        double[] u2vals = {v4AB, v3AB, v22AB, v21AB, xA, xB};
+        double v2AB2 = xA * xB;
+        double v2AB1 = xA * xB;
+        double[] u2vals = {v4AB, v3AB, v2AB2, v2AB1, xA, xB};
         double[] uFixture = fixture.computeU(u2vals);
 
         double[][][] cvFixture = evaluateFixtureCVs(fixture, uFixture);

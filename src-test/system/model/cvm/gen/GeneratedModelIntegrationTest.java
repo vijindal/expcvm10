@@ -68,8 +68,8 @@ class GeneratedModelIntegrationTest {
         var cecTerms = java.util.List.of(
                 new system.model.cvm.CecTerm("v4AB", 0.0, 0.0),
                 new system.model.cvm.CecTerm("v3AB", 0.0, 0.0),
-                new system.model.cvm.CecTerm("v22AB", 0.0, 0.0),
-                new system.model.cvm.CecTerm("v21AB", 0.0, 0.0)
+                new system.model.cvm.CecTerm("v2AB2", 0.0, 0.0),
+                new system.model.cvm.CecTerm("v2AB1", 0.0, 0.0)
         );
 
         // Create minimal ElementGibbs implementations

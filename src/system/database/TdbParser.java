@@ -3,6 +3,7 @@ package system.database;
 
 import system.database.tdb;
 import system.model.GibbsEnergyModel;
+import system.model.PhaseModelAvailability;
 import system.model.PhaseModelKind;
 import system.ports.DatabasePort;
 
@@ -138,23 +139,48 @@ public class TdbParser implements DatabasePort {
         // Step 3: build a PhaseModel for each requested phase
         for (String phaseName : phaseNames) {
             try {
-                system.model.cef.CefGibbs model =
-                    system.model.PhaseModelFactory.build(
-                        phaseName,
+                PhaseModelKind resolvedKind = kind == PhaseModelKind.AUTO
+                        ? resolveAutoKind(filteredTdb, elements, phaseName)
+                        : kind;
+
+                if (resolvedKind == PhaseModelKind.CVM) {
+                    GibbsEnergyModel model = system.model.PhaseModelFactory.buildCvmFromTdb(
                         filteredTdb,
                         elements,
-                        affMap,
-                        pMap,
-                        kind
+                        phaseName
                     );
-                models.add(model);
-                LOG.fine("Built CEF model: " + phaseName
-                       + (model.hasMagnetic() ? " [MAGNETIC]" : ""));
+                    models.add(model);
+                    LOG.fine("Built CVM model: " + phaseName);
+                } else {
+                    system.model.cef.CefGibbs model =
+                        system.model.PhaseModelFactory.build(
+                            phaseName,
+                            filteredTdb,
+                            elements,
+                            affMap,
+                            pMap,
+                            resolvedKind
+                        );
+                    models.add(model);
+                    LOG.fine("Built CEF model: " + phaseName
+                           + (model.hasMagnetic() ? " [MAGNETIC]" : ""));
+                }
             } catch (Exception ex) {
                 LOG.warning("Skipping phase " + phaseName
                           + ": " + ex.getMessage());
             }
         }
         return models;
+    }
+
+    /** Resolves {@link PhaseModelKind#AUTO} to CEF or CVM for one phase. */
+    private static PhaseModelKind resolveAutoKind(tdb database, List<String> elements, String phaseName) {
+        List<PhaseModelKind> available = PhaseModelAvailability.availableModels(
+                database, new ArrayList<>(elements), phaseName);
+
+        if (available.contains(PhaseModelKind.CEF) || !available.contains(PhaseModelKind.CVM)) {
+            return PhaseModelKind.CEF;
+        }
+        return PhaseModelKind.CVM;
     }
 }

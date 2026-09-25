@@ -23,7 +23,13 @@
       "Bash(git pull:*)",
       "Bash(java -cp build/classes/java/main test.CefBuildTest)",
       "Bash(./gradlew clean:*)",
-      "Bash(gradle test *)"
+      "Bash(gradle test *)",
+      "Bash(gradle clean *)",
+      "Bash(gradle compileTestJava -x compileTestJava)",
+      "Bash(gradle classes *)",
+      "Bash(git status *)",
+      "Bash(timeout 590 ./gradlew clean test)",
+      "Bash(./gradlew test *)"
     ]
   }
 }

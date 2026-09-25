@@ -214,8 +214,34 @@ public final class CvmPhaseData {
      *   v2AB2 = xA*xB
      *   xA    = xA,  xB = xB
      * </pre>
-     * For ternary and quaternary, this method must be overridden by subclasses
-     * or specialised implementations — the polynomial form changes with nComp.
+     * For ternary (BCC_A2 tetrahedron approximation, {@link
+     * system.model.cvm.gen.CvCfBasisGenerator}'s {@code u2List} order --
+     * {@code v4AB,v4AC,v4BC,v4ABC1,v4ABC2,v4ABC3, v3AB,v3AC,v3BC,
+     * v3ABC1,v3ABC2,v3ABC3, v2AB2,v2AC2,v2BC2, v2AB1,v2AC1,v2BC1,
+     * xA,xB,xC}), matched by {@link #u2ListNames} rather than assumed
+     * position, in the disordered/random state every one of the
+     * tetrahedron's 4 logical sites has the same occupation probability
+     * {@code x[element]} regardless of which site it is (CEWorkbench's
+     * {@code p[1..4][A/B/C] -> XA/XB/XC} substitution), so each
+     * correlation function reduces to a plain product/difference of
+     * bulk mole fractions:
+     * <pre>
+     *   v4AB   = XA^2*XB^2         v4AC   = XA^2*XC^2         v4BC = XB^2*XC^2
+     *   v4ABC1 = XA^2*XB*XC        v4ABC2 = XA*XB^2*XC        v4ABC3 = XA*XB*XC^2
+     *   v3AB   = XA*XB*(XB-XA)     v3AC   = XA*XC*(XC-XA)     v3BC = XB*XC*(XC-XB)
+     *   v3ABC1 = v3ABC2 = v3ABC3 = XA*XB*XC   (all three ternary-triangle
+     *            CFs collapse to the same product once every site has
+     *            the same occupation probability -- see the source
+     *            derivation this is transcribed from)
+     *   v2AB2 = v2AB1 = XA*XB      v2AC2 = v2AC1 = XA*XC      v2BC2 = v2BC1 = XB*XC
+     *   xA = XA, xB = XB, xC = XC
+     * </pre>
+     * Verbatim transcription of the CVCF-basis {@code uRandRules} for the
+     * ternary BCC_A2/T tetrahedron approximation (task's own Mathematica
+     * derivation), not a new/independently-derived formula.
+     *
+     * <p>Quaternary and higher must still be overridden by a subclass or
+     * specialised implementation.
      *
      * @param x  bulk mole fractions x[0..nComp-1]
      * @return   initial u2vals array of length nip
@@ -230,10 +256,51 @@ public final class CvmPhaseData {
             u2[3] = xA * xB;                     // v2AB2
             u2[4] = xA;                           // xA
             u2[5] = xB;                           // xB
+        } else if (nComp == 3) {
+            double xA = x[0], xB = x[1], xC = x[2];
+
+            java.util.Map<String, Double> byName = new java.util.HashMap<>();
+            byName.put("v4AB", xA * xA * xB * xB);
+            byName.put("v4AC", xA * xA * xC * xC);
+            byName.put("v4BC", xB * xB * xC * xC);
+            byName.put("v4ABC1", xA * xA * xB * xC);
+            byName.put("v4ABC2", xA * xB * xB * xC);
+            byName.put("v4ABC3", xA * xB * xC * xC);
+
+            byName.put("v3AB", xA * xB * (xB - xA));
+            byName.put("v3AC", xA * xC * (xC - xA));
+            byName.put("v3BC", xB * xC * (xC - xB));
+            double vABC = xA * xB * xC;
+            byName.put("v3ABC1", vABC);
+            byName.put("v3ABC2", vABC);
+            byName.put("v3ABC3", vABC);
+
+            byName.put("v2AB2", xA * xB);
+            byName.put("v2AC2", xA * xC);
+            byName.put("v2BC2", xB * xC);
+            byName.put("v2AB1", xA * xB);
+            byName.put("v2AC1", xA * xC);
+            byName.put("v2BC1", xB * xC);
+
+            byName.put("xA", xA);
+            byName.put("xB", xB);
+            byName.put("xC", xC);
+
+            for (int i = 0; i < nip; i++) {
+                String name = u2ListNames[i];
+                Double value = byName.get(name);
+                if (value == null) {
+                    throw new IllegalStateException(
+                            "evalRandApprox(nComp=3) has no random-approximation "
+                            + "formula for correlation function '" + name
+                            + "' -- expected one of " + byName.keySet());
+                }
+                u2[i] = value;
+            }
         } else {
-            // For nComp > 2: generalised random approximation
+            // For nComp > 3: generalised random approximation
             // v_{cluster} = product of x[i] for each site in the cluster
-            // (details depend on cluster type — handled by subclass or specialised parser)
+            // (details depend on cluster type -- handled by subclass or specialised parser)
             throw new UnsupportedOperationException(
                     "evalRandApprox for nComp=" + nComp + " must be provided by subclass");
         }

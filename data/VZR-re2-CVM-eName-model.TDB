@@ -67,11 +67,13 @@ $
 
  $ -------------------------------------------------------------------------
  $ expcvm10 CVM extension: V-Zr / BCC_A2 / T approximation
- $ CEC identifiers follow the CEWorkbench naming convention:
+ $ CEC identifiers follow this repo's naming convention ("e/v" + site
+ $ count + element combination + pair-type index, e.g. e2AB2 for the
+ $ 2-site, II-neighbor A-B pair):
  $   e4AB   -> CF_0 (v4AB, tetrahedron)
  $   e3AB   -> CF_1 (v3AB, triangle)
- $   e22AB  -> CF_2 (v22AB, II-neighbor pair)
- $   e21AB  -> CF_3 (v21AB, I-neighbor pair)
+ $   e2AB2  -> CF_2 (v2AB2, II-neighbor pair)
+ $   e2AB1  -> CF_3 (v2AB1, I-neighbor pair)
  $ Values from CEWorkbench V-Zr_BCC_A2_T Hamiltonian.
  $ -------------------------------------------------------------------------
 
@@ -79,9 +81,9 @@ $
    6.00000E+03   N !
    PARAMETER G_CVM(BCC_A2,V,ZR:VA;e3AB)  2.98150E+02  120.0;
    6.00000E+03   N !
-   PARAMETER G_CVM(BCC_A2,V,ZR:VA;e22AB)  2.98150E+02  -1120.0-0.159*T;
+   PARAMETER G_CVM(BCC_A2,V,ZR:VA;e2AB2)  2.98150E+02  -1120.0-0.159*T;
    6.00000E+03   N !
-   PARAMETER G_CVM(BCC_A2,V,ZR:VA;e21AB)  2.98150E+02  -746.7-0.106*T;
+   PARAMETER G_CVM(BCC_A2,V,ZR:VA;e2AB1)  2.98150E+02  -746.7-0.106*T;
    6.00000E+03   N !
 
   TYPE_DEFINITION ) GES A_P_D HCP_A3 MAGNETIC  -3.0    2.80000E-01 !

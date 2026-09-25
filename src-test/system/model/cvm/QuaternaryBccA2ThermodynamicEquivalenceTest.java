@@ -49,7 +49,7 @@ class QuaternaryBccA2ThermodynamicEquivalenceTest {
 
     /**
      * Converged equilibrium CVCF values from CEWorkbench's JSON API response
-     * at this (T, x), in {@code geo.basis.cfNames} order (v4AB..v21CD, 51
+     * at this (T, x), in {@code geo.basis.cfNames} order (v4AB..v2CD1, 51
      * entries) -- see class javadoc for the exact request.
      */
     private static final double[] CONVERGED_CFS = {

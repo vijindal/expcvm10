@@ -69,8 +69,8 @@ public final class CvCfBasisGenerator {
             names.add("v3AB");
 
             // Pairs
-            names.add("v22AB"); // II-n
-            names.add("v21AB"); // I-n
+            names.add("v2AB2"); // II-n
+            names.add("v2AB1"); // I-n
 
             // Points
             names.add("xA");
@@ -93,12 +93,12 @@ public final class CvCfBasisGenerator {
             names.add("v3ABC3");
 
             // Pairs: 3 II-n + 3 I-n (each binary pair)
-            names.add("v22AB");
-            names.add("v22AC");
-            names.add("v22BC");
-            names.add("v21AB");
-            names.add("v21AC");
-            names.add("v21BC");
+            names.add("v2AB2");
+            names.add("v2AC2");
+            names.add("v2BC2");
+            names.add("v2AB1");
+            names.add("v2AC1");
+            names.add("v2BC1");
 
             // Points
             names.add("xA");
@@ -138,18 +138,18 @@ public final class CvCfBasisGenerator {
             names.add("v3BCD3");
 
             // Pairs: 6 II-n (p1,p4) + 6 I-n (p1,p2)
-            names.add("v22AB");
-            names.add("v22AC");
-            names.add("v22AD");
-            names.add("v22BC");
-            names.add("v22BD");
-            names.add("v22CD");
-            names.add("v21AB");
-            names.add("v21AC");
-            names.add("v21AD");
-            names.add("v21BC");
-            names.add("v21BD");
-            names.add("v21CD");
+            names.add("v2AB2");
+            names.add("v2AC2");
+            names.add("v2AD2");
+            names.add("v2BC2");
+            names.add("v2BD2");
+            names.add("v2CD2");
+            names.add("v2AB1");
+            names.add("v2AC1");
+            names.add("v2AD1");
+            names.add("v2BC1");
+            names.add("v2BD1");
+            names.add("v2CD1");
 
             // Points
             names.add("xA");
@@ -186,8 +186,8 @@ public final class CvCfBasisGenerator {
                     new int[] { 1, 1, 2, 0, 3, 0 })); // v3AB
 
             // Pairs
-            vspecs.add(VSpec.product(1, 0, 4, 1)); // v22AB
-            vspecs.add(VSpec.product(1, 0, 2, 1)); // v21AB
+            vspecs.add(VSpec.product(1, 0, 4, 1)); // v2AB2
+            vspecs.add(VSpec.product(1, 0, 2, 1)); // v2AB1
 
             // Points
             vspecs.add(VSpec.point(1, 0)); // xA
@@ -210,12 +210,12 @@ public final class CvCfBasisGenerator {
             vspecs.add(VSpec.product(1, 0, 2, 1, 3, 2)); // v3ABC3
 
             // Pairs
-            vspecs.add(VSpec.product(1, 0, 4, 1)); // v22AB
-            vspecs.add(VSpec.product(1, 0, 4, 2)); // v22AC
-            vspecs.add(VSpec.product(1, 1, 4, 2)); // v22BC
-            vspecs.add(VSpec.product(1, 0, 2, 1)); // v21AB
-            vspecs.add(VSpec.product(1, 0, 2, 2)); // v21AC
-            vspecs.add(VSpec.product(1, 1, 2, 2)); // v21BC
+            vspecs.add(VSpec.product(1, 0, 4, 1)); // v2AB2
+            vspecs.add(VSpec.product(1, 0, 4, 2)); // v2AC2
+            vspecs.add(VSpec.product(1, 1, 4, 2)); // v2BC2
+            vspecs.add(VSpec.product(1, 0, 2, 1)); // v2AB1
+            vspecs.add(VSpec.product(1, 0, 2, 2)); // v2AC1
+            vspecs.add(VSpec.product(1, 1, 2, 2)); // v2BC1
 
             // Points
             vspecs.add(VSpec.point(1, 0)); // xA
@@ -259,20 +259,20 @@ public final class CvCfBasisGenerator {
             vspecs.add(VSpec.product(1, 1, 2, 3, 4, 2)); // v3BCD3
 
             // Pairs: 6 II-n (p1,p4)
-            vspecs.add(VSpec.product(1, 0, 4, 1)); // v22AB
-            vspecs.add(VSpec.product(1, 0, 4, 2)); // v22AC
-            vspecs.add(VSpec.product(1, 0, 4, 3)); // v22AD
-            vspecs.add(VSpec.product(1, 1, 4, 2)); // v22BC
-            vspecs.add(VSpec.product(1, 1, 4, 3)); // v22BD
-            vspecs.add(VSpec.product(1, 2, 4, 3)); // v22CD
+            vspecs.add(VSpec.product(1, 0, 4, 1)); // v2AB2
+            vspecs.add(VSpec.product(1, 0, 4, 2)); // v2AC2
+            vspecs.add(VSpec.product(1, 0, 4, 3)); // v2AD2
+            vspecs.add(VSpec.product(1, 1, 4, 2)); // v2BC2
+            vspecs.add(VSpec.product(1, 1, 4, 3)); // v2BD2
+            vspecs.add(VSpec.product(1, 2, 4, 3)); // v2CD2
 
             // Pairs: 6 I-n (p1,p2)
-            vspecs.add(VSpec.product(1, 0, 2, 1)); // v21AB
-            vspecs.add(VSpec.product(1, 0, 2, 2)); // v21AC
-            vspecs.add(VSpec.product(1, 0, 2, 3)); // v21AD
-            vspecs.add(VSpec.product(1, 1, 2, 2)); // v21BC
-            vspecs.add(VSpec.product(1, 1, 2, 3)); // v21BD
-            vspecs.add(VSpec.product(1, 2, 2, 3)); // v21CD
+            vspecs.add(VSpec.product(1, 0, 2, 1)); // v2AB1
+            vspecs.add(VSpec.product(1, 0, 2, 2)); // v2AC1
+            vspecs.add(VSpec.product(1, 0, 2, 3)); // v2AD1
+            vspecs.add(VSpec.product(1, 1, 2, 2)); // v2BC1
+            vspecs.add(VSpec.product(1, 1, 2, 3)); // v2BD1
+            vspecs.add(VSpec.product(1, 2, 2, 3)); // v2CD1
 
             // Points
             vspecs.add(VSpec.point(1, 0)); // xA

@@ -17,21 +17,19 @@ package system.model.cvm;
  * <pre>
  *   index 0: v4AB   (tetrahedron non-point CVCF)
  *   index 1: v3AB   (triangle non-point CVCF)
- *   index 2: v22AB  (2nd-nearest-neighbour pair non-point CVCF)
- *   index 3: v21AB  (1st-nearest-neighbour pair non-point CVCF)
+ *   index 2: v2AB2  (2nd-nearest-neighbour pair non-point CVCF)
+ *   index 3: v2AB1  (1st-nearest-neighbour pair non-point CVCF)
  *   index 4: xA
  *   index 5: xB
  * </pre>
- * This is CEWorkbench's own {@code cfNames} order, kept unchanged here
- * (rather than renumbered to {@code CvmPhaseData}'s own javadoc example,
- * which names the same two pair CVCFs {@code v2AB1}/{@code v2AB2} without
- * fixing which is 1NN and which is 2NN) specifically so the numeric cmat
- * below needs no reordering and cannot be silently transposed between the
- * two neighbour shells -- see the task's note that {@code v2AB1}/{@code
- * v2AB2} must not be assumed to map to "first/second neighbour" without
- * confirmation from source data. Here the source data names the shells
- * explicitly, so this fixture uses {@code v21AB}/{@code v22AB} rather than
- * the ambiguous {@code v2AB1}/{@code v2AB2}.
+ * This is CEWorkbench's own {@code cfNames} order, kept unchanged here.
+ * The pair CVCF names follow this project's fixed convention -- {@code
+ * "e/v" + site count + element combination + pair-type index} -- with
+ * the type index disambiguated directly against the cluster-type table
+ * below: {@code v2AB2} (index=2) is the 2nd-nearest-neighbour pair
+ * ({@code t=2}), {@code v2AB1} (index=1) is the 1st-nearest-neighbour
+ * pair ({@code t=3}). This mapping is confirmed from source data (see
+ * below), not merely assumed from the index/type-digit correspondence.
  *
  * <h2>Cluster types (tcdis = 5)</h2>
  * <pre>
@@ -49,8 +47,8 @@ final class CvmBinaryBccFixture {
 
     private CvmBinaryBccFixture() {}
 
-    static final String[] U2_NAMES = {"v4AB", "v3AB", "v22AB", "v21AB", "xA", "xB"};
-    static final String[] E_NAMES  = {"v4AB", "v3AB", "v22AB", "v21AB"};
+    static final String[] U2_NAMES = {"v4AB", "v3AB", "v2AB2", "v2AB1", "xA", "xB"};
+    static final String[] E_NAMES  = {"v4AB", "v3AB", "v2AB2", "v2AB1"};
 
     static CvmPhaseData build() {
         int nComp = 2;

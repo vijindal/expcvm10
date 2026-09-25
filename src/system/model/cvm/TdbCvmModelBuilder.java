@@ -107,7 +107,7 @@ public final class TdbCvmModelBuilder {
 
     /**
      * Remaps TDB energy names (e...) to CVM variable names (v...).
-     * E.g.: e4AB → v4AB, e3AB → v3AB, e22AB → v22AB, e21AB → v21AB.
+     * E.g.: e4AB → v4AB, e3AB → v3AB, e2AB2 → v2AB2, e2AB1 → v2AB1.
      */
     private static List<CecTerm> remapCecTermNames(List<CecTerm> cecTerms) {
         List<CecTerm> remapped = new ArrayList<>();

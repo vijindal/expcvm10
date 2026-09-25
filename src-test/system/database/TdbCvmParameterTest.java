@@ -66,7 +66,7 @@ class TdbCvmParameterTest {
         ArrayList<String> elements = new ArrayList<>(Arrays.asList("V", "ZR"));
         ArrayList<tdb.Parameter> cvmParams = database.getCvmParams(elements, "BCC_A2");
 
-        String[] expectedIds = {"e4AB", "e3AB", "e22AB", "e21AB"};
+        String[] expectedIds = {"e4AB", "e3AB", "e2AB2", "e2AB1"};
         assertEquals(expectedIds.length, cvmParams.size(),
                 "Expected " + expectedIds.length + " CVM parameters, got " + cvmParams.size());
 
@@ -149,8 +149,8 @@ class TdbCvmParameterTest {
         double[][] expectedCoeffs = {
                 {0.0, 0.0},        // e4AB
                 {120.0, 0.0},      // e3AB
-                {-1120.0, -0.159}, // e22AB
-                {-746.7, -0.106}   // e21AB
+                {-1120.0, -0.159}, // e2AB2
+                {-746.7, -0.106}   // e2AB1
         };
 
         assertEquals(expectedCoeffs.length, cvmParams.size(),
@@ -183,7 +183,7 @@ class TdbCvmParameterTest {
         List<CecTerm> cecTerms = TdbCvmParameterConverter.toCecTerms(database, cvmParamsForConverter);
 
         // Verify size and order
-        String[] expectedNames = {"e4AB", "e3AB", "e22AB", "e21AB"};
+        String[] expectedNames = {"e4AB", "e3AB", "e2AB2", "e2AB1"};
         double[][] expectedCoefficients = {
                 {0.0, 0.0},
                 {120.0, 0.0},

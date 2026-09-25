@@ -80,8 +80,8 @@ public class MixingGibbsValidationDiagnostic {
             System.out.println("  CF values:");
             System.out.println("    v4AB  = " + CF_values[i][0]);
             System.out.println("    v3AB  = " + CF_values[i][1]);
-            System.out.println("    v22AB = " + CF_values[i][2]);
-            System.out.println("    v21AB = " + CF_values[i][3]);
+            System.out.println("    v2AB2 = " + CF_values[i][2]);
+            System.out.println("    v2AB1 = " + CF_values[i][3]);
 
             // Verify composition round-trip
             double[] xOut = cvmModel.compositionFromInternal(y);
@@ -115,8 +115,8 @@ public class MixingGibbsValidationDiagnostic {
 
         System.out.println("v4AB  = " + CF_values[0][0]);
         System.out.println("v3AB  = " + CF_values[0][1]);
-        System.out.println("v22AB = " + CF_values[0][2]);
-        System.out.println("v21AB = " + CF_values[0][3]);
+        System.out.println("v2AB2 = " + CF_values[0][2]);
+        System.out.println("v2AB1 = " + CF_values[0][3]);
 
         // Comparison with CEWorkbench (from previous run)
         System.out.println("\n" + "═".repeat(63));
@@ -138,7 +138,7 @@ public class MixingGibbsValidationDiagnostic {
                 0.242970062283239,
                 0.2414510277422925
         };
-        String[] cfNames = {"v4AB", "v3AB", "v22AB", "v21AB"};
+        String[] cfNames = {"v4AB", "v3AB", "v2AB2", "v2AB1"};
 
         System.out.println("\nCorrelation Functions at x(V)=0.6, x(Zr)=0.4:");
         System.out.println();

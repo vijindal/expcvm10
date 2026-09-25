@@ -51,8 +51,8 @@ class CvmGibbsModelTest {
         return List.of(
                 new CecTerm("v4AB", 100.0, 0.0),
                 new CecTerm("v3AB", -50.0, 0.01),
-                new CecTerm("v22AB", 200.0, -0.02),
-                new CecTerm("v21AB", -300.0, 0.05));
+                new CecTerm("v2AB2", 200.0, -0.02),
+                new CecTerm("v2AB1", -300.0, 0.05));
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -110,8 +110,8 @@ class CvmGibbsModelTest {
         // random-state values (matches evalRandApprox / CEWorkbench dump).
         assertEquals(0.0625, y[0], 1e-12); // v4AB = xA^2*xB^2
         assertEquals(0.0, y[1], 1e-12);    // v3AB
-        assertEquals(0.25, y[2], 1e-12);   // v22AB = xA*xB
-        assertEquals(0.25, y[3], 1e-12);   // v21AB = xA*xB
+        assertEquals(0.25, y[2], 1e-12);   // v2AB2 = xA*xB
+        assertEquals(0.25, y[3], 1e-12);   // v2AB1 = xA*xB
 
         // Cluster probabilities derived from cmat.u must be physically valid.
         double[] u = model.phaseData().computeU(y);
@@ -192,7 +192,7 @@ class CvmGibbsModelTest {
      * The ordering/mapping ambiguity flagged in the task (which of
      * {@code v2AB1}/{@code v2AB2} is 1NN vs 2NN) is resolved here by using
      * CEWorkbench's own explicit shell-named columns
-     * ({@code v21AB}=1NN, {@code v22AB}=2NN) directly, rather than guessing.
+     * ({@code v2AB1}=1NN, {@code v2AB2}=2NN) directly, rather than guessing.
      *
      * <p>Reference values captured from a one-off run of CEWorkbench's
      * {@code CVMGibbsModel.State} at T=1000K, x=(0.6,0.4), u = 0.8 *
@@ -212,7 +212,7 @@ class CvmGibbsModelTest {
 
         double T = 1000.0;
         double[] x = {0.6, 0.4};
-        double[] uRandom = model.phaseData().evalRandApprox(x); // [v4,v3,v22,v21,xA,xB]
+        double[] uRandom = model.phaseData().evalRandApprox(x); // [v4,v3,v2AB2,v2AB1,xA,xB]
         double[] y = new double[6];
         for (int i = 0; i < 4; i++) y[i] = uRandom[i] * 0.8;
         y[4] = x[0];
@@ -352,7 +352,7 @@ class CvmGibbsModelTest {
         List<CecTerm> incomplete = List.of(
                 new CecTerm("v4AB", 1.0, 0.0),
                 new CecTerm("v3AB", 1.0, 0.0),
-                new CecTerm("v22AB", 1.0, 0.0));
+                new CecTerm("v2AB2", 1.0, 0.0));
         assertThrows(IllegalArgumentException.class, () -> new CecEvaluator(data, incomplete));
     }
 
@@ -362,8 +362,8 @@ class CvmGibbsModelTest {
         List<CecTerm> extra = List.of(
                 new CecTerm("v4AB", 1.0, 0.0),
                 new CecTerm("v3AB", 1.0, 0.0),
-                new CecTerm("v22AB", 1.0, 0.0),
-                new CecTerm("v21AB", 1.0, 0.0),
+                new CecTerm("v2AB2", 1.0, 0.0),
+                new CecTerm("v2AB1", 1.0, 0.0),
                 new CecTerm("bogus", 1.0, 0.0));
         assertThrows(IllegalArgumentException.class, () -> new CecEvaluator(data, extra));
     }

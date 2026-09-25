@@ -251,12 +251,26 @@ public class tdb {
      * <p>Filters parameters by:
      * <ol>
      *   <li>Phase name match</li>
-     *   <li>Element/constituent overlap with the requested element set</li>
+     *   <li>Constituent element set EXACTLY EQUAL to the requested element
+     *       set (ignoring {@code VA}) -- not merely a subset, unlike
+     *       {@link Phase#getParam(ArrayList)}'s own filter (used elsewhere
+     *       for ordinary {@code G}/{@code L} parameters, where a
+     *       lower-order binary parameter legitimately contributes to a
+     *       higher-order system and a subset match is correct). A single
+     *       TDB file commonly stores one {@code G_CVM} block per distinct
+     *       element-order query (one binary block per pair, a ternary
+     *       block, a quaternary block, ...), each independently valid;
+     *       CVM's positional CEC naming (see
+     *       {@link system.model.cvm.gen.CvCfBasisGenerator}) requires
+     *       selecting EXACTLY the one block matching the query's element
+     *       set, since {@link system.model.cvm.CecEvaluator} rejects any
+     *       extra or duplicate name. Without this exact-match restriction,
+     *       a ternary or quaternary query would also incorrectly pull in
+     *       every binary sub-block whose elements happen to be a subset,
+     *       producing duplicate/extra CEC names instead of the intended
+     *       block.</li>
      *   <li>Parameter type = "G_CVM"</li>
      * </ol>
-     *
-     * <p>Reuses the existing constituent filtering logic from {@link Phase#getParam(ArrayList)},
-     * then applies type filtering.
      *
      * @param inputElementList  the system element set (e.g., ["V", "ZR"])
      * @param inputPhaseName    the phase name (e.g., "BCC_A2")
@@ -268,13 +282,15 @@ public class tdb {
         // Find the requested phase
         for (Phase p : phaseList) {
             if (p.getPhaseName() == null ? inputPhaseName == null : p.getPhaseName().equals(inputPhaseName)) {
-                // Get all parameters for this phase/element set (applies constituent filtering)
-                ArrayList<Parameter> allParams = p.getParam(inputElementList);
 
-                // Filter by parameter type: keep only G_CVM
-                for (Parameter param : allParams) {
+                for (Parameter param : p.paramList) {
+
                     String type = param.getType();
-                    if (type != null && type.trim().equalsIgnoreCase("G_CVM")) {
+                    if (type == null || !type.trim().equalsIgnoreCase("G_CVM")) {
+                        continue;
+                    }
+
+                    if (constituentElementsMatchExactly(param.constituentList, inputElementList)) {
                         cvmParamList.add(param);
                     }
                 }
@@ -283,6 +299,30 @@ public class tdb {
         }
 
         return cvmParamList;
+    }
+
+    /**
+     * True if the element set named across every sublattice row of {@code
+     * constituentList} (ignoring {@code VA}) is EXACTLY {@code
+     * elementList} -- same elements, regardless of order or duplicate
+     * mentions across rows, neither a subset nor a superset.
+     */
+    private static boolean constituentElementsMatchExactly(
+            ArrayList<ArrayList<String>> constituentList,
+            ArrayList<String> elementList) {
+
+        java.util.LinkedHashSet<String> present = new java.util.LinkedHashSet<>();
+        for (ArrayList<String> row : constituentList) {
+            for (String item : row) {
+                if (!"VA".equals(item)) {
+                    present.add(item);
+                }
+            }
+        }
+
+        java.util.LinkedHashSet<String> requested = new java.util.LinkedHashSet<>(elementList);
+
+        return present.equals(requested);
     }
 
     /**

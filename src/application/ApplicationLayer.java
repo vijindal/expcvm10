@@ -44,13 +44,14 @@ public final class ApplicationLayer {
     private PhaseDiagramResult currentPhaseDiagram;
 
     /**
-     * Owned separately from {@link #currentSystem}: browsing a database's
-     * elements/phases does not require building a {@link ThermodynamicSystem}
-     * (no {@code GibbsEnergyModel[]} construction), so this is a lighter,
-     * independent path. Reused across browse calls the same way
-     * {@link TdbParser#load} itself caches by file path -- calling
-     * {@link #availableElements}/{@link #availablePhasesFor} repeatedly
-     * with the same {@code tdbFilePath} does not re-parse the file.
+     * The one parsed database for the currently selected {@code
+     * tdbFilePath}: browsing (elements/phases) and building the {@link
+     * ThermodynamicSystem} both read from this same instance, so a
+     * {@link #setModel} call never parses the file twice. Reused across
+     * calls the same way {@link TdbParser#load} itself caches by file path
+     * -- calling {@link #availableElements}/{@link #availablePhasesFor}/
+     * {@link #setModel} repeatedly with the same {@code tdbFilePath} does
+     * not re-parse it.
      */
     private final DatabasePort browseDatabase = new TdbParser();
 
@@ -134,8 +135,11 @@ public final class ApplicationLayer {
                     + "phases from: " + validPhases);
         }
 
+        // browseDatabase is already loaded on tdbFilePath by the
+        // availableElements/availablePhasesFor validation calls above --
+        // reuse that same parsed database rather than parsing it again.
         this.currentSystem =
-                ThermodynamicSystem.build(tdbFilePath, elements, phases, modelKind);
+                ThermodynamicSystem.build(browseDatabase, elements, phases, modelKind);
         this.currentKey = requested;
         this.currentEquilibriumResult = null;
         this.currentInitialState = null;

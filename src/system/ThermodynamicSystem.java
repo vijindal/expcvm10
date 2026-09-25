@@ -51,8 +51,7 @@ public final class ThermodynamicSystem {
      * @param elements    ordered element symbols (defines component indices)
      * @param phases      phase names to build models for
      * @param kind        which Gibbs-energy model to use per phase; see
-     *                    {@link PhaseModelKind}. {@code AUTO}/{@code CEF}
-     *                    build {@code CefGibbs} for every phase.
+     *                    {@link PhaseModelKind}.
      * @return an immutable, ready-to-use thermodynamic system
      * @throws IOException if the TDB file cannot be loaded
      * @throws IllegalStateException if no phase models could be built
@@ -63,9 +62,33 @@ public final class ThermodynamicSystem {
                                              PhaseModelKind kind) throws IOException {
         DatabasePort parser = new system.database.TdbParser();
         parser.load(tdbFilePath);
+        return build(parser, elements, phases, kind);
+    }
 
+    /**
+     * Builds a thermodynamic system from an already-loaded {@link
+     * DatabasePort} (e.g. one a caller is also using to browse
+     * elements/phases), instead of loading {@code tdbFilePath} again.
+     *
+     * <p>{@code database} must already have {@link DatabasePort#load} called
+     * on it; this method only extracts the requested element subset and
+     * builds phase models -- it never re-parses the underlying file.
+     *
+     * @param database  an already-loaded database
+     * @param elements  ordered element symbols (defines component indices)
+     * @param phases    phase names to build models for
+     * @param kind      which Gibbs-energy model to use per phase; see
+     *                  {@link PhaseModelKind}.
+     * @return an immutable, ready-to-use thermodynamic system
+     * @throws IOException if extracting the element subset fails
+     * @throws IllegalStateException if no phase models could be built
+     */
+    public static ThermodynamicSystem build(DatabasePort database,
+                                             List<String> elements,
+                                             List<String> phases,
+                                             PhaseModelKind kind) throws IOException {
         String[] elemArray = elements.toArray(new String[0]);
-        DatabasePort system = parser.extractSystem(elemArray);
+        DatabasePort system = database.extractSystem(elemArray);
 
         List<GibbsEnergyModel> models = new ArrayList<>(
                 system.buildPhaseModels(elements, phases, kind));

@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import system.model.GibbsEnergyModel;
+import system.model.InternalConstraintSet;
 import system.model.PhaseEquilData;
 import system.model.cef.CefGibbs;
 import system.model.cef.CefInternalStateSampler;
@@ -78,6 +79,23 @@ public class EquilibriumSolverV2 {
     /** Chemical potentials of system components. */
     private double[] mu;
 
+    /**
+     * Caller-prescribed starting constitutions for boundary/ZPF phases,
+     * by phase name -- OpenCalphad's {@code set_constitution}/{@code
+     * ycond} pattern (see {@code src/minimizer/matsmin.F90}: a condition
+     * on a phase's constituent fractions skips the global gridminimizer
+     * entirely, {@code if(ycond) goto 110}). When {@link #addNewStableSlot}
+     * needs a starting {@code y} for a newly-appearing phase and this map
+     * has an entry for that phase's name, that prescribed {@code y} is
+     * used directly and {@link #bestSeedConstitution}'s driving-force
+     * search (CEF site-fraction sampling, or the CVM composition scan +
+     * per-point relaxation -- expensive: one nested Newton solve per
+     * sampled composition) is skipped entirely. Populated only via
+     * {@link #setPrescribedBoundaryConstitution}; {@code null}/absent by
+     * default, preserving today's automatic-search behavior.
+     */
+    private Map<String, double[]> prescribedBoundaryConstitutions;
+
     /** Amount of each stable phase in formula units. */
     private double[] phaseAmounts;
 
@@ -108,6 +126,14 @@ public class EquilibriumSolverV2 {
      * pycalphad's COMP_DIFFERENCE_TOL (constants.py:11).
      */
     private static final double ADD_COMP_DIFFERENCE_TOL = 1.0e-4;
+
+    /**
+     * Coarse composition-sampling density for {@link
+     * #bestCvmSeedConstitution}'s automatic CVM boundary-seed search only
+     * -- deliberately separate from {@link GridMinimizer}'s own {@code
+     * PDENS=2000}, which is unaffected.
+     */
+    private static final int CVM_BOUNDARY_SEED_PDENS = 50;
 
     /**
      * Composition-coincidence tolerance (Chebyshev distance in overall
@@ -379,6 +405,59 @@ public class EquilibriumSolverV2 {
                         stablePhases.clone(),
                         initialY.clone(),
                         initialAmounts.clone());
+    }
+
+    /**
+     * Prescribes a known starting constitution {@code y} for a phase that
+     * {@link #addNewStableSlot} may need to introduce during a boundary/
+     * ZPF solve ({@link #solveBoundary}/{@link #solveBoundaryReleasingT}/
+     * {@link #solveBoundaryReleasingP}), bypassing {@link
+     * #bestSeedConstitution}'s automatic driving-force search for that
+     * phase entirely.
+     *
+     * <p>Mirrors OpenCalphad's {@code set_constitution}/{@code ycond}
+     * pattern ({@code src/minimizer/matsmin.F90}: fixing a phase's own
+     * constituent fractions as a condition skips the global gridminimizer
+     * -- {@code if(ycond) goto 110}, no grid search is run when the
+     * caller already knows the starting point). The automatic search
+     * (CEF site-fraction sampling, or the CVM composition scan with one
+     * nested Newton solve per sampled point) exists specifically for the
+     * case where the caller does NOT already know a usable starting
+     * constitution; when they do, skipping it is both faster and exact,
+     * not merely an approximation of the same result.
+     *
+     * <p>Has no effect on phases already present in the seed {@link
+     * EquilibriumResult} passed to a {@code solveBoundary*} call (those
+     * are always seeded from the prior converged result, never from this
+     * map or from {@link #bestSeedConstitution}) -- only on a phase
+     * {@code addNewStableSlot} must introduce fresh.
+     *
+     * @param phaseName the candidate phase's name (matched against
+     *                  {@link GibbsEnergyModel#phaseName()}, same as
+     *                  {@code fixedPhaseName} in {@code solveBoundary*})
+     * @param y         the prescribed starting constitution; must already
+     *                  satisfy {@code model.isValid(y)} for that phase's
+     *                  model -- not re-validated or re-relaxed here, used
+     *                  exactly as given (the caller is asserting they
+     *                  already know a physically admissible starting
+     *                  point, the same trust {@code setInitialState}
+     *                  extends to its own caller-supplied {@code y}
+     *                  arrays)
+     */
+    public void setPrescribedBoundaryConstitution(String phaseName, double[] y) {
+
+        if (phaseName == null || phaseName.isBlank()) {
+            throw new IllegalArgumentException("phaseName must not be blank.");
+        }
+        if (y == null) {
+            throw new IllegalArgumentException("y must not be null.");
+        }
+
+        if (prescribedBoundaryConstitutions == null) {
+            prescribedBoundaryConstitutions = new HashMap<>();
+        }
+
+        prescribedBoundaryConstitutions.put(phaseName, y.clone());
     }
 
     /**
@@ -1165,6 +1244,11 @@ public class EquilibriumSolverV2 {
      * force continuously along the walk rather than cold-seeding it
      * only after the crossing is detected.
      *
+     * <p>Skipped entirely when the caller has prescribed a starting
+     * constitution for this phase via {@link
+     * #setPrescribedBoundaryConstitution} -- see that method's javadoc
+     * (OpenCalphad's {@code ycond}/{@code set_constitution} pattern).
+     *
      * @return the new slot's index into {@link #stablePhases}/{@link
      *         #phaseAmounts}/{@link #stableSlots}
      */
@@ -1189,7 +1273,14 @@ public class EquilibriumSolverV2 {
 
         GibbsEnergyModel model = candidates.get(candidateIndex);
         PhaseWork newWork = new PhaseWork(model);
-        newWork.y = bestSeedConstitution(model);
+
+        double[] prescribed = (prescribedBoundaryConstitutions != null)
+                ? prescribedBoundaryConstitutions.get(phaseName)
+                : null;
+
+        newWork.y = (prescribed != null)
+                ? prescribed.clone()
+                : bestSeedConstitution(model);
         evaluatePhaseWork(newWork);
 
         int newSlotCount = stablePhases.length + 1;
@@ -1311,6 +1402,11 @@ public class EquilibriumSolverV2 {
      * output, exactly as {@link #relaxCvmCandidate} already provides for
      * the main loop.
      *
+     * <p>Samples trial compositions at {@link #CVM_BOUNDARY_SEED_PDENS},
+     * not {@link GridMinimizer}'s full {@code PDENS} -- a boundary seed
+     * only needs to be good enough for the boundary Newton loop that
+     * follows to refine.
+     *
      * @return the best relaxed CVM {@code y=[u;x]}, or {@code null} if no
      *         sampled composition produced a finite-driving-force
      *         candidate (caller falls back to {@link
@@ -1320,7 +1416,8 @@ public class EquilibriumSolverV2 {
             system.model.cvm.CvmGibbsModel model) {
 
         double[][] trialCompositions =
-                new GridMinimizer().sampleCompositions(model.numComponents());
+                new GridMinimizer().sampleCompositions(
+                        model.numComponents(), CVM_BOUNDARY_SEED_PDENS);
 
         double bestDrivingForce = Double.NEGATIVE_INFINITY;
         double[] bestY = null;
@@ -1523,14 +1620,7 @@ public class EquilibriumSolverV2 {
                 }
 
                 double[] dy = deltaPhaseInternalVars[k];
-                double[] newY = new double[work.y.length];
-                for (int i = 0; i < newY.length; i++) {
-                    double v = work.y[i] + dy[i];
-                    if (v < 1.0e-14) v = 1.0e-14;
-                    if (v > 1.0) v = 1.0;
-                    newY[i] = v;
-                }
-                work.y = newY;
+                work.y = boundaryDampedInternalVarStep(work, dy);
 
                 if (!Double.isFinite(phaseAmounts[k])) {
                     throw new IllegalStateException(
@@ -2280,8 +2370,14 @@ public class EquilibriumSolverV2 {
         int nip =
                 work.model.numSiteVars();
 
+        InternalConstraintSet constraints =
+                work.model.getConstraintSet();
+
         int ns =
-                work.model.numSublattices();
+                constraints.numConstraints();
+
+        double[][] C =
+                constraints.constraintJacobian();
 
         int nc =
                 targetAmounts.length;
@@ -2311,26 +2407,23 @@ public class EquilibriumSolverV2 {
         }
 
         // ------------------------------------------------------------
-        // C^T * gamma
+        // C^T * gamma: column (nc + k) is constraint k's Jacobian row,
+        // transposed into A -- the generic form of "put gamma into the
+        // Y positions belonging to a sublattice" (Phase 7A/7B).
         // ------------------------------------------------------------
-        int[] offsets =
-                work.model.offsets();
-
-        int[] nconst =
-                work.model
-                        .constituentsPerSublattice();
-
         for (int s = 0; s < ns; s++) {
 
             int gammaColumn =
                     nc + s;
 
-            for (int i = 0; i < nconst[s]; i++) {
+            for (int i = 0; i < nip; i++) {
 
-                int k =
-                        offsets[s] + i;
+                double coeff =
+                        C[s][i];
 
-                A[k][gammaColumn] = 1.0;
+                if (coeff != 0.0) {
+                    A[i][gammaColumn] = coeff;
+                }
             }
         }
 
@@ -2354,14 +2447,99 @@ public class EquilibriumSolverV2 {
 
 
     /**
-     * True for each y-index that lies within one of {@code model}'s
-     * declared sublattice/constituent blocks ({@link
-     * GibbsEnergyModel#offsets()}/{@link
-     * GibbsEnergyModel#constituentsPerSublattice()}) -- the only indices
-     * whose physical bound is [0, 1], per CEF site fractions (all of y)
-     * or a CVM phase's trailing composition block. Indices outside every
-     * block (e.g. a CVM phase's correlation-function entries) are not
-     * bounded this way.
+     * Applies one phase's internal-variable Newton step {@code dy} with
+     * the SAME step-size-halving damping {@link #updateState}'s ordinary
+     * (non-boundary) commit loop already uses, instead of the boundary
+     * loop's own previous one-shot per-element {@code [1e-14, 1.0]} clamp.
+     *
+     * <p>That one-shot clamp bounded each site fraction individually but
+     * never restored the per-sublattice (CEF) / per-composition-block
+     * (CVM) sum-to-1 constraint {@link GibbsEnergyModel#getConstraintSet}
+     * expresses to {@link PhaseMatrixAssembler} -- the linearized Newton
+     * step derived from that bordered-Hessian system only approximately
+     * satisfies the constraint to first order, so a full, unscaled step
+     * can leave the sum measurably off (confirmed directly: a real
+     * ternary CEF boundary solve left one sublattice's sum at 1.0024
+     * after a single full step, tripping {@code CefGibbs.checkY}'s exact
+     * sum-to-1 guard). Halving the step size until {@code
+     * work.model.isValid(candidate)} holds (which includes that same
+     * sum-to-1 check) restores the guarantee the ordinary solve path
+     * already has, without changing the boundary Newton mathematics
+     * itself -- only how far along the already-computed direction {@code
+     * dy} this step actually goes.
+     *
+     * @return the damped, bounds-respecting new {@code y} for this phase
+     */
+    private static double[] boundaryDampedInternalVarStep(
+            PhaseWork work,
+            double[] dy) {
+
+        final double MIN_SITE_FRACTION = 1.0e-14;
+        final double BOUNDS_TOLERANCE = 1.0e-11;
+
+        int nip = work.y.length;
+        boolean[] boundedIndex = boundedSiteFractionIndices(work.model, nip);
+
+        double stepSize = 1.0;
+        double[] candidate = new double[nip];
+
+        while (true) {
+
+            boolean exceededBounds = false;
+
+            for (int i = 0; i < nip; i++) {
+
+                double value = work.y[i] + stepSize * dy[i];
+
+                if (!boundedIndex[i]) {
+                    candidate[i] = value;
+                    continue;
+                }
+
+                if (value > 1.0) {
+                    if (value - 1.0 > BOUNDS_TOLERANCE) {
+                        exceededBounds = true;
+                    }
+                    value = 1.0;
+                } else if (value < MIN_SITE_FRACTION) {
+                    if (MIN_SITE_FRACTION - value > BOUNDS_TOLERANCE) {
+                        exceededBounds = true;
+                    }
+                    value = Math.max(work.y[i] / 100.0, MIN_SITE_FRACTION);
+                }
+
+                candidate[i] = value;
+            }
+
+            if ((!exceededBounds && work.model.isValid(candidate))
+                    || stepSize < 1.0e-20) {
+                break;
+            }
+
+            stepSize *= 0.5;
+        }
+
+        for (double v : candidate) {
+            if (!Double.isFinite(v)) {
+                throw new IllegalStateException(
+                        "Non-finite site fraction for phase "
+                        + work.model.phaseName() + ".");
+            }
+        }
+
+        return candidate;
+    }
+
+    /**
+     * True for each y-index that participates in at least one of {@code
+     * model}'s declared linear equality constraints ({@link
+     * GibbsEnergyModel#getConstraintSet()}) -- the only indices whose
+     * physical bound is [0, 1], per CEF site fractions (all of y) or a
+     * CVM phase's trailing composition block. Indices outside every
+     * constraint (e.g. a CVM phase's correlation-function entries) are
+     * not bounded this way. Participation is read directly from the
+     * constraint Jacobian's nonzero columns (Phase 7A/7B), rather than
+     * reconstructed from sublattice offsets/constituent counts.
      */
     private static boolean[] boundedSiteFractionIndices(
             GibbsEnergyModel model,
@@ -2370,21 +2548,16 @@ public class EquilibriumSolverV2 {
         boolean[] bounded =
                 new boolean[nip];
 
-        int[] offsets =
-                model.offsets();
+        double[][] C =
+                model.getConstraintSet()
+                        .constraintJacobian();
 
-        int[] nconst =
-                model.constituentsPerSublattice();
+        for (double[] row : C) {
 
-        for (int s = 0; s < nconst.length; s++) {
+            for (int i = 0; i < nip && i < row.length; i++) {
 
-            for (int i = 0; i < nconst[s]; i++) {
-
-                int idx =
-                        offsets[s] + i;
-
-                if (idx >= 0 && idx < nip) {
-                    bounded[idx] = true;
+                if (row[i] != 0.0) {
+                    bounded[i] = true;
                 }
             }
         }
@@ -2674,27 +2847,6 @@ public class EquilibriumSolverV2 {
                     a[i] + scale * b[i];
 
         return r;
-    }
-
-    private static int sublatticeOf(
-            int index,
-            int[] offsets,
-            int[] nconst) {
-
-        for (int s = 0; s < offsets.length; s++) {
-
-            int begin = offsets[s];
-            int end =
-                    begin + nconst[s];
-
-            if (index >= begin && index < end) {
-                return s;
-            }
-        }
-
-        throw new IllegalArgumentException(
-                "Site variable index outside sublattice ranges: "
-                        + index);
     }
 
     private static double vectorNorm(
@@ -3821,17 +3973,14 @@ public class EquilibriumSolverV2 {
         int nc =
                 targetAmounts.length;
 
+        InternalConstraintSet constraints =
+                work.model.getConstraintSet();
+
         int ns =
-                work.model
-                        .numSublattices();
+                constraints.numConstraints();
 
-        int[] offsets =
-                work.model
-                        .offsets();
-
-        int[] nconst =
-                work.model
-                        .constituentsPerSublattice();
+        double[][] C =
+                constraints.constraintJacobian();
 
         if (work.gy.length != nip) {
 
@@ -3860,15 +4009,13 @@ public class EquilibriumSolverV2 {
             int count =
                     0;
 
-            int begin =
-                    offsets[s];
-
-            int end =
-                    begin + nconst[s];
-
-            for (int i = begin;
-                 i < end;
+            for (int i = 0;
+                 i < nip;
                  i++) {
+
+                if (C[s][i] == 0.0) {
+                    continue;
+                }
 
                 double value =
                         work.gy[i];
@@ -4615,34 +4762,36 @@ public class EquilibriumSolverV2 {
             }
 
             // ----------------------------------------------------------
-            // Sublattice normalization
+            // Sublattice normalization: r_k = C[k]*y - b[k]
             // ----------------------------------------------------------
 
-            int[] offsets =
-                    work.model.offsets();
+            InternalConstraintSet constraints =
+                    work.model.getConstraintSet();
 
-            int[] nconst =
-                    work.model
-                            .constituentsPerSublattice();
+            double[][] C =
+                    constraints.constraintJacobian();
+
+            double[] b =
+                    constraints.constraintRhs();
 
             for (int s = 0;
-                 s < nconst.length;
+                 s < C.length;
                  s++) {
 
                 double sum =
                         0.0;
 
                 for (int i = 0;
-                     i < nconst[s];
+                     i < work.y.length;
                      i++) {
 
                     sum +=
-                            work.y[
-                                    offsets[s] + i];
+                            C[s][i]
+                            * work.y[i];
                 }
 
                 double r =
-                        sum - 1.0;
+                        sum - b[s];
 
                 maxNormalizationResidual =
                         Math.max(
@@ -4864,15 +5013,9 @@ public class EquilibriumSolverV2 {
         int nc =
                 targetAmounts.length;
 
-        int[] offsets =
-                work.model.offsets();
-
-        int[] nconst =
-                work.model
-                        .constituentsPerSublattice();
-
-        boolean[] boundedIndex =
-                boundedSiteFractionIndices(work.model, nip);
+        double[][] C =
+                work.model.getConstraintSet()
+                        .constraintJacobian();
 
         double sum2 =
                 0.0;
@@ -4893,24 +5036,17 @@ public class EquilibriumSolverV2 {
                         * work.mu[A];
             }
 
-            /*
-             * The C^T gamma (Lagrange multiplier) term only applies to
-             * indices inside a declared sublattice/constituent block --
-             * see boundedSiteFractionIndices()'s javadoc. An index outside
-             * every block (e.g. a CVM phase's correlation-function
-             * entries) carries no such multiplier: its stationarity
-             * condition is simply G_Y - J_M^T*mu = 0.
-             */
-            if (boundedIndex[i]) {
+            // C^T gamma: sum over every constraint row k for which y[i]
+            // participates (nonzero C[k][i]). An index in no constraint
+            // (e.g. a CVM phase's correlation-function entries) carries
+            // no such term.
+            for (int k = 0; k < C.length; k++) {
 
-                int s =
-                        sublatticeOf(
-                                i,
-                                offsets,
-                                nconst);
+                double coeff = C[k][i];
 
-                r -=
-                        work.gamma[s];
+                if (coeff != 0.0) {
+                    r -= coeff * work.gamma[k];
+                }
             }
 
             sum2 +=
@@ -5887,36 +6023,38 @@ public class EquilibriumSolverV2 {
                     stableSlots.get(k);
 
             // ----------------------------------------------------------
-            // Sublattice normalization
+            // Sublattice normalization: r_k = C[k]*y - b[k]
             // ----------------------------------------------------------
 
-            int[] offsets =
-                    work.model.offsets();
+            InternalConstraintSet constraints =
+                    work.model.getConstraintSet();
 
-            int[] nconst =
-                    work.model
-                            .constituentsPerSublattice();
+            double[][] C =
+                    constraints.constraintJacobian();
+
+            double[] b =
+                    constraints.constraintRhs();
 
             for (int s = 0;
-                 s < nconst.length;
+                 s < C.length;
                  s++) {
 
                 double sum =
                         0.0;
 
                 for (int i = 0;
-                     i < nconst[s];
+                     i < work.y.length;
                      i++) {
 
                     sum +=
-                            work.y[
-                                    offsets[s] + i];
+                            C[s][i]
+                            * work.y[i];
                 }
 
                 maxSublatticeResidual =
                         Math.max(
                                 maxSublatticeResidual,
-                                Math.abs(sum - 1.0));
+                                Math.abs(sum - b[s]));
             }
 
             // ----------------------------------------------------------

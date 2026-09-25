@@ -320,10 +320,11 @@ public class GridMinimizer {
      * x_i >= 0, sum(x_i) = 1
      * </pre>
      *
-     * <p>Algorithm:
+     * <p>Algorithm ({@link #sampleCompositions(int, int)} at {@link
+     * #PDENS}):
      * <ol>
      *   <li>Pure components: [1,0,...,0], [0,1,...,0], ..., [0,0,...,1]</li>
-     *   <li>Binary edges: EDGE_POINTS samples along each (a,b) pair</li>
+     *   <li>Binary edges: PDENS samples along each (a,b) pair</li>
      *   <li>Interior points: Halton-generated points via exponential
      *       normalization (r_i = -log(u_i), x_i = r_i / sum(r))</li>
      * </ol>
@@ -333,6 +334,32 @@ public class GridMinimizer {
      *         points; deterministic output
      */
     double[][] sampleCompositions(int nc) {
+        return sampleCompositions(nc, PDENS);
+    }
+
+    /**
+     * As {@link #sampleCompositions(int)}, but with the edge/interior
+     * sampling density passed explicitly instead of fixed at {@link
+     * #PDENS} -- same Phase 3A algorithm (pure components, {@code density}
+     * binary-edge points per pair, {@code density*(nc-1)} deterministic
+     * Halton interior points via {@code r_i = -log(u_i)} normalization),
+     * just parameterized. {@link #sampleCompositions(int)} itself is
+     * exactly {@code sampleCompositions(nc, PDENS)}, so its output/behavior
+     * is unchanged.
+     *
+     * <p>Exists so a caller with a different accuracy/cost tradeoff than
+     * GridMinimizer's own Gibbs-surface initialization (e.g. a coarse
+     * boundary-seed search, where a good-enough starting point is followed
+     * by Newton refinement) can reuse this same sampler at its own density,
+     * without another sampling implementation.
+     *
+     * @param nc      number of components
+     * @param density edge points per pair and interior-point multiplier
+     *                (interior points = {@code density*(nc-1)})
+     * @return array of shape {@code [numPoints][nc]}, all valid simplex
+     *         points; deterministic output
+     */
+    double[][] sampleCompositions(int nc, int density) {
 
         List<double[]> points = new ArrayList<>();
 
@@ -343,15 +370,15 @@ public class GridMinimizer {
             points.add(x);
         }
 
-        // --- Binary edges: EDGE_POINTS samples per pair (avoid duplicate
+        // --- Binary edges: `density` samples per pair (avoid duplicate
         // endpoints if practical). ---
         if (nc >= 2) {
             for (int a = 0; a < nc; a++) {
                 for (int b = a + 1; b < nc; b++) {
-                    for (int k = 0; k < EDGE_POINTS; k++) {
-                        double lam = (EDGE_POINTS == 1)
+                    for (int k = 0; k < density; k++) {
+                        double lam = (density == 1)
                                 ? 0.5
-                                : (double) k / (EDGE_POINTS - 1);
+                                : (double) k / (density - 1);
                         double[] x = new double[nc];
                         x[a] = lam;
                         x[b] = 1.0 - lam;
@@ -363,7 +390,7 @@ public class GridMinimizer {
 
         // --- Interior Halton sampling: nc positive Halton values,
         // transformed via r_i = -log(u_i), then normalized. ---
-        int numInterior = PDENS * (nc - 1);
+        int numInterior = density * (nc - 1);
         if (numInterior > 0) {
             double[][] halton = Halton.generate(nc, numInterior);
             for (double[] u : halton) {

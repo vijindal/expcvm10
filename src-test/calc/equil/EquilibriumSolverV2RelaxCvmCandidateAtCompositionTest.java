@@ -247,8 +247,8 @@ class EquilibriumSolverV2RelaxCvmCandidateAtCompositionTest {
         List<CecTerm> cecTerms = List.of(
                 new CecTerm("v4AB", 100.0, 0.0),
                 new CecTerm("v3AB", -50.0, 0.01),
-                new CecTerm("v22AB", 200.0, -0.02),
-                new CecTerm("v21AB", -300.0, 0.05));
+                new CecTerm("v2AB2", 200.0, -0.02),
+                new CecTerm("v2AB1", -300.0, 0.05));
 
         ElementGibbs ghserA = new TestElementGibbs("A", 1000.0, -5.0);
         ElementGibbs ghserB = new TestElementGibbs("B", -2000.0, 3.0);
@@ -322,8 +322,8 @@ class EquilibriumSolverV2RelaxCvmCandidateAtCompositionTest {
         double[][] cfCoeffs = new double[uListLen][uListLen];
         for (int i = 0; i < uListLen; i++) cfCoeffs[i][i] = 1.0;
 
-        String[] u2Names = {"v4AB", "v3AB", "v22AB", "v21AB", "xA", "xB"};
-        String[] eNames = {"v4AB", "v3AB", "v22AB", "v21AB"};
+        String[] u2Names = {"v4AB", "v3AB", "v2AB2", "v2AB1", "xA", "xB"};
+        String[] eNames = {"v4AB", "v3AB", "v2AB2", "v2AB1"};
 
         return new CvmPhaseData(
                 "BCC_A2", nComp, ncf, tcdis, mhdis, kbdis,

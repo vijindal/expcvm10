@@ -18,7 +18,7 @@ class CvCfBasisGenerationTest {
     void cfNamesAndDimensionsMatchRegistration() {
         GeneratedCvmGeometry geo = GeneratedCvmGeometry.buildBccA2Binary(null);
 
-        List<String> expectedNames = List.of("v4AB", "v3AB", "v22AB", "v21AB", "xA", "xB");
+        List<String> expectedNames = List.of("v4AB", "v3AB", "v2AB2", "v2AB1", "xA", "xB");
         assertEquals(expectedNames, geo.basis.cfNames);
         assertEquals(6, geo.basis.totalCfs());
         assertEquals(4, geo.basis.numNonPointCfs, "4 non-point CVCF variables carry ECIs");
