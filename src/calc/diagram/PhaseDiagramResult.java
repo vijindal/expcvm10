@@ -91,15 +91,49 @@ public class PhaseDiagramResult {
         /** Names of the phases stable (amount > 0) along this line. */
         public final List<String> stablePhases;
 
+        /**
+         * Scalar equilibrium property at each point ({@code
+         * propertyValues[k]} corresponds to {@code coords.get(k)}), or
+         * {@code null} when this line carries no such data -- every
+         * {@link PhaseDiagramEngine} ZPF line (full diagram tracing has no
+         * single "the" property per line; a point on a boundary belongs
+         * to two coexisting phase sets) and any caller using the 3-arg
+         * constructor below. Only {@link StepTracer} populates this today,
+         * via the 4-arg constructor -- see {@code
+         * ApplicationLayer#calculateStep}.
+         */
+        public final double[] propertyValues;
+
         public LineSegment(List<double[]> coords,
                            String fixedPhase,
                            List<String> stablePhases) {
+            this(coords, fixedPhase, stablePhases, null);
+        }
+
+        /**
+         * As the 3-arg constructor, additionally carrying {@code
+         * propertyValues} (see the field javadoc); {@code null} is
+         * equivalent to using the 3-arg constructor.
+         *
+         * @throws IllegalArgumentException if {@code propertyValues} is
+         *         non-null and its length does not match {@code coords}
+         */
+        public LineSegment(List<double[]> coords,
+                           String fixedPhase,
+                           List<String> stablePhases,
+                           double[] propertyValues) {
+            if (propertyValues != null && propertyValues.length != coords.size()) {
+                throw new IllegalArgumentException(
+                        "propertyValues.length (" + propertyValues.length
+                        + ") must match coords.size() (" + coords.size() + ")");
+            }
             // Deep-copy the coordinate list so caller can reuse its arrays
             List<double[]> copy = new ArrayList<>(coords.size());
             for (double[] c : coords) copy.add(c.clone());
-            this.coords       = Collections.unmodifiableList(copy);
-            this.fixedPhase   = fixedPhase;
-            this.stablePhases = Collections.unmodifiableList(new ArrayList<>(stablePhases));
+            this.coords         = Collections.unmodifiableList(copy);
+            this.fixedPhase     = fixedPhase;
+            this.stablePhases   = Collections.unmodifiableList(new ArrayList<>(stablePhases));
+            this.propertyValues = propertyValues != null ? propertyValues.clone() : null;
         }
 
         /** Convenience: label for rendering, e.g. "LIQUID+BCC_A2 / HCP_A3=0". */

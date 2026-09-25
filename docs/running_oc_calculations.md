@@ -1,4 +1,8 @@
-# Running OpenCalphad (OC) calculations
+# Developer Reference: Running OpenCalphad (OC) Calculations
+
+**This is a developer-specific reference.** It assumes a local OpenCalphad
+source checkout with a working WSL2 build. End users should refer to the
+main [README](../README.md).
 
 How to generate fresh OpenCalphad reference data for cross-checking this
 project's own equilibrium/phase-diagram code, on this machine.

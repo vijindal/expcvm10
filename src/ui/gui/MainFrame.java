@@ -13,7 +13,6 @@ import java.awt.*;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -21,59 +20,56 @@ import java.util.Date;
 import java.util.logging.*;
 
 /**
- * VS Code-style main window for expCVM 10.
+ * Main window for expCVM 10.
  *
- * Activity bar (WEST): Single Point | STEP Calc | MAP Calc | Phase Diagram | Inspect
- * Sidebar (LEFT, 280 px): CardLayout — activity-specific config
+ * Header (NORTH)        : application title + current-activity context.
+ * Activity bar (WEST)   : Single Point | STEP | MAP | Phase Diagram | Coarse Diagram | Inspect
+ * Sidebar (LEFT, 300 px): CardLayout — activity-specific config
  * Editor  (RIGHT, flex) : CardLayout — activity-specific results
  * Log console (SOUTH)   : OUTPUT panel
+ *
+ * MainFrame builds and coordinates the shell; per-activity SwingWorker
+ * lifecycles are delegated to {@link ActivityPresenters}, and result
+ * formatting/export to {@link ResultFormatter}/{@link ResultExporter}.
  */
 public class MainFrame extends JFrame {
 
-    // ── Theme shortcuts ──────────────────────────────────────────────
     private static final Color BG          = DarkTheme.BG;
-    private static final Color SUCCESS     = DarkTheme.SUCCESS;
-    private static final Color ERROR_COLOR = DarkTheme.ERROR_COLOR;
 
     private final MainController controller;
 
-    // ── Activity bar ─────────────────────────────────────────────────
     private ActivityBar activityBar;
+    private JLabel headerContextLabel;
 
-    // ── Sidebar (CardLayout) ─────────────────────────────────────────
     private JPanel sidebarCard;
     private SinglePointSidebarPanel    singlePointSidebar;
     private PropertyCalcConfigPanel    stepCalcPanel;
     private PropertyCalcConfigPanel    mapCalcPanel;
     private PhaseDiagramConfigPanel    phaseDiagramConfigPanel;
     private PhaseDiagramConfigPanel    coarseDiagramConfigPanel;
-    private SwingWorker<?,?>           stepWorker;
-    private SwingWorker<?,?>           mapWorker;
     private ModelInspectorSidebarPanel modelInspectorSidebar;
 
-    // ── Editor (CardLayout) ──────────────────────────────────────────
-    private JPanel           editorCard;
-    private JTextArea        resultSummaryArea;
-    private JLabel           resultStatusLabel;
-    private StepResultPanel  stepResultPanel;
-    private PhaseDiagramPanel mapResultPanel;
-    private PhaseDiagramPanel phaseDiagramPanel;
-    private CoarseDiagramPanel coarseDiagramPanel;
-    private JList<String>    phaseJList;
-    private JTextArea        paramArea;
-    private String           currentInspectorTdb;
+    private JPanel                 editorCard;
+    private SinglePointResultPanel singlePointResultPanel;
+    private JLabel                 resultStatusLabel;
+    private StepResultPanel        stepResultPanel;
+    private PhaseDiagramPanel      mapResultPanel;
+    private PhaseDiagramPanel      phaseDiagramPanel;
+    private CoarseDiagramPanel     coarseDiagramPanel;
+    private JList<String>          phaseJList;
+    private JTextArea              paramArea;
+    private String                 currentInspectorTdb;
 
-    // ── Log console ──────────────────────────────────────────────────
     private JTextArea logArea;
     private JComboBox<String> logLevelCombo;
     private final ArrayList<String> logLines = new ArrayList<>();
     private SwingLogHandler swingLogHandler;
 
-    // ── State ────────────────────────────────────────────────────────
     private String            lastRunRequestSummary = "";
     private CalculationResult lastRunResult;
 
-    // ─────────────────────────────────────────────────────────────────
+    private ActivityPresenters presenters;
+    private final GuiCalculationContext calcContext = new GuiCalculationContext();
 
     public MainFrame(MainController controller) {
         super("expCVM 10 — Thermodynamic Workbench");
@@ -92,34 +88,37 @@ public class MainFrame extends JFrame {
     // ================================================================
 
     private JComponent buildRoot() {
-        // Sidebars
         singlePointSidebar = new SinglePointSidebarPanel(controller);
         singlePointSidebar.setRunCallback(this::onRunCalculation);
         singlePointSidebar.setResetCallback(this::onReset);
+        singlePointSidebar.bindContext(calcContext);
 
         stepCalcPanel = new PropertyCalcConfigPanel(controller, false);
         stepCalcPanel.setCalculateCallback(this::onCalculateStep);
-        stepCalcPanel.setAbortCallback(() -> { if (stepWorker != null) stepWorker.cancel(true); });
+        stepCalcPanel.bindContext(calcContext);
 
         mapCalcPanel = new PropertyCalcConfigPanel(controller, true);
         mapCalcPanel.setCalculateCallback(this::onCalculateMap);
-        mapCalcPanel.setAbortCallback(() -> { if (mapWorker != null) mapWorker.cancel(true); });
+        mapCalcPanel.bindContext(calcContext);
 
         phaseDiagramConfigPanel = new PhaseDiagramConfigPanel(controller);
         phaseDiagramConfigPanel.setCalculateCallback(this::onCalculatePhaseDiagram);
+        phaseDiagramConfigPanel.bindContext(calcContext);
 
         coarseDiagramConfigPanel = new PhaseDiagramConfigPanel(controller, PhaseDiagramConfigPanel.Mode.COARSE);
         coarseDiagramConfigPanel.setCalculateCallback(this::onCalculateCoarseDiagram);
+        coarseDiagramConfigPanel.bindContext(calcContext);
 
         modelInspectorSidebar = new ModelInspectorSidebarPanel(controller);
         modelInspectorSidebar.setInspectCallback(this::onInspectModel);
         modelInspectorSidebar.setOnSelectionChanged(sel -> {
             if (sel.hasElements()) refreshInspectorPhaseList(sel);
         });
+        modelInspectorSidebar.bindContext(calcContext);
 
         sidebarCard = new JPanel(new CardLayout());
-        sidebarCard.setPreferredSize(new Dimension(280, 0));
-        sidebarCard.setMinimumSize(new Dimension(200, 0));
+        sidebarCard.setPreferredSize(new Dimension(DarkTheme.SIDEBAR_WIDTH, 0));
+        sidebarCard.setMinimumSize(new Dimension(220, 0));
         sidebarCard.add(singlePointSidebar,     "singlepoint");
         sidebarCard.add(stepCalcPanel,           "stepcalc");
         sidebarCard.add(mapCalcPanel,            "mapcalc");
@@ -127,7 +126,6 @@ public class MainFrame extends JFrame {
         sidebarCard.add(coarseDiagramConfigPanel, "coarsediagram");
         sidebarCard.add(modelInspectorSidebar,   "inspector");
 
-        // Editors
         editorCard = new JPanel(new CardLayout());
         editorCard.add(buildSinglePointEditor(), "singlepoint");
         editorCard.add(buildStepEditor(),        "stepcalc");
@@ -136,7 +134,8 @@ public class MainFrame extends JFrame {
         editorCard.add(buildCoarseDiagramEditor(),"coarsediagram");
         editorCard.add(buildInspectorEditor(),   "inspector");
 
-        // Log panel
+        presenters = new ActivityPresenters(controller, this);
+
         JPanel logPanel = buildLogPanel();
         logPanel.setPreferredSize(new Dimension(0, 150));
 
@@ -148,28 +147,86 @@ public class MainFrame extends JFrame {
         JSplitPane workspaceSplit = DarkTheme.sleekSplit(JSplitPane.HORIZONTAL_SPLIT);
         workspaceSplit.setLeftComponent(sidebarCard);
         workspaceSplit.setRightComponent(editorWithLog);
-        workspaceSplit.setDividerLocation(280);
+        workspaceSplit.setDividerLocation(DarkTheme.SIDEBAR_WIDTH);
         workspaceSplit.setResizeWeight(0.0);
 
-        // Activity bar — 5 activities
+        JComponent header = buildHeader();
+
         activityBar = new ActivityBar();
-        activityBar.addActivity("Single Point",   new ActivityBar.CircleIcon(),   () -> switchActivity("singlepoint"));
-        activityBar.addActivity("STEP Calc",      new ActivityBar.LineIcon(),     () -> switchActivity("stepcalc"));
-        activityBar.addActivity("MAP Calc",       new ActivityBar.SquareIcon(),   () -> switchActivity("mapcalc"));
-        activityBar.addActivity("Phase Diagram",  new ActivityBar.DiamondIcon(),  () -> switchActivity("phasediagram"));
-        activityBar.addActivity("Coarse Diagram", new ActivityBar.SquareIcon(),   () -> switchActivity("coarsediagram"));
-        activityBar.addActivity("Inspect Database",  new ActivityBar.InfoIcon(),     () -> switchActivity("inspector"));
+        activityBar.addActivity("Single Point",   new ActivityBar.CircleIcon(),   () -> switchActivity("singlepoint", "Single Point"));
+        activityBar.addActivity("STEP Calc",      new ActivityBar.LineIcon(),     () -> switchActivity("stepcalc", "STEP Calculation"));
+        activityBar.addActivity("MAP Calc",       new ActivityBar.GridIcon(),     () -> switchActivity("mapcalc", "MAP Calculation"));
+        activityBar.addActivity("Phase Diagram",  new ActivityBar.DiamondIcon(),  () -> switchActivity("phasediagram", "Phase Diagram"));
+        activityBar.addActivity("Coarse Diagram", new ActivityBar.ScatterIcon(),  () -> switchActivity("coarsediagram", "Coarse Diagram"));
+        activityBar.addUtility("Inspect Database", new ActivityBar.InfoIcon(),    () -> switchActivity("inspector", "Model Inspector"));
+
+        JPanel center = new JPanel(new BorderLayout(0, 0));
+        center.setBackground(BG);
+        center.add(activityBar,    BorderLayout.WEST);
+        center.add(workspaceSplit, BorderLayout.CENTER);
 
         JPanel root = new JPanel(new BorderLayout(0, 0));
         root.setBackground(BG);
-        root.add(activityBar,    BorderLayout.WEST);
-        root.add(workspaceSplit, BorderLayout.CENTER);
+        root.add(header,  BorderLayout.NORTH);
+        root.add(center,  BorderLayout.CENTER);
         return root;
     }
 
-    private void switchActivity(String key) {
+    // ================================================================
+    //  HEADER
+    // ================================================================
+
+    private JComponent buildHeader() {
+        JPanel header = new JPanel(new BorderLayout());
+        header.setBackground(DarkTheme.HEADER_BG);
+        header.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, DarkTheme.BORDER),
+                new EmptyBorder(DarkTheme.SPACE_MD, DarkTheme.SPACE_LG, DarkTheme.SPACE_MD, DarkTheme.SPACE_LG)));
+
+        JLabel title = new JLabel("expCVM 10");
+        title.setFont(DarkTheme.FONT_APP_TITLE);
+        title.setForeground(DarkTheme.FG_PRIMARY);
+
+        headerContextLabel = new JLabel("Single Point");
+        headerContextLabel.setFont(DarkTheme.FONT_LABEL);
+        headerContextLabel.setForeground(DarkTheme.FG_SECOND);
+        headerContextLabel.setBorder(new EmptyBorder(0, DarkTheme.SPACE_MD, 0, 0));
+
+        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        left.setOpaque(false);
+        left.add(title);
+        left.add(separatorDot());
+        left.add(headerContextLabel);
+
+        header.add(left, BorderLayout.WEST);
+        return header;
+    }
+
+    private JLabel separatorDot() {
+        JLabel dot = new JLabel(" • ");
+        dot.setFont(DarkTheme.FONT_LABEL);
+        dot.setForeground(DarkTheme.BORDER);
+        return dot;
+    }
+
+    private void switchActivity(String key, String contextLabel) {
         ((CardLayout) sidebarCard.getLayout()).show(sidebarCard, key);
         ((CardLayout) editorCard.getLayout()).show(editorCard, key);
+        headerContextLabel.setText(contextLabel);
+        notifyActivityShown(key);
+    }
+
+    /** Refreshes the newly-shown sidebar's fields from the shared {@link GuiCalculationContext}. */
+    private void notifyActivityShown(String key) {
+        switch (key) {
+            case "singlepoint"   -> singlePointSidebar.onActivityShown();
+            case "stepcalc"      -> stepCalcPanel.onActivityShown();
+            case "mapcalc"       -> mapCalcPanel.onActivityShown();
+            case "phasediagram"  -> phaseDiagramConfigPanel.onActivityShown();
+            case "coarsediagram" -> coarseDiagramConfigPanel.onActivityShown();
+            case "inspector"     -> modelInspectorSidebar.onActivityShown();
+            default -> { }
+        }
     }
 
     // ================================================================
@@ -180,9 +237,8 @@ public class MainFrame extends JFrame {
         JPanel panel = new JPanel(new BorderLayout(0, 0));
         panel.setBackground(BG);
 
-        // Status label replaces the JProgressBar
         resultStatusLabel = new JLabel("No run executed yet.");
-        resultStatusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+        resultStatusLabel.setFont(DarkTheme.FONT_HINT);
         resultStatusLabel.setForeground(DarkTheme.FG_SECOND);
         resultStatusLabel.setBorder(new EmptyBorder(3, 8, 3, 8));
         resultStatusLabel.setOpaque(true);
@@ -194,14 +250,8 @@ public class MainFrame extends JFrame {
         topBar.add(resultStatusLabel, BorderLayout.CENTER);
         panel.add(topBar, BorderLayout.NORTH);
 
-        resultSummaryArea = new JTextArea("No run executed yet.");
-        resultSummaryArea.setEditable(false);
-        resultSummaryArea.setFont(new Font("Consolas", Font.PLAIN, 11));
-        resultSummaryArea.setBackground(BG);
-        resultSummaryArea.setForeground(DarkTheme.FG_PRIMARY);
-        resultSummaryArea.setCaretColor(DarkTheme.FG_PRIMARY);
-        resultSummaryArea.setSelectionColor(DarkTheme.SEL_BG);
-        panel.add(DarkTheme.scrollPane(resultSummaryArea), BorderLayout.CENTER);
+        singlePointResultPanel = new SinglePointResultPanel();
+        panel.add(singlePointResultPanel, BorderLayout.CENTER);
         return panel;
     }
 
@@ -247,7 +297,7 @@ public class MainFrame extends JFrame {
     private JComponent buildInspectorEditor() {
         phaseJList = new JList<>(new DefaultListModel<>());
         phaseJList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        phaseJList.setFont(new Font("Consolas", Font.PLAIN, 11));
+        phaseJList.setFont(DarkTheme.FONT_MONO);
         phaseJList.setBackground(BG);
         phaseJList.setForeground(DarkTheme.FG_PRIMARY);
         phaseJList.setSelectionBackground(DarkTheme.SEL_BG);
@@ -260,9 +310,9 @@ public class MainFrame extends JFrame {
         col1.add(DarkTheme.scrollPane(phaseJList), BorderLayout.CENTER);
         col1.setPreferredSize(new Dimension(185, 0));
 
-        paramArea = new JTextArea("Add elements in the sidebar, then select a phase.");
+        paramArea = new JTextArea("Select a phase to view its parameters.");
         paramArea.setEditable(false);
-        paramArea.setFont(new Font("Consolas", Font.PLAIN, 11));
+        paramArea.setFont(DarkTheme.FONT_MONO);
         paramArea.setBackground(BG);
         paramArea.setForeground(DarkTheme.FG_PRIMARY);
         paramArea.setCaretColor(DarkTheme.FG_PRIMARY);
@@ -288,27 +338,22 @@ public class MainFrame extends JFrame {
         outer.setBackground(BG);
         outer.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, DarkTheme.BORDER));
 
-        JLabel levelLabel = new JLabel("Level:");
-        levelLabel.setForeground(DarkTheme.FG_SECOND);
-        levelLabel.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+        JLabel levelLabel = DarkTheme.hintLabel("Level:");
 
         JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
         toolbar.setOpaque(false);
         toolbar.add(levelLabel);
 
-        logLevelCombo = new JComboBox<>(new String[]{"ERROR","WARN","RESULT","FLOW","ENGINE","MODEL","SOLVER","ALL"});
+        logLevelCombo = DarkTheme.comboBox(new String[]{"ERROR","WARN","RESULT","FLOW","ENGINE","MODEL","SOLVER","ALL"});
         logLevelCombo.setSelectedItem("RESULT");
-        logLevelCombo.setBackground(DarkTheme.BG_INPUT);
-        logLevelCombo.setForeground(DarkTheme.FG_PRIMARY);
-        logLevelCombo.setRenderer(new DarkTheme.ComboRenderer());
         logLevelCombo.addActionListener(e -> onLogLevelChanged());
         toolbar.add(logLevelCombo);
 
-        JButton copyBtn = smallButton("Copy");
+        JButton copyBtn = DarkTheme.smallButton("Copy");
         copyBtn.addActionListener(this::onCopyLogs);
         toolbar.add(copyBtn);
 
-        JButton clearBtn = smallButton("Clear");
+        JButton clearBtn = DarkTheme.smallButton("Clear");
         clearBtn.addActionListener(e -> { logLines.clear(); logArea.setText(""); });
         toolbar.add(clearBtn);
 
@@ -316,7 +361,7 @@ public class MainFrame extends JFrame {
 
         logArea = new JTextArea();
         logArea.setEditable(false);
-        logArea.setFont(new Font("Consolas", Font.PLAIN, 11));
+        logArea.setFont(DarkTheme.FONT_MONO);
         logArea.setBackground(BG);
         logArea.setForeground(DarkTheme.FG_PRIMARY);
         logArea.setCaretColor(DarkTheme.FG_PRIMARY);
@@ -348,7 +393,7 @@ public class MainFrame extends JFrame {
             if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
                 String path = toRelativeIfPossible(chooser.getSelectedFile());
                 singlePointSidebar.resetDefaults(path);
-                switchActivity("singlepoint");
+                switchActivity("singlepoint", "Single Point");
             }
         });
         styleMenuItem(openTdb);
@@ -372,21 +417,6 @@ public class MainFrame extends JFrame {
         styleMenuItem(exit);
         fileMenu.add(exit);
         bar.add(fileMenu);
-
-        JMenu assessMenu = new JMenu("Assessment");
-        assessMenu.setMnemonic('A');
-        styleMenu(assessMenu);
-
-        JMenuItem calModel = new JMenuItem("Run CalModel... (not available)");
-        calModel.setEnabled(false);
-        styleMenuItem(calModel);
-        assessMenu.add(calModel);
-
-        JMenuItem optimize = new JMenuItem("Run Optimization... (not available)");
-        optimize.setEnabled(false);
-        styleMenuItem(optimize);
-        assessMenu.add(optimize);
-        bar.add(assessMenu);
 
         JMenu helpMenu = new JMenu("Help");
         helpMenu.setMnemonic('H');
@@ -436,194 +466,179 @@ public class MainFrame extends JFrame {
         resultStatusLabel.setForeground(DarkTheme.ACCENT);
         addGuiLog("RESULT", "Run started: " + lastRunRequestSummary);
 
-        new SwingWorker<EquilibriumResult, Void>() {
-            @Override protected EquilibriumResult doInBackground() {
-                return controller.runSinglePoint(tdbPath, elements, method, phases, T, P, compositions);
-            }
-            @Override protected void done() {
-                long elapsed = System.currentTimeMillis() - t0;
-                try {
-                    EquilibriumResult result = get();
-                    renderRunResult(result, elapsed);
-                    resultStatusLabel.setText("✓ Equilibrium computation complete (" + elapsed + " ms)");
-                    resultStatusLabel.setForeground(SUCCESS);
-                    addGuiLog("RESULT", "Converged=" + result.isConverged() + " Iterations=" + result.getIterations());
-                } catch (Exception ex) {
-                    resultStatusLabel.setText("Failed: " + ex.getMessage());
-                    resultStatusLabel.setForeground(ERROR_COLOR);
-                    addGuiLog("ERROR", "Run crashed: " + ex.getMessage());
-                }
-            }
-        }.execute();
+        singlePointSidebar.setRunning(true);
+        presenters.runSinglePoint(tdbPath, elements, method, phases, T, P, compositions, t0);
     }
 
+    void onSinglePointDone(EquilibriumResult result, long elapsed) {
+        singlePointSidebar.setRunning(false);
+        singlePointResultPanel.showResult(result, elapsed);
+        resultStatusLabel.setText(result.isConverged() ? "✓ Equilibrium computation complete (" + elapsed + " ms)"
+                : "✗ Not converged (" + elapsed + " ms)");
+        resultStatusLabel.setForeground(result.isConverged() ? DarkTheme.SUCCESS : DarkTheme.ERROR_COLOR);
+        addGuiLog("RESULT", "Converged=" + result.isConverged() + " Iterations=" + result.getIterations());
+    }
+
+    void onSinglePointFailed(Exception ex) {
+        singlePointSidebar.setRunning(false);
+        resultStatusLabel.setText("Failed: " + ex.getMessage());
+        resultStatusLabel.setForeground(DarkTheme.ERROR_COLOR);
+        addGuiLog("ERROR", "Run crashed: " + ex.getMessage());
+    }
+
+    /** Responds to Single Point's "Reset Calculation Inputs" button; the shared TDB/elements/phases context is untouched. */
     private void onReset() {
-        String defaultTdb = "data/tizr_kum_cvm.tdb";
-        singlePointSidebar.resetDefaults(defaultTdb);
-        resultSummaryArea.setText("No run executed yet.");
-        resultStatusLabel.setText("Reset.");
+        singlePointResultPanel.showEmpty("No run executed yet.");
+        resultStatusLabel.setText("Calculation inputs reset.");
         resultStatusLabel.setForeground(DarkTheme.FG_SECOND);
         lastRunResult = null;
-        addGuiLog("RESULT", "Inputs reset to defaults.");
+        addGuiLog("RESULT", "Calculation inputs reset to defaults (database/elements/phases unchanged).");
     }
 
     // ── STEP property scan ────────────────────────────────────────────
 
-    private void onCalculateStep() {
+    void onCalculateStep() {
         final ui.request.PropertyScanRequest req = stepCalcPanel.buildRequest();
         stepCalcPanel.setStatus("Calculating...", DarkTheme.ACCENT);
         stepCalcPanel.setRunning(true);
-        stepWorker = new SwingWorker<PropertyScanResult, String>() {
-            @Override protected PropertyScanResult doInBackground() {
-                req.setProgressCallback(this::publish);
-                return controller.runPropertyScan(req);
-            }
-            @Override protected void process(java.util.List<String> chunks) {
-                for (String s : chunks) addGuiLog("STEP", s);
-            }
-            @Override protected void done() {
-                stepCalcPanel.setRunning(false);
-                stepWorker = null;
-                try {
-                    PropertyScanResult r = get();
-                    stepResultPanel.setResult(r);
-                    if (r.isSuccess()) {
-                        stepCalcPanel.setStatus("✓ " + r.getMessage(), SUCCESS);
-                        addGuiLog("RESULT", "STEP complete: " + r.getMessage());
-                    } else {
-                        String msg = r.getMessage();
-                        stepCalcPanel.setStatus(("Aborted".equals(msg) ? "⊘ Aborted" : "✗ " + msg), ERROR_COLOR);
-                        addGuiLog("RESULT", "STEP: " + msg);
-                    }
-                } catch (java.util.concurrent.CancellationException ex) {
-                    stepCalcPanel.setStatus("⊘ Aborted", ERROR_COLOR);
-                    addGuiLog("RESULT", "STEP aborted by user");
-                } catch (Exception ex) {
-                    stepCalcPanel.setStatus("✗ Error: " + ex.getMessage(), ERROR_COLOR);
-                    addGuiLog("ERROR", "STEP exception: " + ex.getMessage());
-                }
-            }
-        };
-        stepWorker.execute();
+        presenters.runStep(req, stepCalcPanel);
     }
+
+    void onStepDone(PropertyScanResult r) {
+        stepCalcPanel.setRunning(false);
+        stepResultPanel.setResult(r);
+        if (r.isSuccess()) {
+            stepCalcPanel.setStatus("✓ " + r.getMessage(), DarkTheme.SUCCESS);
+            addGuiLog("RESULT", "STEP complete: " + r.getMessage());
+        } else {
+            String msg = r.getMessage();
+            stepCalcPanel.setStatus(("Aborted".equals(msg) ? "⊘ Aborted" : "✗ " + msg), DarkTheme.ERROR_COLOR);
+            addGuiLog("RESULT", "STEP: " + msg);
+        }
+    }
+
+    void onStepAborted() {
+        stepCalcPanel.setRunning(false);
+        stepCalcPanel.setStatus("⊘ Aborted", DarkTheme.ERROR_COLOR);
+        addGuiLog("RESULT", "STEP aborted by user");
+    }
+
+    void onStepFailed(Exception ex) {
+        stepCalcPanel.setRunning(false);
+        stepCalcPanel.setStatus("✗ Error: " + ex.getMessage(), DarkTheme.ERROR_COLOR);
+        addGuiLog("ERROR", "STEP exception: " + ex.getMessage());
+    }
+
+    void onStepProgress(String s) { addGuiLog("STEP", s); }
 
     // ── MAP property scan ─────────────────────────────────────────────
 
-    private void onCalculateMap() {
+    void onCalculateMap() {
         final ui.request.PropertyScanRequest req = mapCalcPanel.buildRequest();
         mapCalcPanel.setStatus("Calculating...", DarkTheme.ACCENT);
         mapCalcPanel.setRunning(true);
-        mapWorker = new SwingWorker<PhaseDiagramResult, Void>() {
-            @Override protected PhaseDiagramResult doInBackground() {
-                return controller.runMap(req);
-            }
-            @Override protected void done() {
-                mapCalcPanel.setRunning(false);
-                mapWorker = null;
-                try {
-                    PhaseDiagramResult result = get();
-                    if (result != null && result.isComplete()) {
-                        mapResultPanel.setDiagram(result);
-                        mapCalcPanel.setStatus("✓ Calculation complete", SUCCESS);
-                        addGuiLog("RESULT", "MAP complete");
-                    } else {
-                        String msg = result != null ? result.getMessage() : "Unknown error";
-                        mapCalcPanel.setStatus("✗ " + msg, ERROR_COLOR);
-                        addGuiLog("RESULT", "MAP: " + msg);
-                    }
-                } catch (java.util.concurrent.CancellationException ex) {
-                    mapCalcPanel.setStatus("⊘ Aborted", ERROR_COLOR);
-                    addGuiLog("RESULT", "MAP aborted by user");
-                } catch (Exception ex) {
-                    mapCalcPanel.setStatus("✗ Error: " + ex.getMessage(), ERROR_COLOR);
-                    addGuiLog("ERROR", "MAP exception: " + ex.getMessage());
-                }
-            }
-        };
-        mapWorker.execute();
+        presenters.runMap(req, mapCalcPanel);
+    }
+
+    void onMapDone(PhaseDiagramResult result) {
+        mapCalcPanel.setRunning(false);
+        if (result != null && result.isComplete()) {
+            mapResultPanel.setDiagram(result);
+            mapCalcPanel.setStatus("✓ Calculation complete", DarkTheme.SUCCESS);
+            addGuiLog("RESULT", "MAP complete");
+        } else {
+            String msg = result != null ? result.getMessage() : "Unknown error";
+            mapCalcPanel.setStatus("✗ " + msg, DarkTheme.ERROR_COLOR);
+            addGuiLog("RESULT", "MAP: " + msg);
+        }
+    }
+
+    void onMapAborted() {
+        mapCalcPanel.setRunning(false);
+        mapCalcPanel.setStatus("⊘ Aborted", DarkTheme.ERROR_COLOR);
+        addGuiLog("RESULT", "MAP aborted by user");
+    }
+
+    void onMapFailed(Exception ex) {
+        mapCalcPanel.setRunning(false);
+        mapCalcPanel.setStatus("✗ Error: " + ex.getMessage(), DarkTheme.ERROR_COLOR);
+        addGuiLog("ERROR", "MAP exception: " + ex.getMessage());
     }
 
     // ── Phase boundary diagram ────────────────────────────────────────
 
-    private void onCalculatePhaseDiagram() {
+    void onCalculatePhaseDiagram() {
         phaseDiagramConfigPanel.setStatus("Calculating...", DarkTheme.ACCENT);
         phaseDiagramConfigPanel.setRunning(true);
-        SwingWorker<PhaseDiagramResult, Void> worker = new SwingWorker<PhaseDiagramResult, Void>() {
-            @Override protected PhaseDiagramResult doInBackground() {
-                return controller.runPhaseDiagram(phaseDiagramConfigPanel.buildRequest());
-            }
-            @Override protected void done() {
-                phaseDiagramConfigPanel.setRunning(false);
-                try {
-                    PhaseDiagramResult result = get();
-                    if (result != null && result.isComplete()) {
-                        phaseDiagramPanel.setDiagram(result);
-                        phaseDiagramConfigPanel.setStatus("✓ Calculation complete", SUCCESS);
-                        addGuiLog("RESULT", "Phase diagram calculated successfully");
-                    } else {
-                        String msg = result != null ? result.getMessage() : "Unknown error";
-                        phaseDiagramConfigPanel.setStatus("✗ " + msg, ERROR_COLOR);
-                        addGuiLog("RESULT", "Phase diagram failed: " + msg);
-                    }
-                } catch (java.util.concurrent.CancellationException ex) {
-                    phaseDiagramConfigPanel.setStatus("⊘ Aborted", ERROR_COLOR);
-                    addGuiLog("RESULT", "Phase diagram aborted by user");
-                } catch (Exception e) {
-                    phaseDiagramConfigPanel.setStatus("✗ Error: " + e.getMessage(), ERROR_COLOR);
-                    addGuiLog("RESULT", "Exception: " + e.getMessage());
-                }
-            }
-        };
-        phaseDiagramConfigPanel.setAbortCallback(() -> worker.cancel(true));
-        worker.execute();
+        presenters.runPhaseDiagram(phaseDiagramConfigPanel.buildRequest(), phaseDiagramConfigPanel);
+    }
+
+    void onPhaseDiagramDone(PhaseDiagramResult result) {
+        phaseDiagramConfigPanel.setRunning(false);
+        if (result != null && result.isComplete()) {
+            phaseDiagramPanel.setDiagram(result);
+            phaseDiagramConfigPanel.setStatus("✓ Calculation complete", DarkTheme.SUCCESS);
+            addGuiLog("RESULT", "Phase diagram calculated successfully");
+        } else {
+            String msg = result != null ? result.getMessage() : "Unknown error";
+            phaseDiagramConfigPanel.setStatus("✗ " + msg, DarkTheme.ERROR_COLOR);
+            addGuiLog("RESULT", "Phase diagram failed: " + msg);
+        }
+    }
+
+    void onPhaseDiagramAborted() {
+        phaseDiagramConfigPanel.setRunning(false);
+        phaseDiagramConfigPanel.setStatus("⊘ Aborted", DarkTheme.ERROR_COLOR);
+        addGuiLog("RESULT", "Phase diagram aborted by user");
+    }
+
+    void onPhaseDiagramFailed(Exception e) {
+        phaseDiagramConfigPanel.setRunning(false);
+        phaseDiagramConfigPanel.setStatus("✗ Error: " + e.getMessage(), DarkTheme.ERROR_COLOR);
+        addGuiLog("RESULT", "Exception: " + e.getMessage());
     }
 
     // ── Coarse binary/ternary diagram ───────────────────────────────────
 
-    private void onCalculateCoarseDiagram() {
+    void onCalculateCoarseDiagram() {
         final ui.request.PhaseDiagramRequest req = coarseDiagramConfigPanel.buildRequest();
         coarseDiagramConfigPanel.setStatus("Calculating...", DarkTheme.ACCENT);
         coarseDiagramConfigPanel.setRunning(true);
-        SwingWorker<ui.result.CoarseDiagramResult, String> worker =
-                new SwingWorker<ui.result.CoarseDiagramResult, String>() {
-            @Override protected ui.result.CoarseDiagramResult doInBackground() {
-                req.setProgressCallback(this::publish);
-                return controller.runCoarseDiagram(req);
+        presenters.runCoarseDiagram(req, coarseDiagramConfigPanel);
+    }
+
+    void onCoarseProgress(String s) {
+        addGuiLog("COARSE", s);
+        coarseDiagramConfigPanel.setStatus(s, DarkTheme.ACCENT);
+    }
+
+    void onCoarseDone(ui.result.CoarseDiagramResult result) {
+        coarseDiagramConfigPanel.setRunning(false);
+        if (result != null) {
+            coarseDiagramPanel.setDiagram(result);
+            if (result.isComplete()) {
+                coarseDiagramConfigPanel.setStatus("✓ Calculation complete", DarkTheme.SUCCESS);
+                addGuiLog("RESULT", "Coarse diagram calculated successfully");
+            } else {
+                coarseDiagramConfigPanel.setStatus("⚠ " + result.getMessage(), DarkTheme.WARNING);
+                addGuiLog("RESULT", "Coarse diagram completed with gaps: " + result.getMessage());
             }
-            @Override protected void process(java.util.List<String> chunks) {
-                for (String s : chunks) {
-                    addGuiLog("COARSE", s);
-                    coarseDiagramConfigPanel.setStatus(s, DarkTheme.ACCENT);
-                }
-            }
-            @Override protected void done() {
-                coarseDiagramConfigPanel.setRunning(false);
-                try {
-                    ui.result.CoarseDiagramResult result = get();
-                    if (result != null) {
-                        coarseDiagramPanel.setDiagram(result);
-                        if (result.isComplete()) {
-                            coarseDiagramConfigPanel.setStatus("✓ Calculation complete", SUCCESS);
-                            addGuiLog("RESULT", "Coarse diagram calculated successfully");
-                        } else {
-                            coarseDiagramConfigPanel.setStatus("⚠ " + result.getMessage(), DarkTheme.FG_SECOND);
-                            addGuiLog("RESULT", "Coarse diagram completed with gaps: " + result.getMessage());
-                        }
-                    } else {
-                        coarseDiagramConfigPanel.setStatus("✗ Unknown error", ERROR_COLOR);
-                        addGuiLog("RESULT", "Coarse diagram failed: unknown error");
-                    }
-                } catch (java.util.concurrent.CancellationException ex) {
-                    coarseDiagramConfigPanel.setStatus("⊘ Aborted", ERROR_COLOR);
-                    addGuiLog("RESULT", "Coarse diagram aborted by user");
-                } catch (Exception e) {
-                    coarseDiagramConfigPanel.setStatus("✗ Error: " + e.getMessage(), ERROR_COLOR);
-                    addGuiLog("RESULT", "Exception: " + e.getMessage());
-                }
-            }
-        };
-        coarseDiagramConfigPanel.setAbortCallback(() -> worker.cancel(true));
-        worker.execute();
+        } else {
+            coarseDiagramConfigPanel.setStatus("✗ Unknown error", DarkTheme.ERROR_COLOR);
+            addGuiLog("RESULT", "Coarse diagram failed: unknown error");
+        }
+    }
+
+    void onCoarseAborted() {
+        coarseDiagramConfigPanel.setRunning(false);
+        coarseDiagramConfigPanel.setStatus("⊘ Aborted", DarkTheme.ERROR_COLOR);
+        addGuiLog("RESULT", "Coarse diagram aborted by user");
+    }
+
+    void onCoarseFailed(Exception e) {
+        coarseDiagramConfigPanel.setRunning(false);
+        coarseDiagramConfigPanel.setStatus("✗ Error: " + e.getMessage(), DarkTheme.ERROR_COLOR);
+        addGuiLog("RESULT", "Exception: " + e.getMessage());
     }
 
     // ── Inspector ─────────────────────────────────────────────────────
@@ -660,127 +675,8 @@ public class MainFrame extends JFrame {
         if (phase == null || currentInspectorTdb == null) return;
         java.util.List<String> elems = modelInspectorSidebar.getSelection().getElements();
         java.util.List<?> params = controller.getPhaseParameters(currentInspectorTdb, elems, phase);
-        paramArea.setText(buildParamText(phase, params));
+        paramArea.setText(ResultFormatter.formatParamText(phase, params));
         paramArea.setCaretPosition(0);
-    }
-
-    private String buildParamText(String phaseName, java.util.List<?> params) {
-        if (params == null || params.isEmpty()) return "No parameters found for " + phaseName + ".";
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("Parameters for ").append(phaseName).append("  (").append(params.size()).append(" total)\n");
-        sb.append("─".repeat(80)).append("\n\n");
-
-        for (Object p : params) {
-            if (p instanceof system.database.tdb.Parameter param) {
-                formatParameterDetail(sb, param);
-            } else {
-                sb.append("  ").append(p.toString()).append("\n");
-            }
-        }
-        return sb.toString();
-    }
-
-    private void formatParameterDetail(StringBuilder sb, system.database.tdb.Parameter param) {
-        sb.append("Type:        ").append(param.getType()).append("\n");
-
-        if (param.getParameterId() != null) {
-            sb.append("ID:          ").append(param.getParameterId()).append("\n");
-        } else if (param.getOrder() > 0) {
-            sb.append("Order:       ").append(param.getOrder()).append("\n");
-        }
-
-        java.util.ArrayList<java.util.ArrayList<String>> constList = param.getConstituentList();
-        if (constList != null && !constList.isEmpty()) {
-            sb.append("Constituents: ");
-            for (int i = 0; i < constList.size(); i++) {
-                if (i > 0) sb.append(" : ");
-                sb.append(String.join(",", constList.get(i)));
-            }
-            sb.append("\n");
-        }
-
-        java.util.ArrayList<system.database.tdb.Exp> expList = param.getExpList();
-        if (expList != null && !expList.isEmpty()) {
-            sb.append("Temperature ranges and expressions:\n");
-            for (system.database.tdb.Exp exp : expList) {
-                if (exp.getTempRange() != null && exp.getTempRange().size() >= 2) {
-                    double t1 = exp.getTempRange().get(0);
-                    double t2 = exp.getTempRange().get(1);
-                    sb.append(String.format("  %.2f – %.2f K: ", t1, t2));
-                }
-                if (exp.getExpStr() != null) {
-                    sb.append(exp.getExpStr());
-                }
-                sb.append("\n");
-            }
-        }
-        sb.append("\n");
-    }
-
-    // ── Assessment menu ───────────────────────────────────────────────
-
-    private void onMenuCalModel(ActionEvent e) {
-        JTextField exptField  = new JTextField("data/ExptData.txt", 25);
-        JTextField phaseField = new JTextField("data/PhaseData.txt", 25);
-        JPanel dlg = new JPanel(new GridLayout(2, 2, 6, 6));
-        dlg.add(new JLabel("Experimental Data File:")); dlg.add(exptField);
-        dlg.add(new JLabel("Phase Data File:"));        dlg.add(phaseField);
-        if (JOptionPane.showConfirmDialog(this, dlg, "Run CalModel",
-                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return;
-        final String expt  = normalizePath(exptField.getText().trim());
-        final String phase = normalizePath(phaseField.getText().trim());
-        if (!new File(expt).exists()) { JOptionPane.showMessageDialog(this, "File not found:\n" + expt); return; }
-        if (!new File(phase).exists()){ JOptionPane.showMessageDialog(this, "File not found:\n" + phase); return; }
-        resultStatusLabel.setText("CalModel running...");
-        resultStatusLabel.setForeground(DarkTheme.ACCENT);
-        switchActivity("singlepoint");
-        new SwingWorker<CalculationResult, Void>() {
-            @Override protected CalculationResult doInBackground() { return controller.runCalModel(expt, phase); }
-            @Override protected void done() {
-                resultStatusLabel.setText("CalModel done.");
-                try {
-                    addGuiLog("RESULT", "CalModel completed");
-                    // renderRunResult(get(), -1);  // TODO: update to use new API
-                } catch (Exception ex) { addGuiLog("ERROR", "CalModel failed: " + ex.getMessage()); }
-            }
-        }.execute();
-    }
-
-    private void onMenuOptimize(ActionEvent e) {
-        JTextField exptField   = new JTextField("data/ExptData.txt", 25);
-        JTextField phaseField  = new JTextField("data/PhaseData.txt", 25);
-        JTextField prefixField = new JTextField("data/log", 25);
-        JTextField iterField   = new JTextField("50", 10);
-        JPanel dlg = new JPanel(new GridLayout(4, 2, 6, 6));
-        dlg.add(new JLabel("Experimental Data File:")); dlg.add(exptField);
-        dlg.add(new JLabel("Phase Data File:"));        dlg.add(phaseField);
-        dlg.add(new JLabel("Output Prefix:"));          dlg.add(prefixField);
-        dlg.add(new JLabel("Max Iterations:"));         dlg.add(iterField);
-        if (JOptionPane.showConfirmDialog(this, dlg, "Run Optimization",
-                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return;
-        final String expt   = normalizePath(exptField.getText().trim());
-        final String phase  = normalizePath(phaseField.getText().trim());
-        final String prefix = normalizePath(prefixField.getText().trim());
-        if (!new File(expt).exists()) { JOptionPane.showMessageDialog(this, "File not found:\n" + expt); return; }
-        int maxIter;
-        try { maxIter = Integer.parseInt(iterField.getText().trim()); if (maxIter <= 0) throw new NumberFormatException(); }
-        catch (NumberFormatException ex) { JOptionPane.showMessageDialog(this, "Max iterations must be a positive integer."); return; }
-        final int maxIterations = maxIter;
-        resultStatusLabel.setText("Optimization running...");
-        resultStatusLabel.setForeground(DarkTheme.ACCENT);
-        switchActivity("singlepoint");
-        new SwingWorker<String, Void>() {
-            @Override protected String doInBackground() { return controller.runOptimization(expt, phase, prefix, maxIterations); }
-            @Override protected void done() {
-                resultStatusLabel.setText("Optimization done.");
-                resultStatusLabel.setForeground(DarkTheme.FG_SECOND);
-                try {
-                    String msg = get();
-                    addGuiLog(msg.toLowerCase().contains("success") ? "RESULT" : "ERROR", msg);
-                } catch (Exception ex) { addGuiLog("ERROR", "Optimization failed: " + ex.getMessage()); }
-            }
-        }.execute();
     }
 
     // ── Export ────────────────────────────────────────────────────────
@@ -795,15 +691,8 @@ public class MainFrame extends JFrame {
         JFileChooser chooser = new JFileChooser(new File(System.getProperty("user.dir")));
         chooser.setSelectedFile(new File("run-result.csv"));
         if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
-        try (FileWriter fw = new FileWriter(chooser.getSelectedFile())) {
-            fw.write("Metric,Value,Unit\n");
-            fw.write("Success," + lastRunResult.isSuccess() + ",-\n");
-            fw.write(csvEscape("Method") + "," + csvEscape(safe(lastRunResult.getMethod())) + ",-\n");
-            fw.write(csvEscape("Message") + "," + csvEscape(safe(lastRunResult.getMessage())) + ",-\n");
-            fw.write("Value," + lastRunResult.getValue() + ",J/mol\n");
-            fw.write("Temperature," + lastRunResult.getTemperature() + ",K\n");
-            fw.write("Pressure," + lastRunResult.getPressure() + ",Pa\n");
-            fw.write("Composition," + csvEscape(formatComposition(lastRunResult.getCompositionResult())) + ",-\n");
+        try {
+            ResultExporter.writeCsv(chooser.getSelectedFile(), lastRunResult);
             addGuiLog("RESULT", "CSV exported: " + chooser.getSelectedFile().getAbsolutePath());
         } catch (IOException ex) { addGuiLog("ERROR", "CSV export failed: " + ex.getMessage()); }
     }
@@ -813,18 +702,8 @@ public class MainFrame extends JFrame {
         JFileChooser chooser = new JFileChooser(new File(System.getProperty("user.dir")));
         chooser.setSelectedFile(new File("run-result.json"));
         if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
-        try (FileWriter fw = new FileWriter(chooser.getSelectedFile())) {
-            fw.write("{\n");
-            fw.write("  \"timestamp\": \"" + escapeJson(new Date().toString()) + "\",\n");
-            fw.write("  \"requestSummary\": \"" + escapeJson(lastRunRequestSummary) + "\",\n");
-            fw.write("  \"success\": " + lastRunResult.isSuccess() + ",\n");
-            fw.write("  \"method\": \"" + escapeJson(safe(lastRunResult.getMethod())) + "\",\n");
-            fw.write("  \"message\": \"" + escapeJson(safe(lastRunResult.getMessage())) + "\",\n");
-            fw.write("  \"value\": " + lastRunResult.getValue() + ",\n");
-            fw.write("  \"temperature\": " + lastRunResult.getTemperature() + ",\n");
-            fw.write("  \"pressure\": " + lastRunResult.getPressure() + ",\n");
-            fw.write("  \"composition\": \"" + escapeJson(formatComposition(lastRunResult.getCompositionResult())) + "\"\n");
-            fw.write("}\n");
+        try {
+            ResultExporter.writeJson(chooser.getSelectedFile(), lastRunResult, lastRunRequestSummary);
             addGuiLog("RESULT", "JSON exported: " + chooser.getSelectedFile().getAbsolutePath());
         } catch (IOException ex) { addGuiLog("ERROR", "JSON export failed: " + ex.getMessage()); }
     }
@@ -859,7 +738,7 @@ public class MainFrame extends JFrame {
         addGuiLog("RESULT", "Log level changed to " + selected);
     }
 
-    private void addGuiLog(String level, String message) {
+    void addGuiLog(String level, String message) {
         String ts = new SimpleDateFormat("HH:mm:ss.SSS").format(new Date());
         logLines.add("[" + level + "] " + ts + " " + level + " [GUI] " + message);
         refreshLogView();
@@ -875,22 +754,6 @@ public class MainFrame extends JFrame {
             logArea.setText(sb.toString());
             logArea.setCaretPosition(logArea.getDocument().getLength());
         }
-    }
-
-    // ── Result rendering ──────────────────────────────────────────────
-
-    private void renderRunResult(EquilibriumResult result, long elapsedMillis) {
-        // Render equilibrium result
-        StringBuilder sb = new StringBuilder();
-        sb.append("Status     : ").append(result.isConverged() ? "CONVERGED" : "NOT CONVERGED").append("\n");
-        sb.append("Iterations : ").append(result.getIterations()).append("\n");
-        sb.append("Temperature: ").append(String.format("%.2f", result.getT())).append(" K\n");
-        sb.append("Pressure   : ").append(String.format("%.2f", result.getP())).append(" Pa\n");
-        sb.append("Stable Phases: ").append(result.getStablePhases().size()).append("\n");
-        if (elapsedMillis >= 0) sb.append("Duration   : ").append(elapsedMillis).append(" ms\n");
-        resultSummaryArea.setText(sb.toString());
-        resultStatusLabel.setText(result.isConverged() ? "✓ Converged" : "✗ Not Converged");
-        resultStatusLabel.setForeground(result.isConverged() ? SUCCESS : ERROR_COLOR);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────
@@ -912,42 +775,6 @@ public class MainFrame extends JFrame {
             }
             return abs;
         } catch (IOException ex) { return file.getPath(); }
-    }
-
-    private String csvEscape(Object val) {
-        String s = String.valueOf(val);
-        if (s.contains(",") || s.contains("\"") || s.contains("\n"))
-            return "\"" + s.replace("\"", "\"\"") + "\"";
-        return s;
-    }
-
-    private String safe(String value) { return value == null ? "" : value; }
-
-    private String escapeJson(String value) {
-        if (value == null) return "";
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
-
-    private String formatComposition(double[] x) {
-        if (x == null || x.length == 0) return "-";
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < x.length; i++) {
-            if (i > 0) sb.append(", ");
-            sb.append(String.format("%.6f", x[i]));
-        }
-        return sb.toString();
-    }
-
-    private JButton smallButton(String text) {
-        JButton btn = new JButton(text);
-        btn.setFont(new Font("Segoe UI", Font.PLAIN, 11));
-        btn.setMargin(new Insets(2, 8, 2, 8));
-        btn.setFocusPainted(false);
-        btn.setBorderPainted(false);
-        btn.setBackground(DarkTheme.BG_INPUT);
-        btn.setForeground(DarkTheme.FG_PRIMARY);
-        btn.setOpaque(true);
-        return btn;
     }
 
     private void styleMenu(JMenu menu) {

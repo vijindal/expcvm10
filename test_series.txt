@@ -1,0 +1,15 @@
+=== PHASE 12A REAL TDB STRESS & COVERAGE VALIDATION ===
+Test Execution: 2026-09-25
+
+DATABASE 1: tizr_kum.tdb (CEF binary: Ti-Zr)
+=====================================================
+16:17:10.976 INFO    [CliApp.run] CliApp.run() invoked with args: [equilibrium, --tdb, data/tizr_kum.tdb, --elements, TI,ZR, --phases, LIQUID,HCP_A3,BCC_A2, --T, 1000, --P, 100000, --composition, 0.5,0.5]
+Elements:    [TI, ZR]
+Converged:   true  (iterations=2)
+Stable phases:
+Converged: true (2 iterations)
+  ZR     -5.834765E+04
+  G_sys      = -5.399832E+04 J (per formula unit basis)
+  G_sys/atom = -5.399832E+04 J/mol (comparable across candidate phase sets)
+Stable phases:
+    x: TI=0.500000  ZR=0.500000  

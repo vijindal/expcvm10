@@ -73,7 +73,7 @@ Calculation Layer's solver iterates, querying the System Layer for
 |---------|----------|
 | `java ui.Main` / `java ui.Main --cli` | CLI (`ui.cli.CliApp`) |
 | `java ui.Main --gui` | Swing GUI (`ui.gui.GuiApp`) |
-| `java ui.api.ApiMain [port]` | REST/JSON API on `com.sun.net.httpserver` (default 8080) |
+| `java -cp dist/expcvm10.jar ui.api.ApiMain [port]` | REST/JSON API on `com.sun.net.httpserver` (default 8080) |
 
 All three route calculations through `application.ApplicationLayer`.
 
@@ -151,6 +151,44 @@ java -jar dist/expcvm10.jar equilibrium -i
 ```
 
 Run `<command> --help` for that command's full flag reference.
+
+## Worked Example
+
+To verify a successful installation, run a single-point equilibrium calculation:
+
+```bash
+./gradlew build
+java -jar dist/expcvm10.jar equilibrium --tdb data/agcu.TDB --elements AG,CU \
+  --phases LIQUID,FCC_A1 --T 1000 --P 101325 --composition 0.5,0.5
+```
+
+Expected output (condensed; you should see convergence in 3 iterations):
+
+```
+--- Single-Point Equilibrium (via ApplicationLayer) ---
+TDB:         .../data/agcu.TDB
+Elements:    [AG, CU]
+Phases:      [LIQUID, FCC_A1]
+T:           1000.0 K
+P:           101325.0 Pa
+Composition: [0.5, 0.5]
+-----------------------------------------------
+Converged:   true (iterations=3)
+Stable phases:
+  FCC_A1     0.540192 f.u.     G=-55640.5285 J/mol.f.u.  x=[0.897, 0.103]  atomic%=54.02
+  FCC_A1     0.459808 f.u.     G=-46905.2171 J/mol.f.u.  x=[0.034, 0.966]  atomic%=45.98
+
+Metastable phases:
+  LIQUID     amount=0.0000E+00   G=-5.0835E+04 J/mol  driving force=-7.8892E+02
+```
+
+This demonstrates:
+- TDB parsing (Ag-Cu binary)
+- Equilibrium calculation with two FCC phases and one suppressed LIQUID phase
+- Newton solver convergence (3 iterations)
+- Phase amounts and molar Gibbs energies
+
+If the calculation runs successfully and shows `Converged: true`, your installation is working.
 
 ## Current state
 

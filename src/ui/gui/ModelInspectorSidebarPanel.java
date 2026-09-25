@@ -18,6 +18,7 @@ public class ModelInspectorSidebarPanel extends JPanel {
     private final DatabaseExtractionPanel dbPanel;
     private JLabel  statusLabel;
     private Runnable inspectCallback;
+    private GuiCalculationContext context;
 
     public ModelInspectorSidebarPanel(MainController controller) {
         setLayout(new BorderLayout());
@@ -72,6 +73,17 @@ public class ModelInspectorSidebarPanel extends JPanel {
     // ── Public API ─────────────────────────────────────────────────────
 
     public void setInspectCallback(Runnable r)    { this.inspectCallback = r; }
+
+    /** Binds this panel's shared database/element state to {@code context}. */
+    public void bindContext(GuiCalculationContext context) {
+        this.context = context;
+        dbPanel.bindContext(context);
+    }
+
+    /** Refreshes fields from the bound context; call when this activity becomes visible. */
+    public void onActivityShown() {
+        if (context != null) dbPanel.syncFromContext();
+    }
 
     public void setOnSelectionChanged(java.util.function.Consumer<DatabaseSelection> cb) {
         dbPanel.setOnSelectionChanged(cb);

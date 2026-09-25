@@ -92,16 +92,29 @@ public class ModelInspectionService {
     /**
      * Returns the Parameter list for a given phase + element set from the loaded TDB.
      *
-     * <p><b>TODO:</b> This method accesses internal TDB details (the parsed {@code tdb}
-     * object) that {@link ApplicationLayer} does not currently expose. This needs a
-     * new {@code ApplicationLayer} method to bridge it, or the GUI inspector to
-     * be redesigned to work without raw parameter access.
+     * <p>Routed through {@link ApplicationLayer} to benefit from its TDB caching,
+     * the same way {@link #inspectModel} does. Returns parameters in their parsed
+     * form for the Model Inspector GUI display.
      */
     public List<tdb.Parameter> getPhaseParameters(String tdbPath, List<String> elements, String phaseName) {
-        if (elements == null || elements.isEmpty() || phaseName == null) return Collections.emptyList();
-        // TODO: Implement via ApplicationLayer
-        LOG.log(AppLevel.WARN, "getPhaseParameters not yet wired through ApplicationLayer");
-        return Collections.emptyList();
+        Trace.enter(LOG, AppLevel.FLOW, "ModelInspectionService", "getPhaseParameters");
+        if (elements == null || elements.isEmpty() || phaseName == null) {
+            return Collections.emptyList();
+        }
+        try {
+            // Temporarily set model in the session to load the TDB without calculation
+            // This reuses the same cached TDB parse across multiple inspector calls
+            if (!session.hasModel()) {
+                session.setModel(tdbPath, elements, Collections.emptyList());
+            }
+            List<tdb.Parameter> params = session.getPhaseParameters(elements, phaseName);
+            Trace.exit(LOG, AppLevel.FLOW, "ModelInspectionService", "getPhaseParameters");
+            return params != null ? params : Collections.emptyList();
+        } catch (Exception ex) {
+            LOG.log(AppLevel.WARN, "getPhaseParameters error", ex);
+            Trace.exit(LOG, AppLevel.FLOW, "ModelInspectionService", "getPhaseParameters");
+            return Collections.emptyList();
+        }
     }
 
     /**

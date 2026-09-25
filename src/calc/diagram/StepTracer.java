@@ -75,6 +75,9 @@ public final class StepTracer {
         List<Double> runAxisValues =
                 new ArrayList<>();
 
+        List<Double> runPropertyValues =
+                new ArrayList<>();
+
         Set<String> runNames =
                 null;
 
@@ -96,12 +99,16 @@ public final class StepTracer {
 
                 // Treat as a continuation of the current run rather than a
                 // phase-set change -- out of scope to retry with a smaller
-                // increment (Sundman's own C1 does this).
+                // increment (Sundman's own C1 does this). No converged
+                // equilibrium exists at this point, so its molar Gibbs
+                // energy is undefined -- record NaN rather than 0 (see
+                // buildSegment/#molarGibbsEnergyPerAtom).
                 if (runNames == null) {
                     runNames = stablePhaseNames(current);
                 }
 
                 runAxisValues.add(v);
+                runPropertyValues.add(Double.NaN);
                 previousAxisValue = v;
                 continue;
             }
@@ -115,6 +122,7 @@ public final class StepTracer {
                 // boundary node.
                 runNames = currentNames;
                 runAxisValues.add(v);
+                runPropertyValues.add(molarGibbsEnergyPerAtom(current));
 
                 result.addNode(
                         new NodePoint(
@@ -125,6 +133,7 @@ public final class StepTracer {
             } else if (currentNames.equals(runNames)) {
 
                 runAxisValues.add(v);
+                runPropertyValues.add(molarGibbsEnergyPerAtom(current));
 
             } else {
 
@@ -137,10 +146,14 @@ public final class StepTracer {
                                 runNames, fixedT, fixedP, compOverall,
                                 candidates);
 
+                EquilibriumResult crossingResult =
+                        solveAt(axis, crossing, fixedT, fixedP, compOverall, candidates);
+
                 runAxisValues.add(crossing);
+                runPropertyValues.add(molarGibbsEnergyPerAtom(crossingResult));
 
                 result.addLine(
-                        buildSegment(runAxisValues, runNames));
+                        buildSegment(runAxisValues, runNames, runPropertyValues));
 
                 Set<String> unionAtCrossing =
                         new LinkedHashSet<>(runNames);
@@ -156,6 +169,9 @@ public final class StepTracer {
                 runAxisValues = new ArrayList<>();
                 runAxisValues.add(crossing);
                 runAxisValues.add(v);
+                runPropertyValues = new ArrayList<>();
+                runPropertyValues.add(molarGibbsEnergyPerAtom(crossingResult));
+                runPropertyValues.add(molarGibbsEnergyPerAtom(current));
                 runNames = currentNames;
             }
 
@@ -166,7 +182,7 @@ public final class StepTracer {
                 && !runAxisValues.isEmpty()) {
 
             result.addLine(
-                    buildSegment(runAxisValues, runNames));
+                    buildSegment(runAxisValues, runNames, runPropertyValues));
 
             result.addNode(
                     new NodePoint(
@@ -176,6 +192,28 @@ public final class StepTracer {
         }
 
         return result;
+    }
+
+    /**
+     * The one scalar equilibrium property {@link StepTracer} reports per
+     * point: system Gibbs energy per mole of real atoms ({@link
+     * EquilibriumResult#totalGPerAtom()}, "Gm" -- the same quantity {@code
+     * EquilibriumReport} already displays for a single-point calculation),
+     * the only system-level scalar property this codebase's calculation
+     * machinery actually computes today (no separate system-level
+     * enthalpy/"HM" aggregation exists -- see {@code CvmGibbs.H(v)}, which
+     * is an internal per-phase mixing term, not exposed at this level).
+     *
+     * @return {@code NaN} if the stable phase set is empty (no real atoms
+     *         to divide by -- {@link EquilibriumResult#totalGPerAtom()}
+     *         itself throws in that case), rather than propagating the
+     *         exception and aborting the whole scan for one bad point
+     */
+    private double molarGibbsEnergyPerAtom(EquilibriumResult result) {
+        if (result.getStablePhases().isEmpty()) {
+            return Double.NaN;
+        }
+        return result.totalGPerAtom();
     }
 
     /**
@@ -234,7 +272,8 @@ public final class StepTracer {
 
     private LineSegment buildSegment(
             List<Double> axisValues,
-            Set<String> names) {
+            Set<String> names,
+            List<Double> propertyValues) {
 
         List<double[]> coords =
                 new ArrayList<>(axisValues.size());
@@ -243,10 +282,16 @@ public final class StepTracer {
             coords.add(new double[] { v });
         }
 
+        double[] properties = new double[propertyValues.size()];
+        for (int i = 0; i < properties.length; i++) {
+            properties[i] = propertyValues.get(i);
+        }
+
         return new LineSegment(
                 coords,
                 null,
-                new ArrayList<>(names));
+                new ArrayList<>(names),
+                properties);
     }
 
     private Set<String> stablePhaseNames(

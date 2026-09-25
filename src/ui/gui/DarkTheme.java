@@ -30,6 +30,32 @@ public class DarkTheme {
     public static final Color MENU_BG     = new Color(0x252526);  // Menu bar/menus
     public static final Color SIDEBAR_BG  = new Color(0x252526);  // Sidebar panel background
     public static final Color SECTION_FG  = new Color(0xBBBBBB);  // Section/panel header text (VS Code style)
+    public static final Color WARNING     = new Color(0xCCA700);  // Warning status (amber)
+    public static final Color HEADER_BG   = new Color(0x1B1B1B);  // Application header bar
+
+    // ========== Font Hierarchy ==========
+    // Three levels only: section header, field/body label, hint/status. Data-bearing
+    // fields (numeric input, log/param text) use the monospace family instead.
+    public static final Font FONT_APP_TITLE = new Font("Segoe UI", Font.BOLD,   13);
+    public static final Font FONT_SECTION   = new Font("Segoe UI", Font.BOLD,   10);
+    public static final Font FONT_LABEL     = new Font("Segoe UI", Font.PLAIN,  11);
+    public static final Font FONT_LABEL_BOLD= new Font("Segoe UI", Font.BOLD,   11);
+    public static final Font FONT_HINT      = new Font("Segoe UI", Font.PLAIN,   9);
+    public static final Font FONT_MONO      = new Font("Consolas",  Font.PLAIN, 11);
+    public static final Font FONT_MONO_SM   = new Font("Consolas",  Font.PLAIN, 10);
+    public static final Font FONT_BADGE     = new Font("Consolas",  Font.BOLD,  10);
+
+    // ========== Spacing / Sizing ==========
+    // One rhythm reused by every config panel instead of ad hoc EmptyBorder insets.
+    public static final int SPACE_XS = 2;
+    public static final int SPACE_SM = 4;
+    public static final int SPACE_MD = 8;
+    public static final int SPACE_LG = 12;
+    public static final int SIDEBAR_WIDTH   = 300;
+    public static final int ACTIVITY_WIDTH  = 52;
+    public static final int CONTROL_HEIGHT  = 24;
+    public static final Insets PANEL_PADDING  = new Insets(SPACE_MD, SPACE_LG, SPACE_MD, SPACE_LG);
+    public static final Insets FIELD_INSETS   = new Insets(SPACE_XS + 1, SPACE_SM, SPACE_XS + 1, SPACE_SM);
 
     public static void apply() {
         String[] gradientKeys = {
@@ -233,5 +259,110 @@ public class DarkTheme {
         line.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
         line.setMinimumSize(new Dimension(0, 1));
         return line;
+    }
+
+    // ================================================================
+    //  Form building helpers — shared by config panels
+    // ================================================================
+
+    /** Section header label ("PHASES", "CONDITIONS", "AXIS 0 (X)", …). */
+    public static JLabel sectionLabel(String title) {
+        JLabel lbl = new JLabel(title);
+        lbl.setFont(FONT_SECTION);
+        lbl.setForeground(SECTION_FG);
+        lbl.setBorder(new EmptyBorder(SPACE_SM, 0, SPACE_XS, 0));
+        return lbl;
+    }
+
+    /** Small hint/status line under a field or section. */
+    public static JLabel hintLabel(String text) {
+        JLabel lbl = new JLabel(text);
+        lbl.setFont(FONT_HINT);
+        lbl.setForeground(FG_SECOND);
+        return lbl;
+    }
+
+    /** Plain field-row label ("T (K)", "Type", "Range", …). */
+    public static JLabel fieldLabel(String text) {
+        JLabel lbl = new JLabel(text);
+        lbl.setFont(FONT_LABEL);
+        return lbl;
+    }
+
+    /** Compact flat utility button (Add, Browse, Clear, Copy, All/None, …). */
+    public static JButton smallButton(String text) {
+        JButton btn = new JButton(text);
+        btn.setFont(FONT_LABEL);
+        btn.setMargin(new Insets(2, SPACE_MD, 2, SPACE_MD));
+        btn.setFocusPainted(false);
+        btn.setBorderPainted(false);
+        btn.setBackground(BG_INPUT);
+        btn.setForeground(FG_PRIMARY);
+        btn.setOpaque(true);
+        return btn;
+    }
+
+    /** Primary call-to-action button (Run, Calculate, Inspect). */
+    public static JButton primaryButton(String text) {
+        JButton btn = new JButton(text);
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        btn.setBackground(ACCENT);
+        btn.setForeground(Color.WHITE);
+        btn.setFocusPainted(false);
+        btn.setBorderPainted(false);
+        btn.setOpaque(true);
+        btn.setMargin(new Insets(SPACE_MD, SPACE_LG + 4, SPACE_MD, SPACE_LG + 4));
+        return btn;
+    }
+
+    /** Standard themed text field for numeric/text entry rows. */
+    public static JTextField textField(String defaultValue) {
+        JTextField f = new JTextField(defaultValue);
+        f.setFont(FONT_MONO_SM);
+        f.setBackground(BG_INPUT);
+        f.setForeground(FG_PRIMARY);
+        f.setCaretColor(FG_PRIMARY);
+        f.setSelectionColor(SEL_BG);
+        return f;
+    }
+
+    /** Themed combo box using {@link ComboRenderer}. */
+    public static <T> JComboBox<T> comboBox(T[] items) {
+        JComboBox<T> c = new JComboBox<>(items);
+        c.setBackground(BG_INPUT);
+        c.setForeground(FG_PRIMARY);
+        c.setRenderer(new ComboRenderer());
+        return c;
+    }
+
+    /** Adds a label + field row spanning the standard 3-column grid, returning the field. */
+    public static JTextField addLabeledRow(JPanel panel, GridBagConstraints g, int row,
+                                            String label, String defaultValue) {
+        g.gridx = 0; g.gridy = row; g.weightx = 0; g.gridwidth = 1;
+        panel.add(fieldLabel(label), g);
+
+        JTextField field = textField(defaultValue);
+        g.gridx = 1; g.gridy = row; g.weightx = 1; g.gridwidth = 2;
+        panel.add(field, g);
+        g.gridwidth = 1;
+        return field;
+    }
+
+    /** Adds a full-width section header row, returning the label for later mutation. */
+    public static JLabel addSectionRow(JPanel panel, GridBagConstraints g, int row, String title) {
+        JLabel lbl = sectionLabel(title);
+        g.gridx = 0; g.gridy = row; g.gridwidth = 3; g.weightx = 1;
+        panel.add(lbl, g);
+        g.gridwidth = 1;
+        return lbl;
+    }
+
+    /** Fresh GridBagConstraints matching the standard config-panel grid rhythm. */
+    public static GridBagConstraints formGbc() {
+        GridBagConstraints g = new GridBagConstraints();
+        g.insets = new Insets(SPACE_SM, SPACE_SM + 2, SPACE_SM, SPACE_SM + 2);
+        g.anchor = GridBagConstraints.WEST;
+        g.fill = GridBagConstraints.HORIZONTAL;
+        return g;
     }
 }

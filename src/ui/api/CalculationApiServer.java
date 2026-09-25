@@ -6,9 +6,14 @@ import ui.api.dto.EquilibriumRequest;
 import ui.api.dto.EquilibriumResponse;
 import ui.api.dto.ErrorResponse;
 import ui.api.dto.PhaseDiagramRequest;
+import ui.api.dto.PhaseDiagramResponse;
 import ui.api.dto.PhasesRequest;
 import ui.api.dto.PhasesResponse;
 import ui.api.dto.SetModelRequest;
+import ui.api.dto.StepRequest;
+import ui.api.dto.CoarseBinaryRequest;
+import ui.api.dto.CoarseTernaryRequest;
+import ui.api.dto.CoarseDiagramResponse;
 import ui.request.AxisConfig;
 import com.google.gson.Gson;
 import com.sun.net.httpserver.HttpExchange;
@@ -18,6 +23,7 @@ import application.calctype.CalculationInterface;
 import application.calctype.CalculationKind;
 import application.calctype.CalculationOutcome;
 import application.calctype.ModelSelection;
+import calc.diagram.PhaseDiagramResult;
 import system.ports.EquilibriumResult;
 
 import java.io.IOException;
@@ -34,7 +40,7 @@ import java.util.regex.Pattern;
  * HTTP/JSON REST API exposing {@link application.ApplicationLayer} to
  * external, cross-process, cross-language callers.
  *
- * <p>See {@code docs/plan-rest-api-calculation-session.md} for the full
+ * <p>See {@code docs/rest-api.md} for the full
  * design: session lifecycle (explicit create/delete, one
  * {@code ApplicationLayer} per session id, never a shared singleton),
  * concurrency policy (synchronized per session), and error-to-HTTP-status
@@ -47,10 +53,12 @@ import java.util.regex.Pattern;
  *   POST   /sessions/{id}/elements                      -> 200 ElementsResponse
  *   POST   /sessions/{id}/phases                        -> 200 PhasesResponse
  *   POST   /sessions/{id}/calculations/equilibrium      -> 200 EquilibriumResponse
- *   POST   /sessions/{id}/calculations/phase-diagram    -> 501 (not implemented yet)
+ *   POST   /sessions/{id}/calculations/phase-diagram    -> 200 PhaseDiagramResponse
  *   POST   /sessions/{id}/calculations/assessment       -> 501 (opt -- not implemented yet)
- *   POST   /sessions/{id}/calculations/step             -> 501
- *   POST   /sessions/{id}/calculations/map              -> 501
+ *   POST   /sessions/{id}/calculations/step             -> 200 PhaseDiagramResponse
+ *   POST   /sessions/{id}/calculations/map              -> 200 PhaseDiagramResponse
+ *   POST   /sessions/{id}/calculations/coarse-binary    -> 200 CoarseDiagramResponse
+ *   POST   /sessions/{id}/calculations/coarse-ternary   -> 200 CoarseDiagramResponse
  *   DELETE /sessions/{id}                                -> 204
  * </pre>
  *
@@ -256,9 +264,16 @@ public final class CalculationApiServer {
                         runAssessment(exchange);
                         break;
                     case "step":
+                        runStep(exchange, entry);
+                        break;
                     case "map":
-                        sendJson(exchange, 501,
-                                new ErrorResponse(kind + " calculation not yet implemented"));
+                        runMap(exchange, entry);
+                        break;
+                    case "coarse-binary":
+                        runCoarseBinary(exchange, entry);
+                        break;
+                    case "coarse-ternary":
+                        runCoarseTernary(exchange, entry);
                         break;
                     default:
                         sendJson(exchange, 404, new ErrorResponse("Unknown calculation type: " + kind));
@@ -301,11 +316,35 @@ public final class CalculationApiServer {
 
         CalculationInterface.PhaseDiagramParams params = new CalculationInterface.PhaseDiagramParams(
                 axes, req.startAxes, req.fixedT, req.fixedP, req.composition);
-        // calculatePhaseDiagram always throws today (not yet implemented -- see
-        // docs/roadmap_phase_diagrams.md); runCalculating below is expected to
-        // propagate that as an error response, same as any other 501.
-        CalculationInterface.<CalculationInterface.PhaseDiagramParams, Object>runCalculating(
+        PhaseDiagramResult result = CalculationInterface.runCalculating(
                 entry.session, CalculationKind.PHASE_DIAGRAM, entry.modelSelection, params);
+        sendJson(exchange, 200, new PhaseDiagramResponse(result));
+    }
+
+    /**
+     * Single-axis property scan -- routed through {@link
+     * CalculationInterface#runCalculating} with {@link CalculationKind#STEP},
+     * the same {@link CalculationInterface} call the CLI's {@code step}
+     * command and the GUI's {@code MainController#runPropertyScan} use.
+     * {@link StepTracer} returns a {@link PhaseDiagramResult} (Phase 9C:
+     * one axis, {@code LineSegment.propertyValues} carrying "Gm" per
+     * point), the exact same result type {@link #runPhaseDiagram} already
+     * serializes -- so the response reuses {@link PhaseDiagramResponse}
+     * rather than a redundant STEP-specific DTO.
+     */
+    private void runStep(HttpExchange exchange, SessionStore.Entry entry) throws IOException {
+        if (entry.modelSelection == null) {
+            sendJson(exchange, 409, new ErrorResponse("No model set -- PUT .../model first"));
+            return;
+        }
+        StepRequest req = readJson(exchange, StepRequest.class);
+        AxisConfig axis = toAxisConfig(req.axis);
+
+        CalculationInterface.StepParams params = new CalculationInterface.StepParams(
+                axis, req.fixedT, req.fixedP, req.composition);
+        PhaseDiagramResult result = CalculationInterface.runCalculating(
+                entry.session, CalculationKind.STEP, entry.modelSelection, params);
+        sendJson(exchange, 200, new PhaseDiagramResponse(result));
     }
 
     /**
@@ -318,6 +357,60 @@ public final class CalculationApiServer {
         CalculationOutcome.NotImplemented<Void> outcome =
                 CalculationInterface.runAssessing(CalculationKind.ASSESSMENT, null);
         sendJson(exchange, 501, new ErrorResponse(outcome.message()));
+    }
+
+    private void runMap(HttpExchange exchange, SessionStore.Entry entry) throws IOException {
+        if (entry.modelSelection == null) {
+            sendJson(exchange, 409, new ErrorResponse("No model set -- PUT .../model first"));
+            return;
+        }
+        PhaseDiagramRequest req = readJson(exchange, PhaseDiagramRequest.class);
+
+        AxisConfig[] axes = new AxisConfig[req.axes.size()];
+        for (int i = 0; i < axes.length; i++) {
+            PhaseDiagramRequest.AxisSpec spec = req.axes.get(i);
+            axes[i] = toAxisConfig(spec);
+        }
+
+        CalculationInterface.PhaseDiagramParams params = new CalculationInterface.PhaseDiagramParams(
+                axes, req.startAxes, req.fixedT, req.fixedP, req.composition);
+        PhaseDiagramResult result = CalculationInterface.runCalculating(
+                entry.session, CalculationKind.PHASE_DIAGRAM, entry.modelSelection, params);
+        sendJson(exchange, 200, new PhaseDiagramResponse(result));
+    }
+
+    private void runCoarseBinary(HttpExchange exchange, SessionStore.Entry entry) throws IOException {
+        if (entry.modelSelection == null) {
+            sendJson(exchange, 409, new ErrorResponse("No model set -- PUT .../model first"));
+            return;
+        }
+        CoarseBinaryRequest req = readJson(exchange, CoarseBinaryRequest.class);
+
+        AxisConfig axisX = toAxisConfig(req.axisX);
+        AxisConfig axisY = toAxisConfig(req.axisY);
+
+        CalculationInterface.CoarseBinaryParams params = new CalculationInterface.CoarseBinaryParams(
+                axisX, axisY, req.fixedT, req.fixedP, req.composition);
+        ui.result.CoarseDiagramResult result = CalculationInterface.runCalculating(
+                entry.session, CalculationKind.COARSE_BINARY, entry.modelSelection, params);
+        sendJson(exchange, 200, new CoarseDiagramResponse(result));
+    }
+
+    private void runCoarseTernary(HttpExchange exchange, SessionStore.Entry entry) throws IOException {
+        if (entry.modelSelection == null) {
+            sendJson(exchange, 409, new ErrorResponse("No model set -- PUT .../model first"));
+            return;
+        }
+        CoarseTernaryRequest req = readJson(exchange, CoarseTernaryRequest.class);
+
+        AxisConfig axisI = toAxisConfig(req.axisI);
+        AxisConfig axisJ = toAxisConfig(req.axisJ);
+
+        CalculationInterface.CoarseTernaryParams params = new CalculationInterface.CoarseTernaryParams(
+                axisI, axisJ, req.fixedT, req.fixedP, req.composition);
+        ui.result.CoarseDiagramResult result = CalculationInterface.runCalculating(
+                entry.session, CalculationKind.COARSE_TERNARY, entry.modelSelection, params);
+        sendJson(exchange, 200, new CoarseDiagramResponse(result));
     }
 
     private AxisConfig toAxisConfig(PhaseDiagramRequest.AxisSpec spec) {

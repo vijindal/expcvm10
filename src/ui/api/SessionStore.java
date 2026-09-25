@@ -10,13 +10,13 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * In-memory registry of live {@link ApplicationLayer} instances, one per
- * API session ID. Per {@code docs/plan-rest-api-calculation-session.md}:
- * one {@code ApplicationLayer} per API session (never a shared
- * singleton), and concurrent requests to the SAME session ID synchronize
- * on that session's own lock rather than being rejected or corrupting state.
+ * API session ID. Per {@code docs/rest-api.md}: one
+ * {@code ApplicationLayer} per API session (never a shared singleton), and
+ * concurrent requests to the SAME session ID synchronize on that session's
+ * own lock rather than being rejected or corrupting state.
  *
- * <p>Session expiry/cleanup is deliberately deferred (see the plan doc) --
- * this first implementation only frees a session on explicit {@link #remove}.
+ * <p>Session expiry is deliberately deferred -- this implementation only
+ * frees a session on explicit {@link #remove} (DELETE /sessions/{id}).
  */
 public final class SessionStore {
 

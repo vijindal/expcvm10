@@ -26,41 +26,69 @@ import java.util.function.Consumer;
  */
 public class DatabaseExtractionPanel extends JPanel {
 
-    // ── Controller reference ─────────────────────────────────────────
     private final MainController controller;
 
-    // ── Database section ─────────────────────────────────────────────
     private JComboBox<String> tdbCombo;
     private JLabel            dbStatusLabel;
 
-    // ── Elements section ─────────────────────────────────────────────
-    private JTextField elemInputField;
-    private JLabel     availableHint;
-    private JPanel     confirmedPanel;    // badge row
-    private JLabel     phasesHint;        // "Phases: BCC_A2  HCP_A3 …"
+    private TagInputField elementsField;
+    private JLabel         phasesHint;
 
-    // ── State ────────────────────────────────────────────────────────
     private final DatabaseSelection selection = new DatabaseSelection();
     private Consumer<DatabaseSelection> onSelectionChanged;
 
-    // ── Fonts ────────────────────────────────────────────────────────
-    private static final Font F_LABEL  = new Font("Segoe UI",  Font.PLAIN, 11);
-    private static final Font F_HINT   = new Font("Segoe UI",  Font.PLAIN,  9);
-    private static final Font F_FIELD  = new Font("Consolas",  Font.PLAIN, 11);
-    private static final Font F_SECT   = new Font("Segoe UI",  Font.BOLD,  10);
-    private static final Font F_BADGE  = new Font("Consolas",  Font.BOLD,  10);
-
-    // ─────────────────────────────────────────────────────────────────
+    private GuiCalculationContext context;
+    private boolean syncingFromContext = false;
 
     public DatabaseExtractionPanel(MainController controller) {
         this.controller = controller;
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setBackground(DarkTheme.SIDEBAR_BG);
-        setBorder(new EmptyBorder(8, 10, 8, 10));
+        setBorder(new EmptyBorder(DarkTheme.SPACE_MD, DarkTheme.SPACE_LG, DarkTheme.SPACE_MD, DarkTheme.SPACE_LG));
 
         add(buildDatabaseSection());
-        add(Box.createVerticalStrut(10));
+        add(Box.createVerticalStrut(DarkTheme.SPACE_LG - 2));
         add(buildElementsSection());
+    }
+
+    /**
+     * Binds this panel to a shared {@link GuiCalculationContext}: local
+     * selection changes are pushed into it, and it is used to restore
+     * this panel's fields when {@link #syncFromContext()} is called
+     * (e.g. when the host activity becomes visible again).
+     */
+    public void bindContext(GuiCalculationContext context) {
+        this.context = context;
+        syncFromContext();
+    }
+
+    /** Repopulates this panel's fields from the bound context without re-parsing the TDB. */
+    public void syncFromContext() {
+        if (context == null) return;
+        DatabaseSelection ctxSel = context.getSelection();
+        if (!ctxSel.hasTdb()) return;
+
+        syncingFromContext = true;
+        try {
+            selection.setTdbPath(ctxSel.getTdbPath());
+            selection.setAvailableElements(ctxSel.getAvailableElements());
+            selection.setElements(ctxSel.getElements());
+            selection.setAvailablePhases(ctxSel.getAvailablePhases());
+
+            tdbCombo.getEditor().setItem(toRelativeIfPossible(new File(ctxSel.getTdbPath())));
+            List<String> allElements = ctxSel.getAvailableElements() != null ? ctxSel.getAvailableElements() : new ArrayList<>();
+            int nPhases = ctxSel.getAvailablePhases() != null ? ctxSel.getAvailablePhases().size() : 0;
+            dbStatusLabel.setText(allElements.size() + " el · " + nPhases + " ph loaded");
+            dbStatusLabel.setForeground(DarkTheme.SUCCESS);
+
+            elementsField.setKnownValues(allElements);
+            elementsField.setHintText("Available: " + buildElementHint(allElements));
+            elementsField.clear();
+            for (String el : ctxSel.getElements()) elementsField.addKnownSelectedValue(el);
+            phasesHint.setText(buildPhasesHint(ctxSel.getAvailablePhases()));
+        } finally {
+            syncingFromContext = false;
+        }
     }
 
     // ================================================================
@@ -71,43 +99,34 @@ public class DatabaseExtractionPanel extends JPanel {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setOpaque(false);
         panel.setAlignmentX(LEFT_ALIGNMENT);
-        GridBagConstraints g = baseGbc();
+        GridBagConstraints g = DarkTheme.formGbc();
+        g.insets = new Insets(2, 2, 2, 2);
 
-        // Section header
         g.gridx = 0; g.gridy = 0; g.gridwidth = 3; g.weightx = 1;
-        panel.add(sectionLabel("DATABASE"), g);
+        panel.add(DarkTheme.sectionLabel("DATABASE"), g);
         g.gridwidth = 1;
 
-        // Dropdown (auto-scanned from data/)
-        tdbCombo = new JComboBox<>();
-        tdbCombo.setFont(F_FIELD);
-        tdbCombo.setBackground(DarkTheme.BG_INPUT);
-        tdbCombo.setForeground(DarkTheme.FG_PRIMARY);
-        tdbCombo.setRenderer(new DarkTheme.ComboRenderer());
-        tdbCombo.setEditable(true);   // allow free-text path too
-        ((JTextField) tdbCombo.getEditor().getEditorComponent())
-                .setBackground(DarkTheme.BG_INPUT);
-        ((JTextField) tdbCombo.getEditor().getEditorComponent())
-                .setForeground(DarkTheme.FG_PRIMARY);
+        tdbCombo = DarkTheme.comboBox(new String[0]);
+        tdbCombo.setFont(DarkTheme.FONT_MONO);
+        tdbCombo.setEditable(true);
+        ((JTextField) tdbCombo.getEditor().getEditorComponent()).setBackground(DarkTheme.BG_INPUT);
+        ((JTextField) tdbCombo.getEditor().getEditorComponent()).setForeground(DarkTheme.FG_PRIMARY);
         populateTdbCombo();
         g.gridx = 0; g.gridy = 1; g.weightx = 1; g.gridwidth = 2;
         panel.add(tdbCombo, g);
         g.gridwidth = 1;
 
-        // Browse button
-        JButton browse = smallButton("…");
+        JButton browse = DarkTheme.smallButton("…");
         browse.setToolTipText("Browse for TDB file");
         browse.addActionListener(e -> onBrowse());
         g.gridx = 2; g.gridy = 1; g.weightx = 0;
         panel.add(browse, g);
 
-        // Status
-        dbStatusLabel = hintLabel("No database loaded");
+        dbStatusLabel = DarkTheme.hintLabel("No database loaded");
         g.gridx = 0; g.gridy = 2; g.gridwidth = 3; g.weightx = 1;
         panel.add(dbStatusLabel, g);
         g.gridwidth = 1;
 
-        // Wire combo action (Enter or selection)
         tdbCombo.addActionListener(e -> {
             if ("comboBoxChanged".equals(e.getActionCommand())) onTdbSelected();
         });
@@ -126,53 +145,18 @@ public class DatabaseExtractionPanel extends JPanel {
     // ================================================================
 
     private JPanel buildElementsSection() {
-        JPanel panel = new JPanel(new GridBagLayout());
+        JPanel panel = new JPanel(new BorderLayout(0, DarkTheme.SPACE_XS));
         panel.setOpaque(false);
         panel.setAlignmentX(LEFT_ALIGNMENT);
-        GridBagConstraints g = baseGbc();
 
-        // Section header
-        g.gridx = 0; g.gridy = 0; g.gridwidth = 3; g.weightx = 1;
-        panel.add(sectionLabel("ELEMENTS"), g);
-        g.gridwidth = 1;
+        panel.add(DarkTheme.sectionLabel("ELEMENTS"), BorderLayout.NORTH);
 
-        // Input field + Add button
-        elemInputField = new JTextField();
-        elemInputField.setFont(F_FIELD);
-        elemInputField.setBackground(DarkTheme.BG_INPUT);
-        elemInputField.setForeground(DarkTheme.FG_PRIMARY);
-        elemInputField.setCaretColor(DarkTheme.FG_PRIMARY);
-        elemInputField.setToolTipText("Type element symbols separated by commas, e.g. TI,ZR");
-        elemInputField.addKeyListener(new KeyAdapter() {
-            @Override public void keyPressed(KeyEvent e) {
-                if (e.getKeyCode() == KeyEvent.VK_ENTER) onAddElements();
-            }
-        });
-        g.gridx = 0; g.gridy = 1; g.weightx = 1; g.gridwidth = 2;
-        panel.add(elemInputField, g);
-        g.gridwidth = 1;
+        elementsField = new TagInputField("Available: —", true);
+        elementsField.setOnChanged(this::refreshPhasesForConfirmed);
+        panel.add(elementsField, BorderLayout.CENTER);
 
-        JButton addBtn = smallButton("Add");
-        addBtn.addActionListener(e -> onAddElements());
-        g.gridx = 2; g.gridy = 1; g.weightx = 0;
-        panel.add(addBtn, g);
-
-        // Available hint
-        availableHint = hintLabel("Available: —");
-        g.gridx = 0; g.gridy = 2; g.gridwidth = 3; g.weightx = 1;
-        panel.add(availableHint, g);
-
-        // Confirmed badges panel (wrapping FlowLayout)
-        confirmedPanel = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 2));
-        confirmedPanel.setOpaque(false);
-        g.gridx = 0; g.gridy = 3; g.gridwidth = 3; g.weightx = 1;
-        panel.add(confirmedPanel, g);
-
-        // Phases hint
-        phasesHint = hintLabel("Phases: —");
-        g.gridx = 0; g.gridy = 4; g.gridwidth = 3; g.weightx = 1;
-        panel.add(phasesHint, g);
-        g.gridwidth = 1;
+        phasesHint = DarkTheme.hintLabel("Phases: —");
+        panel.add(phasesHint, BorderLayout.SOUTH);
 
         return panel;
     }
@@ -219,92 +203,19 @@ public class DatabaseExtractionPanel extends JPanel {
         dbStatusLabel.setText(allElements.size() + " el · " + nPhases + " ph loaded");
         dbStatusLabel.setForeground(DarkTheme.SUCCESS);
 
-        availableHint.setText("Available: " + buildElementHint(allElements));
-        confirmedPanel.removeAll();
-        confirmedPanel.revalidate();
-        confirmedPanel.repaint();
+        elementsField.setKnownValues(allElements);
+        elementsField.setHintText("Available: " + buildElementHint(allElements));
+        elementsField.clear();
         phasesHint.setText("Phases: —");
-        elemInputField.setText("");
 
         fireSelectionChanged();
     }
 
-    private void onAddElements() {
-        String raw = elemInputField.getText().trim();
-        if (raw.isEmpty()) return;
-
-        List<String> available = selection.getAvailableElements();
-        if (available == null || available.isEmpty()) {
-            elemInputField.setForeground(DarkTheme.ERROR_COLOR);
-            elemInputField.setToolTipText("Load a database first");
-            return;
-        }
-
-        // Parse tokens
-        String[] tokens = raw.split("[,\\s]+");
-        List<String> accepted   = new ArrayList<>();
-        List<String> rejected   = new ArrayList<>();
-        List<String> alreadyIn  = new ArrayList<>(selection.getElements());
-
-        for (String t : tokens) {
-            String upper = t.trim().toUpperCase();
-            if (upper.isEmpty()) continue;
-            if (alreadyIn.contains(upper)) continue;       // skip duplicates silently
-            if (available.contains(upper)) {
-                accepted.add(upper);
-                alreadyIn.add(upper);
-            } else {
-                rejected.add(upper);
-            }
-        }
-
-        // Add accepted badges
-        for (String elem : accepted) addBadge(elem);
-
-        // Show rejected in red badge (non-clickable, informational)
-        if (!rejected.isEmpty()) {
-            JLabel warn = new JLabel("Unknown: " + String.join(",", rejected));
-            warn.setFont(F_BADGE);
-            warn.setForeground(DarkTheme.ERROR_COLOR);
-            confirmedPanel.add(warn);
-        }
-
-        confirmedPanel.revalidate();
-        confirmedPanel.repaint();
-        elemInputField.setText("");
-        elemInputField.setForeground(DarkTheme.FG_PRIMARY);
-
-        refreshPhasesForConfirmed();
-    }
-
-    private void addBadge(String elem) {
-        JPanel badge = new JPanel(new FlowLayout(FlowLayout.LEFT, 3, 0));
-        badge.setBackground(DarkTheme.VALID_BG);
-        badge.setBorder(BorderFactory.createLineBorder(DarkTheme.SUCCESS, 1));
-
-        JLabel nameLbl = new JLabel(elem);
-        nameLbl.setFont(F_BADGE);
-        nameLbl.setForeground(DarkTheme.SUCCESS);
-        badge.add(nameLbl);
-
-        JLabel removeLbl = new JLabel("×");
-        removeLbl.setFont(F_BADGE);
-        removeLbl.setForeground(DarkTheme.FG_SECOND);
-        removeLbl.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        removeLbl.addMouseListener(new java.awt.event.MouseAdapter() {
-            @Override public void mouseClicked(java.awt.event.MouseEvent e) {
-                confirmedPanel.remove(badge);
-                confirmedPanel.revalidate();
-                confirmedPanel.repaint();
-                refreshPhasesForConfirmed();
-            }
-        });
-        badge.add(removeLbl);
-        confirmedPanel.add(badge);
-    }
-
     private void refreshPhasesForConfirmed() {
-        List<String> confirmed = getConfirmedElements();
+        if (syncingFromContext) return;
+
+        List<String> confirmed = new ArrayList<>(elementsField.getValues());
+        java.util.Collections.sort(confirmed);
         selection.setElements(confirmed);
 
         if (confirmed.isEmpty() || selection.getTdbPath() == null) {
@@ -330,26 +241,16 @@ public class DatabaseExtractionPanel extends JPanel {
     public DatabaseSelection getSelection() { return selection; }
 
     /**
-     * Pre-fills the database path and element text fields with a sensible
-     * starting point (called once at construction by host sidebar), but
-     * does NOT load or parse anything -- no TDB access happens until the
-     * user actually interacts with the panel (selects/confirms the
-     * database via the combo box, presses Enter, or clicks Browse; then
-     * adds elements). This is a fully lazy default: the GUI does zero TDB
-     * parsing at startup (see {@code docs/plan-gui-calculationsession-wiring.md}).
-     *
-     * <p>{@code tdbCombo.getEditor().setItem(...)} only changes the
-     * editor's displayed text -- it does not fire the combo's
-     * {@code comboBoxChanged} action (that only fires from real user
-     * selection), so this is safe to call directly, with no deferral
-     * needed.
+     * Pre-fills the database path and element fields without loading or
+     * parsing anything -- no TDB access happens until the user interacts
+     * with the panel (selects/confirms the database, then adds elements).
      */
     public void setDefaults(String tdbRelPath, List<String> elements) {
         if (tdbRelPath != null && !tdbRelPath.isEmpty()) {
             tdbCombo.getEditor().setItem(tdbRelPath);
         }
         if (elements != null && !elements.isEmpty()) {
-            elemInputField.setText(String.join(",", elements));
+            elementsField.getInputField().setText(String.join(",", elements));
         }
     }
 
@@ -357,41 +258,6 @@ public class DatabaseExtractionPanel extends JPanel {
     //  Helpers
     // ================================================================
 
-    /**
-     * Returns the confirmed elements in alphabetical order, regardless
-     * of the order badges were added/typed in -- element order is not
-     * just cosmetic: it fixes each element's composition-axis component
-     * index (e.g. V-Zr sorts to [V, ZR], so x(Zr) is always axis
-     * component index 1), so a stable, predictable ordering avoids a
-     * calculation silently sweeping the wrong element depending on
-     * typing order.
-     */
-    private List<String> getConfirmedElements() {
-        List<String> result = new ArrayList<>();
-        for (Component c : confirmedPanel.getComponents()) {
-            if (c instanceof JPanel) {
-                // First label in badge is the element name
-                for (Component inner : ((JPanel) c).getComponents()) {
-                    if (inner instanceof JLabel) {
-                        String text = ((JLabel) inner).getText();
-                        if (!text.equals("×")) { result.add(text); break; }
-                    }
-                }
-            }
-        }
-        java.util.Collections.sort(result);
-        return result;
-    }
-
-    /**
-     * Populates the database dropdown via
-     * {@link MainController#availableDatabases()} (backed by
-     * {@code ApplicationLayer.availableDatabases()}) rather than
-     * scanning the filesystem directly -- see
-     * {@code docs/plan-gui-calculationsession-wiring.md} Fix 3, which
-     * found this panel was the only place in the whole codebase doing
-     * database discovery, and it was bypassing the session to do it.
-     */
     private void populateTdbCombo() {
         for (String path : controller.availableDatabases()) {
             tdbCombo.addItem(path);
@@ -403,7 +269,6 @@ public class DatabaseExtractionPanel extends JPanel {
 
     private String buildElementHint(List<String> elements) {
         if (elements == null || elements.isEmpty()) return "—";
-        // Show first 12 then "…"
         int max = Math.min(elements.size(), 12);
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < max; i++) {
@@ -429,6 +294,7 @@ public class DatabaseExtractionPanel extends JPanel {
 
     private void fireSelectionChanged() {
         if (onSelectionChanged != null) onSelectionChanged.accept(selection);
+        if (context != null && !syncingFromContext) context.applySelection(selection);
     }
 
     private String toRelativeIfPossible(File file) {
@@ -443,98 +309,5 @@ public class DatabaseExtractionPanel extends JPanel {
             }
             return abs;
         } catch (java.io.IOException ex) { return file.getPath(); }
-    }
-
-    private GridBagConstraints baseGbc() {
-        GridBagConstraints g = new GridBagConstraints();
-        g.insets = new Insets(2, 2, 2, 2);
-        g.fill = GridBagConstraints.HORIZONTAL;
-        g.anchor = GridBagConstraints.WEST;
-        return g;
-    }
-
-    private JLabel sectionLabel(String text) {
-        JLabel lbl = new JLabel(text);
-        lbl.setFont(F_SECT);
-        lbl.setForeground(DarkTheme.SECTION_FG);
-        lbl.setBorder(new EmptyBorder(2, 0, 2, 0));
-        return lbl;
-    }
-
-    private JLabel hintLabel(String text) {
-        JLabel lbl = new JLabel(text);
-        lbl.setFont(F_HINT);
-        lbl.setForeground(DarkTheme.FG_SECOND);
-        return lbl;
-    }
-
-    private JButton smallButton(String text) {
-        JButton btn = new JButton(text);
-        btn.setFont(F_LABEL);
-        btn.setMargin(new Insets(2, 6, 2, 6));
-        btn.setFocusPainted(false);
-        btn.setBorderPainted(false);
-        btn.setBackground(DarkTheme.BG_INPUT);
-        btn.setForeground(DarkTheme.FG_PRIMARY);
-        btn.setOpaque(true);
-        return btn;
-    }
-
-    // ================================================================
-    //  WrapLayout — FlowLayout that wraps onto new lines inside panels
-    // ================================================================
-
-    private static class WrapLayout extends FlowLayout {
-        WrapLayout(int align, int hgap, int vgap) { super(align, hgap, vgap); }
-
-        @Override
-        public Dimension preferredLayoutSize(Container target) {
-            return layoutSize(target, true);
-        }
-
-        @Override
-        public Dimension minimumLayoutSize(Container target) {
-            Dimension minimum = layoutSize(target, false);
-            minimum.width -= (getHgap() + 1);
-            return minimum;
-        }
-
-        private Dimension layoutSize(Container target, boolean preferred) {
-            synchronized (target.getTreeLock()) {
-                int targetWidth = target.getSize().width;
-                if (targetWidth == 0) targetWidth = Integer.MAX_VALUE;
-
-                int hgap = getHgap();
-                int vgap = getVgap();
-                Insets insets = target.getInsets();
-                int maxWidth = targetWidth - (insets.left + insets.right + hgap * 2);
-
-                Dimension dim = new Dimension(0, 0);
-                int rowWidth = 0;
-                int rowHeight = 0;
-
-                int nmembers = target.getComponentCount();
-                for (int i = 0; i < nmembers; i++) {
-                    Component m = target.getComponent(i);
-                    if (m.isVisible()) {
-                        Dimension d = preferred ? m.getPreferredSize() : m.getMinimumSize();
-                        if (rowWidth + d.width > maxWidth) {
-                            dim.height += rowHeight + vgap;
-                            dim.width = Math.max(dim.width, rowWidth);
-                            rowWidth = 0;
-                            rowHeight = 0;
-                        }
-                        if (rowWidth != 0) rowWidth += hgap;
-                        rowWidth += d.width;
-                        rowHeight = Math.max(rowHeight, d.height);
-                    }
-                }
-                dim.height += rowHeight;
-                dim.width = Math.max(dim.width, rowWidth);
-                dim.width  += insets.left + insets.right + hgap * 2;
-                dim.height += insets.top  + insets.bottom + vgap * 2;
-                return dim;
-            }
-        }
     }
 }

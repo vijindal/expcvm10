@@ -17,14 +17,16 @@ public class ActivityBar extends JPanel {
 
     private List<ActivityButton> buttons = new ArrayList<>();
     private ActivityButton activeButton;
+    private boolean utilitySeparatorAdded = false;
 
     public ActivityBar() {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setBackground(DarkTheme.BG);
-        setPreferredSize(new Dimension(48, 0));
+        setPreferredSize(new Dimension(DarkTheme.ACTIVITY_WIDTH, 0));
         setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, DarkTheme.BORDER));
     }
 
+    /** Adds a calculation-mode activity to the main button group. */
     public void addActivity(String label, ActivityIcon icon, Runnable callback) {
         ActivityButton btn = new ActivityButton(label, icon, callback);
         buttons.add(btn);
@@ -34,6 +36,24 @@ public class ActivityBar extends JPanel {
         if (activeButton == null) {
             setActive(btn);
         }
+    }
+
+    /** Adds a utility activity (e.g. Inspect), visually separated below the calculation modes. */
+    public void addUtility(String label, ActivityIcon icon, Runnable callback) {
+        if (!utilitySeparatorAdded) {
+            add(Box.createVerticalGlue());
+            JPanel line = new JPanel();
+            line.setBackground(DarkTheme.BORDER);
+            line.setPreferredSize(new Dimension(DarkTheme.ACTIVITY_WIDTH - 16, 1));
+            line.setMaximumSize(new Dimension(DarkTheme.ACTIVITY_WIDTH - 16, 1));
+            JPanel wrap = new JPanel();
+            wrap.setOpaque(false);
+            wrap.add(line);
+            add(wrap);
+            add(Box.createVerticalStrut(4));
+            utilitySeparatorAdded = true;
+        }
+        addActivity(label, icon, callback);
     }
 
     public void setActive(ActivityButton button) {
@@ -134,11 +154,25 @@ public class ActivityBar extends JPanel {
         }
     }
 
-    public static class SquareIcon implements ActivityIcon {
+    /** 2x2 grid — used for MAP (a two-axis scan). */
+    public static class GridIcon implements ActivityIcon {
         @Override
         public void paint(Graphics2D g, int x, int y, int w, int h) {
-            g.setStroke(new BasicStroke(2.0f));
+            g.setStroke(new BasicStroke(1.6f));
             g.drawRect(x + 2, y + 2, w - 4, h - 4);
+            g.drawLine(x + w / 2, y + 2, x + w / 2, y + h - 2);
+            g.drawLine(x + 2, y + h / 2, x + w - 2, y + h / 2);
+        }
+    }
+
+    /** Scattered dots — used for the coarse/scatter diagram. */
+    public static class ScatterIcon implements ActivityIcon {
+        @Override
+        public void paint(Graphics2D g, int x, int y, int w, int h) {
+            int r = 2;
+            int[][] pts = {{x + 4, y + 5}, {x + w - 6, y + 4}, {x + 6, y + h - 6},
+                            {x + w - 5, y + h - 5}, {x + w / 2, y + h / 2}};
+            for (int[] p : pts) g.fillOval(p[0] - r, p[1] - r, 2 * r, 2 * r);
         }
     }
 

@@ -46,8 +46,7 @@ import java.util.logging.Logger;
  *   (no args)              Default single-point equilibrium demo
  *   opt                    Run parameter optimization (legacy pathway)
  *   cal                    Run CalModel calculation (legacy pathway)
- *   diagram [options]      Phase-diagram tracing (currently unimplemented
- *                          in ApplicationLayer -- see calculatePhaseDiagram)
+ *   diagram [options]      Phase-diagram tracing (Algorithms B/C1/C2/D)
  *   inspect [options]      Browse a TDB database file
  *   equilibrium [opts]     Single-point equilibrium (Newton-refined)
  *   initial-state [opts]   Grid-minimizer starting point only, no Newton step
@@ -231,7 +230,7 @@ public class CliApp {
         System.out.println();
         System.out.println("Choose a database, elements, and phases:");
         Prompter prompter = prompter(cwd);
-        String tdbPath = prompter.tdbPath("VZR-re2.TDB");
+        String tdbPath = prompter.tdbPath("data/tizr_kum_cvm.tdb");
         List<String> elements = prompter.pickElements(tdbPath);
         List<String> phases = prompter.pickPhases(tdbPath, elements);
         ModelSelection model = new ModelSelection(tdbPath, elements, phases);

@@ -62,15 +62,14 @@ public class PhaseDiagramConfigPanel extends JPanel {
     private JTextField temperatureField;
 
     // Phase selection
-    private JPanel phaseCheckBoxPanel;
-    private JScrollPane phaseScrollPane;
-    private final List<JCheckBox> phaseCheckBoxes = new ArrayList<>();
+    private TagInputField phasesField;
 
     private JButton calculateButton;
-    private JLabel statusLabel;
+    private BusyStatusBar busyBar;
 
     private Runnable onCalculate;
-    private Runnable onAbort;
+
+    private GuiCalculationContext context;
 
     public PhaseDiagramConfigPanel(MainController controller, Mode mode) {
         this.mode = mode;
@@ -80,7 +79,7 @@ public class PhaseDiagramConfigPanel extends JPanel {
 
         dbPanel = new DatabaseExtractionPanel(controller);
         dbPanel.setDefaults("data/tizr_kum_cvm.tdb", List.of("TI", "ZR"));
-        dbPanel.setOnSelectionChanged(sel -> populatePhaseCheckBoxes(sel.getAvailablePhases()));
+        dbPanel.setOnSelectionChanged(sel -> populatePhases(sel.getAvailablePhases()));
 
         JPanel lowerContent = buildLowerContent();
         JScrollPane scroll = new JScrollPane(lowerContent,
@@ -111,34 +110,23 @@ public class PhaseDiagramConfigPanel extends JPanel {
 
     // ── Phase selection ────────────────────────────────────────────────
 
-    private void populatePhaseCheckBoxes(List<String> phases) {
-        phaseCheckBoxPanel.removeAll();
-        phaseCheckBoxes.clear();
-        if (phases != null) {
-            for (String phase : phases) {
-                JCheckBox cb = new JCheckBox(phase, true);
-                cb.setOpaque(false);
-                cb.setForeground(DarkTheme.FG_PRIMARY);
-                cb.setFont(new Font("Consolas", Font.PLAIN, 10));
-                phaseCheckBoxes.add(cb);
-                phaseCheckBoxPanel.add(cb);
-            }
+    private void populatePhases(List<String> availablePhases) {
+        List<String> preSelected = context != null ? context.getSelectedPhases() : List.of();
+
+        phasesField.setKnownValues(availablePhases);
+        phasesField.clear();
+        for (String p : preSelected) {
+            if (availablePhases != null && availablePhases.contains(p)) phasesField.addKnownSelectedValue(p);
         }
-        phaseCheckBoxPanel.revalidate();
-        phaseCheckBoxPanel.repaint();
-        // resize scroll pane height based on content
-        int rows = Math.max(1, phaseCheckBoxes.size());
-        int h = Math.min(rows * 20, 120);
-        phaseScrollPane.setPreferredSize(new Dimension(0, h));
-        phaseScrollPane.revalidate();
+        pushSelectedPhasesToContext();
     }
 
     private List<String> getSelectedPhases() {
-        List<String> selected = new ArrayList<>();
-        for (JCheckBox cb : phaseCheckBoxes) {
-            if (cb.isSelected()) selected.add(cb.getText());
-        }
-        return selected;
+        return phasesField.getValues();
+    }
+
+    private void pushSelectedPhasesToContext() {
+        if (context != null) context.setSelectedPhases(getSelectedPhases());
     }
 
     // ── Layout ─────────────────────────────────────────────────────────
@@ -203,7 +191,7 @@ public class PhaseDiagramConfigPanel extends JPanel {
             row++;
 
             dbPanel.setOnSelectionChanged(sel -> {
-                populatePhaseCheckBoxes(sel.getAvailablePhases());
+                populatePhases(sel.getAvailablePhases());
                 List<String> els = sel.getElements();
                 startCompositionLabel.setText(
                         els != null && els.size() >= 2 ? "x(" + els.get(1) + ")" : "x(comp 2)");
@@ -234,7 +222,7 @@ public class PhaseDiagramConfigPanel extends JPanel {
             row++;
 
             dbPanel.setOnSelectionChanged(sel -> {
-                populatePhaseCheckBoxes(sel.getAvailablePhases());
+                populatePhases(sel.getAvailablePhases());
                 List<String> els = sel.getElements();
                 startCompositionMapLabel.setText(
                         els != null && els.size() >= 2 ? "Start x(" + els.get(1) + ")" : "Start x(comp 2)");
@@ -326,7 +314,7 @@ public class PhaseDiagramConfigPanel extends JPanel {
         row++;
 
         dbPanel.setOnSelectionChanged(sel -> {
-            populatePhaseCheckBoxes(sel.getAvailablePhases());
+            populatePhases(sel.getAvailablePhases());
             populateCoarseElementUI(sel.getElements());
         });
 
@@ -340,32 +328,11 @@ public class PhaseDiagramConfigPanel extends JPanel {
     private int addPhaseSelectionSection(JPanel panel, GridBagConstraints gbc, int row) {
         addSectionLabel(panel, gbc, row++, "PHASES");
 
-        phaseCheckBoxPanel = new JPanel();
-        phaseCheckBoxPanel.setLayout(new BoxLayout(phaseCheckBoxPanel, BoxLayout.Y_AXIS));
-        phaseCheckBoxPanel.setBackground(DarkTheme.SIDEBAR_BG);
-        phaseScrollPane = new JScrollPane(phaseCheckBoxPanel,
-                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
-                JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        phaseScrollPane.setBorder(BorderFactory.createLineBorder(DarkTheme.BORDER));
-        phaseScrollPane.getViewport().setBackground(DarkTheme.SIDEBAR_BG);
-        phaseScrollPane.setPreferredSize(new Dimension(0, 60));
-
+        phasesField = new TagInputField("Type phase name, Enter or Add", true);
+        phasesField.setEmptyStateText("Empty = all available phases");
+        phasesField.setOnChanged(this::pushSelectedPhasesToContext);
         gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 3; gbc.weightx = 1;
-        panel.add(phaseScrollPane, gbc);
-        gbc.gridwidth = 1;
-        row++;
-
-        // Select All / Deselect All buttons
-        JButton selAllBtn = smallButton("All");
-        selAllBtn.addActionListener(e -> phaseCheckBoxes.forEach(cb -> cb.setSelected(true)));
-        JButton deselBtn = smallButton("None");
-        deselBtn.addActionListener(e -> phaseCheckBoxes.forEach(cb -> cb.setSelected(false)));
-        JPanel selRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
-        selRow.setOpaque(false);
-        selRow.add(selAllBtn);
-        selRow.add(deselBtn);
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 3; gbc.weightx = 1;
-        panel.add(selRow, gbc);
+        panel.add(phasesField, gbc);
         gbc.gridwidth = 1;
         row++;
 
@@ -408,44 +375,22 @@ public class PhaseDiagramConfigPanel extends JPanel {
         compositionFieldsPanel.repaint();
     }
 
-    private JButton smallButton(String text) {
-        JButton btn = new JButton(text);
-        btn.setFont(new Font("Segoe UI", Font.PLAIN, 10));
-        btn.setForeground(DarkTheme.FG_SECOND);
-        btn.setBackground(DarkTheme.BG_INPUT);
-        btn.setFocusPainted(false);
-        btn.setBorderPainted(false);
-        btn.setMargin(new Insets(1, 6, 1, 6));
-        return btn;
-    }
-
     private JComponent buildButtonPanel() {
-        JPanel panel = new JPanel(new BorderLayout(8, 8));
+        JPanel panel = new JPanel(new BorderLayout(0, DarkTheme.SPACE_SM));
         panel.setBackground(DarkTheme.SIDEBAR_BG);
-        panel.setBorder(new EmptyBorder(8, 10, 10, 10));
+        panel.setBorder(new EmptyBorder(DarkTheme.SPACE_MD, DarkTheme.SPACE_LG - 2,
+                DarkTheme.SPACE_LG - 2, DarkTheme.SPACE_LG - 2));
 
-        statusLabel = new JLabel("Ready");
-        statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 10));
-        statusLabel.setForeground(DarkTheme.FG_SECOND);
+        busyBar = new BusyStatusBar();
 
-        String btnText = buttonText();
-        calculateButton = new JButton(btnText);
-        calculateButton.setBackground(DarkTheme.ACCENT);
-        calculateButton.setForeground(Color.WHITE);
-        calculateButton.setFocusPainted(false);
-        calculateButton.setBorderPainted(false);
-        calculateButton.setFont(new Font("Segoe UI", Font.BOLD, 11));
-        calculateButton.setMargin(new Insets(8, 16, 8, 16));
-        calculateButton.addActionListener(e -> {
-            if ("Abort".equals(calculateButton.getText())) { if (onAbort != null) onAbort.run(); }
-            else onCalculateClicked();
-        });
+        calculateButton = DarkTheme.primaryButton(buttonText());
+        calculateButton.addActionListener(e -> onCalculateClicked());
 
         JPanel bottomRow = new JPanel(new BorderLayout());
         bottomRow.setOpaque(false);
-        bottomRow.add(statusLabel, BorderLayout.WEST);
         bottomRow.add(calculateButton, BorderLayout.EAST);
 
+        panel.add(busyBar,   BorderLayout.NORTH);
         panel.add(bottomRow, BorderLayout.CENTER);
         return panel;
     }
@@ -462,39 +407,18 @@ public class PhaseDiagramConfigPanel extends JPanel {
     // ── Helpers ───────────────────────────────────────────────────────
 
     private JLabel addSectionLabel(JPanel panel, GridBagConstraints gbc, int row, String text) {
-        JLabel label = new JLabel(text);
-        label.setFont(new Font("Segoe UI", Font.BOLD, 10));
-        label.setForeground(DarkTheme.SECTION_FG);
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 3; gbc.weightx = 1;
-        panel.add(label, gbc);
-        gbc.gridwidth = 1;
-        return label;
+        return DarkTheme.addSectionRow(panel, gbc, row, text);
     }
 
     private JTextField addTextField(JPanel panel, GridBagConstraints gbc, int row,
                                     String label, String defaultValue) {
-        JLabel labelComp = new JLabel(label);
-        labelComp.setFont(new Font("Segoe UI", Font.PLAIN, 11));
-        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0; gbc.gridwidth = 1;
-        panel.add(labelComp, gbc);
-
-        JTextField field = new JTextField(defaultValue);
-        field.setBackground(DarkTheme.BG_INPUT);
-        field.setForeground(DarkTheme.FG_PRIMARY);
-        field.setCaretColor(DarkTheme.FG_PRIMARY);
-        field.setFont(new Font("Consolas", Font.PLAIN, 10));
-        gbc.gridx = 1; gbc.gridy = row; gbc.weightx = 1; gbc.gridwidth = 2;
-        panel.add(field, gbc);
-        gbc.gridwidth = 1;
-        return field;
+        return DarkTheme.addLabeledRow(panel, gbc, row, label, defaultValue);
     }
 
     private RangeField addRangeField(JPanel panel, GridBagConstraints gbc, int row,
                                      String label, String defaultValue) {
-        JLabel labelComp = new JLabel(label);
-        labelComp.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0; gbc.gridwidth = 1;
-        panel.add(labelComp, gbc);
+        panel.add(DarkTheme.fieldLabel(label), gbc);
 
         RangeField rf = new RangeField(defaultValue);
         gbc.gridx = 1; gbc.gridy = row; gbc.weightx = 1; gbc.gridwidth = 2;
@@ -511,17 +435,12 @@ public class PhaseDiagramConfigPanel extends JPanel {
 
     private JComboBox<String> addAxisTypeCombo(JPanel panel, GridBagConstraints gbc, int row,
                                                String label, String selected, String[] options) {
-        JLabel labelComp = new JLabel(label);
-        labelComp.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0; gbc.gridwidth = 1;
-        panel.add(labelComp, gbc);
+        panel.add(DarkTheme.fieldLabel(label), gbc);
 
-        JComboBox<String> combo = new JComboBox<>(options);
+        JComboBox<String> combo = DarkTheme.comboBox(options);
         combo.setSelectedItem(selected);
         combo.setEnabled(options.length > 1);
-        combo.setBackground(DarkTheme.BG_INPUT);
-        combo.setForeground(DarkTheme.FG_PRIMARY);
-        combo.setRenderer(new DarkTheme.ComboRenderer());
         gbc.gridx = 1; gbc.gridy = row; gbc.weightx = 1; gbc.gridwidth = 2;
         panel.add(combo, gbc);
         gbc.gridwidth = 1;
@@ -660,8 +579,7 @@ public class PhaseDiagramConfigPanel extends JPanel {
     }
 
     private void onCalculateClicked() {
-        statusLabel.setText("Validating inputs...");
-        statusLabel.setForeground(DarkTheme.FG_SECOND);
+        setStatus("Validating inputs...", DarkTheme.FG_SECOND);
 
         ui.request.DatabaseSelection sel = dbPanel.getSelection();
         if (!sel.hasTdb()) {
@@ -674,27 +592,34 @@ public class PhaseDiagramConfigPanel extends JPanel {
             setStatus("Error: No phases available", DarkTheme.ERROR_COLOR); return;
         }
 
-        statusLabel.setText("Calculating...");
-        statusLabel.setForeground(DarkTheme.ACCENT);
         if (onCalculate != null) onCalculate.run();
     }
 
     public void setCalculateCallback(Runnable callback) { this.onCalculate = callback; }
 
-    public void setAbortCallback(Runnable callback) { this.onAbort = callback; }
+    public void setAbortCallback(Runnable callback) { busyBar.setAbortCallback(callback); }
 
+    /** Binds this panel's shared database/element/phase state to {@code context}. */
+    public void bindContext(GuiCalculationContext context) {
+        this.context = context;
+        dbPanel.bindContext(context);
+        populatePhases(context.getSelection().getAvailablePhases());
+    }
+
+    /** Refreshes fields from the bound context; call when this activity becomes visible. */
+    public void onActivityShown() {
+        if (context == null) return;
+        dbPanel.syncFromContext();
+        populatePhases(context.getSelection().getAvailablePhases());
+    }
+
+    /** Disables the Calculate button and shows the busy indicator/Abort while a calculation runs. */
     public void setRunning(boolean running) {
-        if (running) {
-            calculateButton.setText("Abort");
-            calculateButton.setBackground(DarkTheme.ERROR_COLOR);
-        } else {
-            calculateButton.setText(buttonText());
-            calculateButton.setBackground(DarkTheme.ACCENT);
-        }
+        calculateButton.setEnabled(!running);
+        busyBar.setRunning(running, "Calculating…");
     }
 
     public void setStatus(String message, Color color) {
-        statusLabel.setText(message);
-        statusLabel.setForeground(color);
+        busyBar.setStatus(message, color);
     }
 }

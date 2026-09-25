@@ -145,6 +145,10 @@ tasks.register('fatJar', Jar) {
         attributes('Main-Class': 'ui.Main', 'Implementation-Title': 'expcvm10')
     }
     from sourceSets.main.output
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     dependsOn classes
 }
 

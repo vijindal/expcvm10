@@ -8,51 +8,35 @@ import ui.request.PropertyScanRequest.ScanType;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
-import java.awt.event.KeyAdapter;
-import java.awt.event.KeyEvent;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Sidebar configuration panel for STEP and MAP property scan calculations.
  *
  * Top zone  : shared {@link DatabaseExtractionPanel} (TDB + element selection).
- * Lower zone: Method, phase selector (badge-style), axis config(s), fixed conditions, Calculate button.
+ * Lower zone: Method, phase selector, axis config(s), fixed conditions, Calculate button.
  */
 public class PropertyCalcConfigPanel extends JPanel {
-
-    private static final Font SECTION_FONT = new Font("Segoe UI", Font.BOLD, 10);
-    private static final Font LABEL_FONT   = new Font("Segoe UI", Font.PLAIN, 11);
-    private static final Font FIELD_FONT   = new Font("Consolas", Font.PLAIN, 10);
-    private static final Font HINT_FONT    = new Font("Segoe UI", Font.PLAIN,  9);
-    private static final Font BADGE_FONT   = new Font("Consolas", Font.BOLD,  10);
 
     private final boolean isMap;
     private final DatabaseExtractionPanel dbPanel;
 
     private JComboBox<String> methodCombo;
+    private TagInputField phasesField;
 
-    // Phase selector (badge-style, same as SinglePointSidebarPanel)
-    private JTextField phaseInputField;
-    private JPanel     phaseConfirmedPanel;
-    private JLabel     phaseHintLabel;
-    private List<String> availablePhases = new ArrayList<>();
-
-    // Axis 0
     private JComboBox<String> axis0TypeCombo;
     private RangeField axis0Range;
 
-    // Axis 1 (MAP only)
     private JComboBox<String> axis1TypeCombo;
     private RangeField axis1Range;
 
-    // Fixed conditions
     private JTextField fixedPField, fixedTField, fixedXField;
 
-    private JLabel statusLabel;
+    private BusyStatusBar busyBar;
     private JButton calcBtn;
     private Runnable onCalculate;
-    private Runnable onAbort;
+
+    private GuiCalculationContext context;
 
     public PropertyCalcConfigPanel(MainController controller, boolean isMap) {
         this.isMap = isMap;
@@ -80,112 +64,30 @@ public class PropertyCalcConfigPanel extends JPanel {
         add(buildButtonRow(), BorderLayout.SOUTH);
     }
 
-    // ── Database/element selection callback ───────────────────────────
-
     private void onSelectionChanged(DatabaseSelection sel) {
-        availablePhases = sel.hasPhases() ? sel.getAvailablePhases() : new ArrayList<>();
-        // Remove any now-invalid badges
-        List<String> current = getSelectedPhases();
-        phaseConfirmedPanel.removeAll();
-        if (!availablePhases.isEmpty()) {
-            for (String p : current) {
-                if (availablePhases.contains(p)) addPhaseBadge(p);
-            }
-        } else {
-            for (String p : current) addPhaseBadge(p);
-        }
-        phaseConfirmedPanel.revalidate();
-        phaseConfirmedPanel.repaint();
+        List<String> phases = sel.hasPhases() ? sel.getAvailablePhases() : List.of();
+        phasesField.setKnownValues(phases);
+        phasesField.pruneInvalid();
     }
 
-    // ── Phase selector logic ──────────────────────────────────────────
-
-    private void onAddPhase() {
-        String raw = phaseInputField.getText().trim().toUpperCase();
-        if (raw.isEmpty()) return;
-
-        // Validate against available phases
-        if (!availablePhases.isEmpty() && !availablePhases.contains(raw)) {
-            String hint = suggestPhase(raw);
-            phaseHintLabel.setText("Unknown: " + raw + (hint != null ? "  Try: " + hint : ""));
-            phaseHintLabel.setForeground(DarkTheme.ERROR_COLOR);
-            phaseInputField.setForeground(DarkTheme.ERROR_COLOR);
-            return;
-        }
-
-        // Check duplicate
-        if (getSelectedPhases().contains(raw)) {
-            phaseInputField.setText("");
-            return;
-        }
-
-        addPhaseBadge(raw);
-        phaseInputField.setText("");
-        phaseInputField.setForeground(DarkTheme.FG_PRIMARY);
-        phaseHintLabel.setText("Type phase name, Enter or Add");
-        phaseHintLabel.setForeground(DarkTheme.FG_SECOND);
-        phaseConfirmedPanel.revalidate();
-        phaseConfirmedPanel.repaint();
+    /** Binds this panel's shared database/element/phase state to {@code context}. */
+    public void bindContext(GuiCalculationContext context) {
+        this.context = context;
+        dbPanel.bindContext(context);
+        syncPhasesFromContext();
     }
 
-    private void onTabComplete(KeyEvent e) {
-        String prefix = phaseInputField.getText().trim().toUpperCase();
-        if (prefix.isEmpty()) return;
-        for (String p : availablePhases) {
-            if (p.startsWith(prefix) && !p.equals(prefix)) {
-                phaseInputField.setText(p);
-                phaseInputField.setForeground(DarkTheme.FG_PRIMARY);
-                e.consume();
-                return;
-            }
-        }
+    /** Refreshes fields from the bound context; call when this activity becomes visible. */
+    public void onActivityShown() {
+        if (context == null) return;
+        dbPanel.syncFromContext();
+        syncPhasesFromContext();
     }
 
-    private String suggestPhase(String input) {
-        for (String p : availablePhases) {
-            if (p.startsWith(input) || p.contains(input)) return p;
-        }
-        return null;
-    }
-
-    private void addPhaseBadge(String phase) {
-        JPanel badge = new JPanel(new FlowLayout(FlowLayout.LEFT, 3, 0));
-        badge.setBackground(DarkTheme.BG_INPUT);
-        badge.setBorder(BorderFactory.createLineBorder(DarkTheme.ACCENT, 1));
-
-        JLabel nameLbl = new JLabel(phase);
-        nameLbl.setFont(BADGE_FONT);
-        nameLbl.setForeground(DarkTheme.ACCENT);
-        badge.add(nameLbl);
-
-        JLabel removeLbl = new JLabel("×");
-        removeLbl.setFont(BADGE_FONT);
-        removeLbl.setForeground(DarkTheme.FG_SECOND);
-        removeLbl.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        removeLbl.addMouseListener(new java.awt.event.MouseAdapter() {
-            @Override public void mouseClicked(java.awt.event.MouseEvent ev) {
-                phaseConfirmedPanel.remove(badge);
-                phaseConfirmedPanel.revalidate();
-                phaseConfirmedPanel.repaint();
-            }
-        });
-        badge.add(removeLbl);
-        phaseConfirmedPanel.add(badge);
-    }
-
-    public List<String> getSelectedPhases() {
-        List<String> result = new ArrayList<>();
-        for (Component c : phaseConfirmedPanel.getComponents()) {
-            if (c instanceof JPanel) {
-                for (Component inner : ((JPanel) c).getComponents()) {
-                    if (inner instanceof JLabel && !((JLabel) inner).getText().equals("×")) {
-                        result.add(((JLabel) inner).getText());
-                        break;
-                    }
-                }
-            }
-        }
-        return result;
+    private void syncPhasesFromContext() {
+        phasesField.setKnownValues(context.getSelection().getAvailablePhases());
+        phasesField.clear();
+        for (String p : context.getSelectedPhases()) phasesField.addKnownSelectedValue(p);
     }
 
     // ── Layout ────────────────────────────────────────────────────────
@@ -193,70 +95,35 @@ public class PropertyCalcConfigPanel extends JPanel {
     private JPanel buildLower() {
         JPanel p = new JPanel(new GridBagLayout());
         p.setBackground(DarkTheme.SIDEBAR_BG);
-        p.setBorder(new EmptyBorder(6, 10, 10, 10));
+        p.setBorder(new EmptyBorder(DarkTheme.SPACE_SM + 2, DarkTheme.SPACE_LG - 2,
+                DarkTheme.SPACE_LG - 2, DarkTheme.SPACE_LG - 2));
 
-        GridBagConstraints g = new GridBagConstraints();
-        g.insets = new Insets(4, 6, 4, 6);
-        g.anchor = GridBagConstraints.WEST;
-        g.fill   = GridBagConstraints.HORIZONTAL;
-
+        GridBagConstraints g = DarkTheme.formGbc();
         int row = 0;
 
         // ── Method ─────────────────────────────────────────────────
-        row = addSection(p, g, row, "METHOD");
-        addLabel(p, g, row, "Type");
-        methodCombo = new JComboBox<>(new String[]{"HM", "Gm", "G"});
-        methodCombo.setBackground(DarkTheme.BG_INPUT);
-        methodCombo.setForeground(DarkTheme.FG_PRIMARY);
-        methodCombo.setRenderer(new DarkTheme.ComboRenderer());
+        DarkTheme.addSectionRow(p, g, row++, "METHOD");
+        g.gridx = 0; g.gridy = row; g.weightx = 0; g.gridwidth = 1;
+        p.add(DarkTheme.fieldLabel("Type"), g);
+        methodCombo = DarkTheme.comboBox(new String[]{"Gm"});
+        methodCombo.setEnabled(false);
         g.gridx = 1; g.gridy = row; g.weightx = 1; g.gridwidth = 2;
         p.add(methodCombo, g);
         g.gridwidth = 1;
         row++;
 
-        // ── Phases (badge-style) ─────────────────────────────────────
-        row = addSection(p, g, row, "PHASES");
-
-        phaseHintLabel = new JLabel("Type phase name, Enter or Add");
-        phaseHintLabel.setFont(HINT_FONT);
-        phaseHintLabel.setForeground(DarkTheme.FG_SECOND);
+        // ── Phases ────────────────────────────────────────────────
+        DarkTheme.addSectionRow(p, g, row++, "PHASES");
+        phasesField = new TagInputField("Type phase name, Enter or Add", true);
+        phasesField.setEmptyStateText("Empty = all available phases");
+        phasesField.setOnChanged(() -> { if (context != null) context.setSelectedPhases(phasesField.getValues()); });
         g.gridx = 0; g.gridy = row; g.gridwidth = 3; g.weightx = 1;
-        p.add(phaseHintLabel, g);
-        g.gridwidth = 1;
-        row++;
-
-        // Input + Add button
-        phaseInputField = new JTextField();
-        phaseInputField.setBackground(DarkTheme.BG_INPUT);
-        phaseInputField.setForeground(DarkTheme.FG_PRIMARY);
-        phaseInputField.setCaretColor(DarkTheme.FG_PRIMARY);
-        phaseInputField.setFont(FIELD_FONT);
-        phaseInputField.setToolTipText("Type phase name (Tab to autocomplete)");
-        phaseInputField.addKeyListener(new KeyAdapter() {
-            @Override public void keyPressed(KeyEvent e) {
-                if (e.getKeyCode() == KeyEvent.VK_ENTER) onAddPhase();
-                if (e.getKeyCode() == KeyEvent.VK_TAB)  onTabComplete(e);
-            }
-        });
-        g.gridx = 0; g.gridy = row; g.weightx = 1; g.gridwidth = 2;
-        p.add(phaseInputField, g);
-
-        JButton addBtn = smallButton("Add");
-        addBtn.addActionListener(e -> onAddPhase());
-        g.gridx = 2; g.gridy = row; g.weightx = 0; g.gridwidth = 1;
-        p.add(addBtn, g);
-        row++;
-
-        // Badge panel
-        phaseConfirmedPanel = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 2));
-        phaseConfirmedPanel.setOpaque(false);
-        g.gridx = 0; g.gridy = row; g.gridwidth = 3; g.weightx = 1;
-        p.add(phaseConfirmedPanel, g);
+        p.add(phasesField, g);
         g.gridwidth = 1;
         row++;
 
         // ── Axis 0 ──────────────────────────────────────────────────
-        row = addSection(p, g, row, isMap ? "AXIS 0  (X)" : "SCAN AXIS");
+        DarkTheme.addSectionRow(p, g, row++, isMap ? "AXIS 0  (X)" : "SCAN AXIS");
         axis0TypeCombo = axisTypeCombo(p, g, row++, isMap ? "COMPOSITION" : "TEMPERATURE");
         axis0Range = rangeField(p, g, row++, "Range", isMap ? "0.0, 1.0, 0.1" : "300, 2500, 100");
         axis0TypeCombo.addItemListener(e -> axis0Range.setText(
@@ -264,7 +131,7 @@ public class PropertyCalcConfigPanel extends JPanel {
 
         // ── Axis 1 (MAP) ─────────────────────────────────────────────
         if (isMap) {
-            row = addSection(p, g, row, "AXIS 1  (Y)");
+            DarkTheme.addSectionRow(p, g, row++, "AXIS 1  (Y)");
             axis1TypeCombo = axisTypeCombo(p, g, row++, "TEMPERATURE");
             axis1Range = rangeField(p, g, row++, "Range", "300, 2500, 100");
             axis1TypeCombo.addItemListener(e -> axis1Range.setText(
@@ -272,113 +139,56 @@ public class PropertyCalcConfigPanel extends JPanel {
         }
 
         // ── Fixed conditions ─────────────────────────────────────────
-        row = addSection(p, g, row, "FIXED CONDITIONS");
-        fixedPField = textField(p, g, row++, "Pressure (Pa)", "101325.0");
+        DarkTheme.addSectionRow(p, g, row++, "FIXED CONDITIONS");
+        fixedPField = DarkTheme.addLabeledRow(p, g, row++, "Pressure (Pa)", "101325.0");
         if (!isMap) {
-            fixedTField = textField(p, g, row++, "Fixed T (K)",  "1000.0");
-            fixedXField = textField(p, g, row++, "Fixed x(2)",  "0.5");
+            fixedTField = DarkTheme.addLabeledRow(p, g, row++, "Fixed T (K)",  "1000.0");
+            fixedXField = DarkTheme.addLabeledRow(p, g, row++, "Fixed x(2)",  "0.5");
+        } else {
+            fixedXField = DarkTheme.addLabeledRow(p, g, row++, "Starting composition (CSV)", "0.5,0.5");
         }
 
-        // Filler
         g.gridx = 0; g.gridy = row; g.gridwidth = 3; g.weighty = 1;
         p.add(Box.createVerticalGlue(), g);
         return p;
     }
 
     private JComponent buildButtonRow() {
-        JPanel p = new JPanel(new BorderLayout(8, 8));
+        JPanel p = new JPanel(new BorderLayout(0, DarkTheme.SPACE_SM));
         p.setBackground(DarkTheme.SIDEBAR_BG);
-        p.setBorder(new EmptyBorder(8, 10, 10, 10));
+        p.setBorder(new EmptyBorder(DarkTheme.SPACE_MD, DarkTheme.SPACE_LG - 2,
+                DarkTheme.SPACE_LG - 2, DarkTheme.SPACE_LG - 2));
 
-        statusLabel = new JLabel("Ready");
-        statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 10));
-        statusLabel.setForeground(DarkTheme.FG_SECOND);
+        busyBar = new BusyStatusBar();
 
-        calcBtn = new JButton(isMap ? "Calculate MAP" : "Calculate STEP");
-        calcBtn.setBackground(DarkTheme.ACCENT);
-        calcBtn.setForeground(Color.WHITE);
-        calcBtn.setFocusPainted(false);
-        calcBtn.setBorderPainted(false);
-        calcBtn.setFont(new Font("Segoe UI", Font.BOLD, 11));
-        calcBtn.setMargin(new Insets(8, 16, 8, 16));
-        calcBtn.addActionListener(e -> {
-            if (calcBtn.getText().startsWith("Abort")) {
-                if (onAbort != null) onAbort.run();
-            } else {
-                fireCalculate();
-            }
-        });
+        calcBtn = DarkTheme.primaryButton(isMap ? "Calculate MAP" : "Calculate STEP");
+        calcBtn.addActionListener(e -> fireCalculate());
 
-        JPanel row = new JPanel(new BorderLayout());
-        row.setOpaque(false);
-        row.add(statusLabel, BorderLayout.WEST);
-        row.add(calcBtn, BorderLayout.EAST);
-        p.add(row, BorderLayout.CENTER);
+        JPanel btnRow = new JPanel(new BorderLayout());
+        btnRow.setOpaque(false);
+        btnRow.add(calcBtn, BorderLayout.EAST);
+
+        p.add(busyBar, BorderLayout.NORTH);
+        p.add(btnRow,  BorderLayout.CENTER);
         return p;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────
 
-    private int addSection(JPanel p, GridBagConstraints g, int row, String title) {
-        JLabel lbl = new JLabel(title);
-        lbl.setFont(SECTION_FONT);
-        lbl.setForeground(DarkTheme.SECTION_FG);
-        lbl.setBorder(new EmptyBorder(4, 0, 2, 0));
-        g.gridx = 0; g.gridy = row; g.gridwidth = 3; g.weightx = 1;
-        p.add(lbl, g);
-        g.gridwidth = 1;
-        return row + 1;
-    }
-
-    private void addLabel(JPanel p, GridBagConstraints g, int row, String text) {
-        JLabel lbl = new JLabel(text);
-        lbl.setFont(LABEL_FONT);
-        g.gridx = 0; g.gridy = row; g.weightx = 0; g.gridwidth = 1;
-        p.add(lbl, g);
-    }
-
-    private JTextField textField(JPanel p, GridBagConstraints g, int row,
-                                 String label, String def) {
-        addLabel(p, g, row, label);
-        JTextField f = new JTextField(def);
-        f.setBackground(DarkTheme.BG_INPUT);
-        f.setForeground(DarkTheme.FG_PRIMARY);
-        f.setCaretColor(DarkTheme.FG_PRIMARY);
-        f.setFont(FIELD_FONT);
-        g.gridx = 1; g.gridy = row; g.weightx = 1; g.gridwidth = 2;
-        p.add(f, g);
-        g.gridwidth = 1;
-        return f;
-    }
-
     private JComboBox<String> axisTypeCombo(JPanel p, GridBagConstraints g, int row, String sel) {
-        addLabel(p, g, row, "Type");
-        JComboBox<String> c = new JComboBox<>(new String[]{"COMPOSITION", "TEMPERATURE"});
+        g.gridx = 0; g.gridy = row; g.weightx = 0; g.gridwidth = 1;
+        p.add(DarkTheme.fieldLabel("Type"), g);
+        JComboBox<String> c = DarkTheme.comboBox(new String[]{"COMPOSITION", "TEMPERATURE"});
         c.setSelectedItem(sel);
-        c.setBackground(DarkTheme.BG_INPUT);
-        c.setForeground(DarkTheme.FG_PRIMARY);
-        c.setRenderer(new DarkTheme.ComboRenderer());
         g.gridx = 1; g.gridy = row; g.weightx = 1; g.gridwidth = 2;
         p.add(c, g);
         g.gridwidth = 1;
         return c;
     }
 
-    private JButton smallButton(String text) {
-        JButton b = new JButton(text);
-        b.setFont(LABEL_FONT);
-        b.setMargin(new Insets(2, 8, 2, 8));
-        b.setFocusPainted(false);
-        b.setBorderPainted(false);
-        b.setBackground(DarkTheme.BG_INPUT);
-        b.setForeground(DarkTheme.FG_PRIMARY);
-        b.setOpaque(true);
-        return b;
-    }
-
-    private RangeField rangeField(JPanel p, GridBagConstraints g, int row,
-                                  String label, String defaults) {
-        addLabel(p, g, row, label);
+    private RangeField rangeField(JPanel p, GridBagConstraints g, int row, String label, String defaults) {
+        g.gridx = 0; g.gridy = row; g.weightx = 0; g.gridwidth = 1;
+        p.add(DarkTheme.fieldLabel(label), g);
         RangeField rf = new RangeField(defaults);
         g.gridx = 1; g.gridy = row; g.weightx = 1; g.gridwidth = 2;
         p.add(rf, g);
@@ -403,7 +213,7 @@ public class PropertyCalcConfigPanel extends JPanel {
         PropertyScanRequest req = new PropertyScanRequest();
         req.setTdbFilePath(sel.getTdbPath() != null ? sel.getTdbPath() : "");
         req.setElements(sel.getElements());
-        List<String> phases = getSelectedPhases();
+        List<String> phases = phasesField.getValues();
         req.setPhases(phases.isEmpty() ? sel.getAvailablePhases() : phases);
         req.setMethod(methodCombo.getSelectedItem().toString());
         req.setScanType(isMap ? ScanType.MAP : ScanType.STEP);
@@ -427,18 +237,13 @@ public class PropertyCalcConfigPanel extends JPanel {
     }
 
     public void setCalculateCallback(Runnable r)             { this.onCalculate = r; }
-    public void setAbortCallback(Runnable r)                 { this.onAbort = r; }
-    public void setStatus(String msg, Color color)           { statusLabel.setText(msg); statusLabel.setForeground(color); }
+    public void setAbortCallback(Runnable r)                 { busyBar.setAbortCallback(r); }
+    public void setStatus(String msg, Color color)           { busyBar.setStatus(msg, color); }
 
-    /** Switch button between Calculate and Abort modes. */
+    /** Disables the Calculate button and shows the busy indicator/Abort while a calculation runs. */
     public void setRunning(boolean running) {
-        if (running) {
-            calcBtn.setText("Abort");
-            calcBtn.setBackground(DarkTheme.ERROR_COLOR);
-        } else {
-            calcBtn.setText(isMap ? "Calculate MAP" : "Calculate STEP");
-            calcBtn.setBackground(DarkTheme.ACCENT);
-        }
+        calcBtn.setEnabled(!running);
+        busyBar.setRunning(running, "Calculating…");
     }
 
     private void fireCalculate() {

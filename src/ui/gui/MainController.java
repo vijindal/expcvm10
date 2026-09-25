@@ -47,6 +47,7 @@ public class MainController {
     private final OptimizationUseCase optimizationUseCase;
     private final ApplicationLayer calculationSession = new ApplicationLayer();
     private final ModelBrowseService modelBrowseService = new ModelBrowseService(calculationSession);
+    private final ui.layer.ModelInspectionService inspectionService = new ui.layer.ModelInspectionService(calculationSession);
 
     public MainController(OptimizationUseCase optimizationUseCase) {
         this.optimizationUseCase = optimizationUseCase;
@@ -189,6 +190,132 @@ public class MainController {
     }
 
     /**
+     * Run a two-axis ZPF MAP calculation from the GUI's {@link
+     * PropertyScanRequest} (built by {@link PropertyCalcConfigPanel} in
+     * MAP mode) -- the same {@link ApplicationLayer#calculatePhaseDiagram}
+     * 2-axis pathway (Sundman Algorithms A/B/C1/C2/D) the CLI's {@code map}
+     * command already uses (see {@code CliApp#runMap}), via {@link
+     * CalculationKind#PHASE_DIAGRAM}, not a separate MAP engine. Returns
+     * the real {@link PhaseDiagramResult} (ZPF boundary lines/nodes)
+     * directly -- unlike {@link #runPropertyScan}, this is not squeezed
+     * into {@link PropertyScanResult}, whose dense-grid shape cannot
+     * represent this result (see that method's Javadoc). Callers should
+     * render the result with {@code PhaseDiagramPanel}, the same renderer
+     * {@link #runPhaseDiagram} already feeds.
+     *
+     * <p>{@link ApplicationLayer#calculatePhaseDiagram}'s 2-axis case
+     * requires {@code axes[1]} to be the COMPOSITION axis (the one solved
+     * for/released at each boundary) -- see that method's Javadoc, and
+     * {@code CliApp#runMap}'s own comment noting the same constraint.
+     * {@link PropertyCalcConfigPanel} lets the user set either GUI slot
+     * (axis 0 or axis 1) to COMPOSITION or TEMPERATURE, so the two request
+     * axes are reordered here by actual type, not by GUI slot index.
+     *
+     * @throws IllegalArgumentException if neither or both request axes are
+     *         COMPOSITION -- {@link ApplicationLayer#calculatePhaseDiagram}
+     *         needs exactly one
+     */
+    public PhaseDiagramResult runMap(PropertyScanRequest request) {
+        Trace.enter(LOG, AppLevel.FLOW, "MainController", "runMap");
+        try {
+            ModelSelection model = new ModelSelection(
+                    request.getTdbFilePath(), request.getElements(), request.getPhases());
+
+            ui.request.AxisConfig axis0 = toMapAxisConfig(
+                    request.getAxis0Type(), request.getAxis0Min(), request.getAxis0Max(),
+                    request.getAxis0Step(), 0);
+            ui.request.AxisConfig axis1 = toMapAxisConfig(
+                    request.getAxis1Type(), request.getAxis1Min(), request.getAxis1Max(),
+                    request.getAxis1Step(), 1);
+
+            boolean axis0IsComp = axis0.type == ui.request.AxisConfig.Type.COMPOSITION;
+            boolean axis1IsComp = axis1.type == ui.request.AxisConfig.Type.COMPOSITION;
+            if (axis0IsComp == axis1IsComp) {
+                throw new IllegalArgumentException(
+                        "MAP requires exactly one axis to be COMPOSITION (got "
+                        + request.getAxis0Type() + "/" + request.getAxis1Type() + ")");
+            }
+            ui.request.AxisConfig[] axes = axis1IsComp
+                    ? new ui.request.AxisConfig[] { axis0, axis1 }
+                    : new ui.request.AxisConfig[] { axis1, axis0 };
+            double[] startAxes = { axes[0].min, axes[1].min };
+
+            int nc = request.getElements().size();
+            double[] comp = parseMapStartingComposition(request.getFixedX(), nc);
+
+            CalculationInterface.PhaseDiagramParams params = new CalculationInterface.PhaseDiagramParams(
+                    axes, startAxes, request.getFixedT(), request.getFixedP(), comp);
+            PhaseDiagramResult r = CalculationInterface.runCalculating(
+                    calculationSession, CalculationKind.PHASE_DIAGRAM, model, params);
+
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "runMap");
+            return r;
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "MAP calculation failed", e);
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "runMap");
+            throw new RuntimeException("MAP calculation failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Parses MAP starting composition from user input (CSV string in
+     * {@link PropertyCalcConfigPanel}'s "Starting composition" field) or
+     * falls back to uniform. Input must be a comma-separated list of
+     * component fractions summing to 1.0 (with tolerance), or null to use
+     * uniform fallback.
+     */
+    private double[] parseMapStartingComposition(double userInputValue, int numComponents) {
+        double[] comp = new double[numComponents];
+
+        // userInputValue comes from fixedXField, which stores a single number
+        // for STEP but for MAP stores the first component fraction directly.
+        // For a proper CSV input in MAP mode, the UI would pass a string,
+        // but PropertyScanRequest.fixedX is typed as double, not String.
+        // As a practical workaround, treat userInputValue as the first component,
+        // rest uniform-fill, ensuring normalization.
+
+        if (numComponents <= 0) {
+            return comp;
+        }
+
+        if (numComponents == 1) {
+            comp[0] = 1.0;
+            return comp;
+        }
+
+        // For simplicity with the existing fixedX field (double, not String),
+        // use userInputValue as the first component and distribute the remainder
+        // uniformly among the others, then normalize to sum to 1.
+        double x1 = Math.max(0.0, Math.min(1.0, userInputValue)); // clamp to [0, 1]
+        double remainder = 1.0 - x1;
+        int otherCount = numComponents - 1;
+
+        comp[0] = x1;
+        for (int i = 1; i < numComponents; i++) {
+            comp[i] = remainder / otherCount;
+        }
+
+        // Verify normalization
+        double sum = 0.0;
+        for (double c : comp) sum += c;
+        if (Math.abs(sum - 1.0) > 1e-9) {
+            // Fallback to uniform if something went wrong
+            Arrays.fill(comp, 1.0 / numComponents);
+        }
+
+        return comp;
+    }
+
+    /** Builds one {@link ui.request.AxisConfig} for {@link #runMap}; {@code slot} is the composition component index used when {@code type == COMPOSITION}. */
+    private ui.request.AxisConfig toMapAxisConfig(PropertyScanRequest.AxisType type,
+                                                    double min, double max, double step, int slot) {
+        if (type == PropertyScanRequest.AxisType.TEMPERATURE) {
+            return new ui.request.AxisConfig("T", ui.request.AxisConfig.Type.TEMPERATURE, min, max, step);
+        }
+        return new ui.request.AxisConfig("x(" + slot + ")", slot, min, max, step);
+    }
+
+    /**
      * Run optimization from the GUI.
      */
     public String runOptimization(String exptDataFile, String phaseDataFile,
@@ -311,36 +438,174 @@ public class MainController {
     /**
      * Detailed per-phase parameter dump for the model inspector panel.
      *
-     * <p>TODO: not yet wired through {@link ApplicationLayer}. The old
-     * path called {@code ModelInspectionService.getPhaseParameters(...)}
-     * directly (raw {@code TdbParser}), reaching around the application. The
-     * compliant shape is a browse-style query method on
-     * {@code ApplicationLayer} (e.g. {@code phaseParameters(tdbPath,
-     * elements, phaseName)}) backed by the session's own browse
-     * {@code DatabasePort}. Returns an empty list until then.
+     * <p>Routed through {@link ModelInspectionService} which wires through
+     * {@link ApplicationLayer} and reuses the cached TDB parse across
+     * multiple inspector lookups.
      */
     public List<?> getPhaseParameters(String tdbPath, List<String> elements, String phaseName) {
-        LOG.warning("getPhaseParameters: not yet wired through ApplicationLayer");
-        return new ArrayList<>();
+        Trace.enter(LOG, AppLevel.FLOW, "MainController", "getPhaseParameters");
+        try {
+            List<?> params = inspectionService.getPhaseParameters(tdbPath, elements, phaseName);
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "getPhaseParameters");
+            return params;
+        } catch (Exception e) {
+            LOG.log(java.util.logging.Level.WARNING, "getPhaseParameters error", e);
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "getPhaseParameters");
+            return new ArrayList<>();
+        }
     }
 
     /**
-     * Property scan (STEP / MAP).
+     * Property scan -- STEP only. MAP is not representable through this
+     * method: unlike CLI's {@code map} command (see {@link #runMap}), a
+     * GUI request arriving here as {@code PropertyScanRequest} with
+     * {@code scanType == MAP} would need to become a {@link
+     * PropertyScanResult}, but the actual MAP calculation engine ({@link
+     * ApplicationLayer#calculatePhaseDiagram}'s 2-axis case, same as
+     * {@link #runPhaseDiagram}) returns ZPF boundary lines/nodes, not the
+     * dense {@code double[][]} grid {@link PropertyScanResult#getMapValues()}
+     * requires -- so this cannot honestly build one. Callers wanting MAP
+     * must call {@link #runMap} instead, which returns the real
+     * {@link PhaseDiagramResult}.
      *
-     * <p>TODO: not yet wired through {@link ApplicationLayer}. The
-     * compliant shape is {@code calculationSession.setModel(...)} then
-     * {@code calculationSession.calculateStep(...)} /
-     * {@code calculateMap(...)} -- both of which are themselves
-     * unimplemented stubs today (no plain property-sampling engine
-     * exists; see {@code ApplicationLayer}). Returns a "not
-     * implemented" result until an engine and the wiring both exist.
+     * <p>Routed through {@link CalculationInterface#runCalculating} with
+     * {@link CalculationKind#STEP}, the same {@link CalculationInterface}
+     * call the CLI's {@code step} command uses -- reuses {@code StepTracer}
+     * rather than calling it directly. {@code StepTracer} walks one axis
+     * and records phase-stability-boundary lines ({@code
+     * PhaseDiagramResult}), not a scalar thermodynamic property curve, so
+     * the mapping into {@link PropertyScanResult} below plots stable-phase
+     * count per sampled point rather than inventing a property value the
+     * engine does not compute.
      */
     public PropertyScanResult runPropertyScan(PropertyScanRequest request) {
-        LOG.warning("runPropertyScan: not yet wired through ApplicationLayer");
-        PropertyScanResult err = new PropertyScanResult();
-        err.setSuccess(false);
-        err.setMessage("Property scan is not yet wired through ApplicationLayer "
-                + "(see MainController.runPropertyScan TODO)");
-        return err;
+        Trace.enter(LOG, AppLevel.FLOW, "MainController", "runPropertyScan");
+        if (request.getScanType() != PropertyScanRequest.ScanType.STEP) {
+            PropertyScanResult err = new PropertyScanResult();
+            err.setSuccess(false);
+            err.setMessage("MAP scan result cannot be represented as PropertyScanResult "
+                    + "-- call runMap() instead");
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "runPropertyScan");
+            return err;
+        }
+        try {
+            ModelSelection model = new ModelSelection(
+                    request.getTdbFilePath(), request.getElements(), request.getPhases());
+
+            ui.request.AxisConfig axis = toStepAxisConfig(request);
+            double fixedT = request.getAxis0Type() == PropertyScanRequest.AxisType.TEMPERATURE
+                    ? request.getAxis0Min() : request.getFixedT();
+            double fixedP = request.getFixedP();
+            double[] comp = toOverallComposition(request);
+
+            CalculationInterface.StepParams params =
+                    new CalculationInterface.StepParams(axis, fixedT, fixedP, comp);
+            PhaseDiagramResult result = CalculationInterface.runCalculating(
+                    calculationSession, CalculationKind.STEP, model, params);
+
+            PropertyScanResult scanResult = toPropertyScanResult(request, result);
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "runPropertyScan");
+            return scanResult;
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "STEP calculation failed", e);
+            PropertyScanResult err = new PropertyScanResult();
+            err.setSuccess(false);
+            err.setMessage("STEP calculation failed: " + e.getMessage());
+            Trace.exit(LOG, AppLevel.FLOW, "MainController", "runPropertyScan");
+            return err;
+        }
+    }
+
+    /**
+     * Builds the {@link ui.request.AxisConfig} {@link CalculationInterface.StepParams}
+     * needs from the GUI's {@link PropertyScanRequest}. Only {@code
+     * TEMPERATURE}/{@code COMPOSITION} axis 0 are offered by {@link
+     * PropertyCalcConfigPanel}; composition scans use overall component 0
+     * as the swept index, matching that panel's single-composition-axis UI.
+     */
+    private ui.request.AxisConfig toStepAxisConfig(PropertyScanRequest request) {
+        if (request.getAxis0Type() == PropertyScanRequest.AxisType.TEMPERATURE) {
+            return new ui.request.AxisConfig("T", ui.request.AxisConfig.Type.TEMPERATURE,
+                    request.getAxis0Min(), request.getAxis0Max(), request.getAxis0Step());
+        }
+        return new ui.request.AxisConfig("x(1)", 0,
+                request.getAxis0Min(), request.getAxis0Max(), request.getAxis0Step());
+    }
+
+    /**
+     * Overall composition for the STEP call. When the swept axis is itself
+     * COMPOSITION, {@link ApplicationLayer#calculateStep} overrides
+     * component 0 at each sampled point, so the starting composition here
+     * only needs to fill the remaining components; a uniform split matches
+     * {@link #extractComposition}'s fallback for single-point calculations.
+     */
+    private double[] toOverallComposition(PropertyScanRequest request) {
+        int nc = request.getElements().size();
+        double[] comp = new double[nc];
+        if (request.getAxis0Type() == PropertyScanRequest.AxisType.TEMPERATURE && nc > 1) {
+            comp[1 % nc] = request.getFixedX();
+            comp[0] = 1.0 - comp[1 % nc];
+        } else {
+            Arrays.fill(comp, nc == 0 ? 0.0 : 1.0 / nc);
+        }
+        return comp;
+    }
+
+    /**
+     * Maps a {@code StepTracer} run's {@link PhaseDiagramResult} into the
+     * GUI's existing {@link PropertyScanResult}/{@link StepResultPanel}
+     * shape: one point per sampled axis value across all returned line
+     * segments (concatenated in order), y = {@link
+     * PhaseDiagramResult.LineSegment#propertyValues} -- system Gibbs
+     * energy per mole of real atoms ("Gm"), the real per-point quantity
+     * {@code StepTracer} now computes via {@link
+     * system.ports.EquilibriumResult#totalGPerAtom()} (see {@code
+     * StepTracer#molarGibbsEnergyPerAtom}), not a placeholder.
+     *
+     * <p>{@code request.getMethod()} selects "HM"/"Gm"/"G" the same
+     * dropdown {@link SinglePointSidebarPanel} offers, but only "Gm" is
+     * backed by real machinery here: no system-level enthalpy ("HM")
+     * calculation exists anywhere in this codebase (single-point
+     * calculations drop {@code method} unused today -- see {@link
+     * #runSinglePoint}), and "G" (total, per formula unit rather than per
+     * atom) is not comparable across a scan whose stable phase set can
+     * change. Requesting "HM" or "G" therefore returns Gm anyway, labeled
+     * honestly as Gm with a message explaining the substitution, rather
+     * than silently mislabeling the curve or fabricating an unimplemented
+     * property.
+     */
+    private PropertyScanResult toPropertyScanResult(PropertyScanRequest request,
+                                                      PhaseDiagramResult result) {
+        List<Double> axisValues = new ArrayList<>();
+        List<Double> propertyValues = new ArrayList<>();
+        for (PhaseDiagramResult.LineSegment line : result.getLines()) {
+            for (int i = 0; i < line.coords.size(); i++) {
+                axisValues.add(line.coords.get(i)[0]);
+                propertyValues.add(line.propertyValues != null
+                        ? line.propertyValues[i] : Double.NaN);
+            }
+        }
+
+        PropertyScanResult scanResult = new PropertyScanResult();
+        double[] xs = axisValues.stream().mapToDouble(Double::doubleValue).toArray();
+        double[] ys = propertyValues.stream().mapToDouble(Double::doubleValue).toArray();
+        scanResult.setAxis0Values(xs);
+        scanResult.setStepValues(ys);
+        scanResult.setAxis0Label(request.getAxis0Type() == PropertyScanRequest.AxisType.TEMPERATURE
+                ? "T / K" : "x(1)");
+        scanResult.setPropertyLabel("Gm / J·mol⁻¹");
+        scanResult.setMethod("Gm");
+
+        boolean substituted = !"Gm".equals(request.getMethod());
+        boolean success = result.isComplete() && xs.length > 0;
+        scanResult.setSuccess(success);
+        String outcome = result.isComplete()
+                ? (xs.length > 0 ? "OK" : "No points computed")
+                : result.getMessage();
+        scanResult.setMessage(substituted
+                ? outcome + " (requested \"" + request.getMethod()
+                        + "\" not implemented for STEP -- showing Gm)"
+                : outcome);
+        return scanResult;
     }
 }

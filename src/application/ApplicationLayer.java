@@ -8,6 +8,7 @@ import calc.equil.EquilibriumSolverV2;
 import calc.equil.GridMinimizer;
 import system.ThermodynamicSystem;
 import system.database.TdbParser;
+import system.database.tdb;
 import system.model.PhaseModelKind;
 import system.ports.DatabasePort;
 import system.ports.EquilibriumResult;
@@ -435,5 +436,28 @@ public final class ApplicationLayer {
      */
     public PhaseDiagramResult currentPhaseDiagram() {
         return currentPhaseDiagram;
+    }
+
+    /**
+     * Returns the Parameter list for a given phase + element set from the loaded TDB.
+     * Used by the Model Inspector to display phase parameter details.
+     *
+     * @param elements element symbols (e.g. ["TI", "ZR"])
+     * @param phaseName phase name (e.g. "LIQUID")
+     * @return list of tdb.Parameter objects for the phase, or empty list if not found
+     * @throws IOException if the TDB file cannot be loaded
+     */
+    public List<tdb.Parameter> getPhaseParameters(List<String> elements, String phaseName)
+            throws IOException {
+        if (elements == null || elements.isEmpty() || phaseName == null) {
+            return List.of();
+        }
+        browseDatabase.load(currentKey.tdbFilePath);
+        TdbParser parser = (TdbParser) browseDatabase;
+        tdb database = parser.getUnderlyingTdb();
+        if (database == null) {
+            return List.of();
+        }
+        return database.getPhaseParam(new ArrayList<>(elements), phaseName);
     }
 }
