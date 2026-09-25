@@ -56,7 +56,7 @@ public class MainFrame extends JFrame {
     private JTextArea        resultSummaryArea;
     private JLabel           resultStatusLabel;
     private StepResultPanel  stepResultPanel;
-    private MapResultPanel   mapResultPanel;
+    private PhaseDiagramPanel mapResultPanel;
     private PhaseDiagramPanel phaseDiagramPanel;
     private CoarseDiagramPanel coarseDiagramPanel;
     private JList<String>    phaseJList;
@@ -163,7 +163,6 @@ public class MainFrame extends JFrame {
         JPanel root = new JPanel(new BorderLayout(0, 0));
         root.setBackground(BG);
         root.add(activityBar,    BorderLayout.WEST);
-        root.add(activityBar,    BorderLayout.WEST);
         root.add(workspaceSplit, BorderLayout.CENTER);
         return root;
     }
@@ -219,7 +218,8 @@ public class MainFrame extends JFrame {
         JPanel panel = new JPanel(new BorderLayout(0, 0));
         panel.setBackground(BG);
         panel.add(DarkTheme.panelHeader("MAP RESULTS"), BorderLayout.NORTH);
-        mapResultPanel = new MapResultPanel();
+        mapResultPanel = new PhaseDiagramPanel();
+        mapResultPanel.setBackground(Color.WHITE);
         panel.add(mapResultPanel, BorderLayout.CENTER);
         return panel;
     }
@@ -377,13 +377,13 @@ public class MainFrame extends JFrame {
         assessMenu.setMnemonic('A');
         styleMenu(assessMenu);
 
-        JMenuItem calModel = new JMenuItem("Run CalModel...");
-        calModel.addActionListener(this::onMenuCalModel);
+        JMenuItem calModel = new JMenuItem("Run CalModel... (not available)");
+        calModel.setEnabled(false);
         styleMenuItem(calModel);
         assessMenu.add(calModel);
 
-        JMenuItem optimize = new JMenuItem("Run Optimization...");
-        optimize.addActionListener(this::onMenuOptimize);
+        JMenuItem optimize = new JMenuItem("Run Optimization... (not available)");
+        optimize.setEnabled(false);
         styleMenuItem(optimize);
         assessMenu.add(optimize);
         bar.add(assessMenu);
@@ -444,6 +444,7 @@ public class MainFrame extends JFrame {
                 long elapsed = System.currentTimeMillis() - t0;
                 try {
                     EquilibriumResult result = get();
+                    renderRunResult(result, elapsed);
                     resultStatusLabel.setText("✓ Equilibrium computation complete (" + elapsed + " ms)");
                     resultStatusLabel.setForeground(SUCCESS);
                     addGuiLog("RESULT", "Converged=" + result.isConverged() + " Iterations=" + result.getIterations());
@@ -512,26 +513,22 @@ public class MainFrame extends JFrame {
         final ui.request.PropertyScanRequest req = mapCalcPanel.buildRequest();
         mapCalcPanel.setStatus("Calculating...", DarkTheme.ACCENT);
         mapCalcPanel.setRunning(true);
-        mapWorker = new SwingWorker<PropertyScanResult, String>() {
-            @Override protected PropertyScanResult doInBackground() {
-                req.setProgressCallback(this::publish);
-                return controller.runPropertyScan(req);
-            }
-            @Override protected void process(java.util.List<String> chunks) {
-                for (String s : chunks) addGuiLog("MAP", s);
+        mapWorker = new SwingWorker<PhaseDiagramResult, Void>() {
+            @Override protected PhaseDiagramResult doInBackground() {
+                return controller.runMap(req);
             }
             @Override protected void done() {
                 mapCalcPanel.setRunning(false);
                 mapWorker = null;
                 try {
-                    PropertyScanResult r = get();
-                    mapResultPanel.setResult(r);
-                    if (r.isSuccess()) {
-                        mapCalcPanel.setStatus("✓ " + r.getMessage(), SUCCESS);
-                        addGuiLog("RESULT", "MAP complete: " + r.getMessage());
+                    PhaseDiagramResult result = get();
+                    if (result != null && result.isComplete()) {
+                        mapResultPanel.setDiagram(result);
+                        mapCalcPanel.setStatus("✓ Calculation complete", SUCCESS);
+                        addGuiLog("RESULT", "MAP complete");
                     } else {
-                        String msg = r.getMessage();
-                        mapCalcPanel.setStatus(("Aborted".equals(msg) ? "⊘ Aborted" : "✗ " + msg), ERROR_COLOR);
+                        String msg = result != null ? result.getMessage() : "Unknown error";
+                        mapCalcPanel.setStatus("✗ " + msg, ERROR_COLOR);
                         addGuiLog("RESULT", "MAP: " + msg);
                     }
                 } catch (java.util.concurrent.CancellationException ex) {
@@ -669,46 +666,56 @@ public class MainFrame extends JFrame {
 
     private String buildParamText(String phaseName, java.util.List<?> params) {
         if (params == null || params.isEmpty()) return "No parameters found for " + phaseName + ".";
-        // Simplified parameter display - full implementation would require type-safe parameter handling
+
         StringBuilder sb = new StringBuilder();
         sb.append("Parameters for ").append(phaseName).append("  (").append(params.size()).append(" total)\n");
-        sb.append("─".repeat(80)).append("\n");
-        for (Object p : params) {
-            // Parameter details would require type-safe casting
-            sb.append("  ").append(p.toString()).append("\n");
-            // Detailed expansion of Exp entries would go here
-            /*
-            // OLD CODE: Detailed parameter expansion - needs type-safe refactoring
-            if (exps != null) {
-                for (system.database.tdb.Exp exp : exps) {
-                    java.util.ArrayList<Double> coeffs = exp.getSubCoeffList();
-                    if (coeffs != null) {
-                        StringBuilder line = new StringBuilder();
-                        // Temperature range
-                        java.util.ArrayList<Double> tRange = exp.getTempRange();
-                        if (tRange != null && tRange.size() >= 2)
-                            line.append(String.format("  %.2f – %.2f K: ", tRange.get(0), tRange.get(1)));
-                        else
-                            line.append("  ");
+        sb.append("─".repeat(80)).append("\n\n");
 
-                        // All non-zero coefficients on one line
-                        boolean first = true;
-                        for (int i = 0; i < coeffs.size(); i++) {
-                            double c = coeffs.get(i);
-                            if (c == 0.0) continue;
-                            if (!first) line.append("  ");
-                            first = false;
-                            String sig = c >= 0 ? "+" : "";
-                            line.append(String.format("%s%.5e%s", sig, c, i < termLabels.length ? termLabels[i] : "·T^" + i));
-                        }
-                        sb.append(line).append("\n");
-                    }
-                }
+        for (Object p : params) {
+            if (p instanceof system.database.tdb.Parameter param) {
+                formatParameterDetail(sb, param);
+            } else {
+                sb.append("  ").append(p.toString()).append("\n");
             }
-            */
-            sb.append("\n");
         }
         return sb.toString();
+    }
+
+    private void formatParameterDetail(StringBuilder sb, system.database.tdb.Parameter param) {
+        sb.append("Type:        ").append(param.getType()).append("\n");
+
+        if (param.getParameterId() != null) {
+            sb.append("ID:          ").append(param.getParameterId()).append("\n");
+        } else if (param.getOrder() > 0) {
+            sb.append("Order:       ").append(param.getOrder()).append("\n");
+        }
+
+        java.util.ArrayList<java.util.ArrayList<String>> constList = param.getConstituentList();
+        if (constList != null && !constList.isEmpty()) {
+            sb.append("Constituents: ");
+            for (int i = 0; i < constList.size(); i++) {
+                if (i > 0) sb.append(" : ");
+                sb.append(String.join(",", constList.get(i)));
+            }
+            sb.append("\n");
+        }
+
+        java.util.ArrayList<system.database.tdb.Exp> expList = param.getExpList();
+        if (expList != null && !expList.isEmpty()) {
+            sb.append("Temperature ranges and expressions:\n");
+            for (system.database.tdb.Exp exp : expList) {
+                if (exp.getTempRange() != null && exp.getTempRange().size() >= 2) {
+                    double t1 = exp.getTempRange().get(0);
+                    double t2 = exp.getTempRange().get(1);
+                    sb.append(String.format("  %.2f – %.2f K: ", t1, t2));
+                }
+                if (exp.getExpStr() != null) {
+                    sb.append(exp.getExpStr());
+                }
+                sb.append("\n");
+            }
+        }
+        sb.append("\n");
     }
 
     // ── Assessment menu ───────────────────────────────────────────────
